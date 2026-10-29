@@ -25,3 +25,5 @@ infra/secrets/
 .DS_Store
 .idea/
 .vscode/
+.vite
+apps/web/.vite/

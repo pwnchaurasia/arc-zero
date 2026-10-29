@@ -1,0 +1,63 @@
+name: Nightly database backup
+
+# Dumps the hosted Postgres every night, encrypts it, and stores it in DigitalOcean
+# Spaces (any S3-compatible storage works). Runs on GitHub, so it keeps working even
+# if the droplet is gone.
+#
+# Encryption uses `age` with a PUBLIC key only. The private key lives in your password
+# manager, never in GitHub or on the server, so a leaked token cannot read backups.
+# Retention is a bucket lifecycle rule (see readme "Backups"), so this job never
+# needs permission to delete anything.
+on:
+  schedule:
+    - cron: "30 21 * * *" # 03:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install age
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq age
+
+      - name: Dump and encrypt
+        env:
+          # libpq form, e.g. postgresql://user:pass@host:port/arc_zero?sslmode=require
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+          PG_IMAGE: ${{ vars.BACKUP_PG_IMAGE || 'postgres:17-alpine' }}
+        run: |
+          set -euo pipefail
+          case "$DATABASE_URL" in
+            *sslmode=require*|*sslmode=verify-ca*|*sslmode=verify-full*) ;;
+            *) echo "::error::BACKUP_DATABASE_URL must use sslmode=require (or verify-*)"; exit 1 ;;
+          esac
+          file="arc-zero-$(date -u +%Y-%m-%dT%H%MZ).dump.age"
+          # pg_dump runs in a container so its version can match the server (BACKUP_PG_IMAGE).
+          docker run --rm -e DATABASE_URL "$PG_IMAGE" \
+              sh -c 'exec pg_dump --format=custom --no-owner --no-privileges "$DATABASE_URL"' \
+            | age --encrypt --recipient "$AGE_RECIPIENT" > "$file"
+          size=$(stat -c %s "$file")
+          if [ "$size" -lt 1024 ]; then
+            echo "::error::Backup is suspiciously small ($size bytes)"; exit 1
+          fi
+          echo "FILE=$file" >> "$GITHUB_ENV"
+          echo "Backup $file: $size bytes"
+
+      - name: Upload to Spaces
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_KEY }}
+          AWS_DEFAULT_REGION: us-east-1 # required by the CLI; Spaces ignores it
+          ENDPOINT: ${{ vars.BACKUP_S3_ENDPOINT || 'https://blr1.digitaloceanspaces.com' }}
+          BUCKET: ${{ vars.BACKUP_S3_BUCKET }}
+        run: |
+          aws s3 cp "$FILE" "s3://$BUCKET/arc-zero/$FILE" --endpoint-url "$ENDPOINT" --no-progress

@@ -1,0 +1,24 @@
+[package]
+name = "arc-engine-py"
+description = "Python bindings for arc-engine (API server)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "arc_engine"
+crate-type = ["cdylib"]
+
+[dependencies]
+engine = { package = "arc-engine", path = "../arc-engine" }
+serde.workspace = true
+serde_json.workspace = true
+pyo3 = { version = "0.23", features = ["abi3-py312"] }
+
+[features]
+extension-module = ["pyo3/extension-module"]
+
+[lints]
+workspace = true

@@ -26,6 +26,10 @@ class Settings(BaseSettings):
 
     database_url: SecretStr = SecretStr("postgresql+asyncpg://arc:arc@localhost:5432/arc")
     redis_url: SecretStr = SecretStr("redis://localhost:6379/0")
+    # Per worker process (the image runs 2). Hosted poolers in session mode allow few
+    # connections (Supabase free: ~15), so 2 * (5 + 2) = 14 stays under the cap.
+    db_pool_size: int = Field(default=5, ge=1, le=50)
+    db_max_overflow: int = Field(default=2, ge=0, le=50)
     levels_path: Path = Path("levels.json")
 
     # HMAC keys for signed tokens (guest tickets, PoW challenges), by key id.

@@ -35,7 +35,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         catalogue = levels.load(settings.levels_path)
-        engine = make_engine(settings.database_url.get_secret_value())
+        engine = make_engine(
+            settings.database_url.get_secret_value(),
+            settings.db_pool_size,
+            settings.db_max_overflow,
+        )
         redis = Redis.from_url(settings.redis_url.get_secret_value())
         signer = Signer(
             {kid: k.get_secret_value().encode() for kid, k in settings.signing_keys.items()},

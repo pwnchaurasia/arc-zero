@@ -84,8 +84,10 @@ class HintUsage(Base):
     used: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
 
 
-def make_engine(url: str) -> AsyncEngine:
-    return create_async_engine(url, pool_size=10, max_overflow=10, pool_pre_ping=True)
+def make_engine(url: str, pool_size: int, max_overflow: int) -> AsyncEngine:
+    return create_async_engine(
+        url, pool_size=pool_size, max_overflow=max_overflow, pool_pre_ping=True
+    )
 
 
 def make_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

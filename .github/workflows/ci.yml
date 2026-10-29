@@ -100,7 +100,7 @@ jobs:
       ARC_LEVELS_PATH: /tmp/levels.json
       ARC_SIGNING_KEYS: '{"k1": "ci-only-signing-key-not-secret-0123456789abcdef"}'
       ARC_RECOVERY_PEPPER: ci-only-pepper-not-secret-0123456789abcdef
-      ARC_ALLOWED_ORIGINS: '["http://localhost:4173"]'
+      ARC_ALLOWED_ORIGINS: '["http://127.0.0.1:4173"]'
       ARC_ALLOWED_HOSTS: '["localhost","127.0.0.1"]'
     steps:
       - uses: actions/checkout@v4
@@ -127,12 +127,16 @@ jobs:
           pnpm wasm
           pnpm build
           pnpm exec playwright install --with-deps chromium
-          nohup pnpm preview > "$RUNNER_TEMP/preview.log" 2>&1 < /dev/null &
+          # Pin IPv4: on the runner `localhost` may resolve to ::1 for one tool and
+          # 127.0.0.1 for another, so a waiter can knock on the wrong door forever.
+          nohup pnpm preview --host 127.0.0.1 > "$RUNNER_TEMP/preview.log" 2>&1 < /dev/null &
       - name: Wait for both servers (max 2 min)
-        run: npx --yes wait-on --timeout 120000 http-get://localhost:4173 http-get://127.0.0.1:8000/api/v1/ready
+        run: npx --yes wait-on --timeout 120000 http-get://127.0.0.1:4173 http-get://127.0.0.1:8000/api/v1/ready
       - name: Run e2e
         working-directory: apps/web
         timeout-minutes: 10
+        env:
+          E2E_BASE_URL: http://127.0.0.1:4173
         run: pnpm e2e
       - name: Server logs
         if: failure()

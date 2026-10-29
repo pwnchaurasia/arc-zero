@@ -21,7 +21,7 @@ const CSP = [
   "frame-ancestors 'none'",
 ].join("; ");
 
-const api = { "/api": { target: "http://localhost:8000", changeOrigin: false } };
+const api = { "/api": { target: "http://127.0.0.1:8000", changeOrigin: false } };
 
 export default defineConfig({
   plugins: [

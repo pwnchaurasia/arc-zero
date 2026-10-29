@@ -87,6 +87,64 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check production secrets are set
+        env:
+          ARC_DATABASE_URL: ${{ secrets.ARC_DATABASE_URL }}
+          ARC_SIGNING_KEYS: ${{ secrets.ARC_SIGNING_KEYS }}
+          ARC_RECOVERY_PEPPER: ${{ secrets.ARC_RECOVERY_PEPPER }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          ARC_LEVEL_SEED: ${{ secrets.ARC_LEVEL_SEED }}
+        run: |
+          missing=0
+          for name in ARC_DATABASE_URL ARC_SIGNING_KEYS ARC_RECOVERY_PEPPER REDIS_PASSWORD ARC_LEVEL_SEED; do
+            if [ -z "${!name}" ]; then echo "::error::Missing secret $name in the production environment"; missing=1; fi
+          done
+          case "$ARC_DATABASE_URL" in
+            postgresql+asyncpg://*'?ssl='require*|postgresql+asyncpg://*'?ssl=verify-'*) ;;
+            *) echo "::error::ARC_DATABASE_URL must look like postgresql+asyncpg://…?ssl=require"; missing=1 ;;
+          esac
+          [[ "$REDIS_PASSWORD" =~ ^[A-Za-z0-9]+$ ]] || { echo "::error::REDIS_PASSWORD must be letters and digits only"; missing=1; }
+          exit $missing
+
+      # Levels are regenerated from the secret seed on every deploy: the same seed (and
+      # generator code) always produces the same levels. The output never leaves this job
+      # except over SSH to the server.
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Generate levels
+        env:
+          ARC_LEVEL_SEED: ${{ secrets.ARC_LEVEL_SEED }}
+        run: |
+          umask 077
+          mkdir -p "$RUNNER_TEMP/secrets"
+          cargo run --release -p arc-levelgen -- --out "$RUNNER_TEMP/secrets/levels.json"
+
+      - name: Write server config
+        env:
+          ARC_DATABASE_URL: ${{ secrets.ARC_DATABASE_URL }}
+          ARC_SIGNING_KEYS: ${{ secrets.ARC_SIGNING_KEYS }}
+          ARC_SIGNING_KID: ${{ vars.ARC_SIGNING_KID || 'k1' }}
+          ARC_RECOVERY_PEPPER: ${{ secrets.ARC_RECOVERY_PEPPER }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          SITE: ${{ vars.SITE_ADDRESS }}
+        run: |
+          umask 077
+          cd "$RUNNER_TEMP/secrets"
+          printf '%s' "$REDIS_PASSWORD" > redis_password
+          {
+            echo "ARC_ENV=production"
+            echo "ARC_DATABASE_URL=$ARC_DATABASE_URL"
+            echo "ARC_REDIS_URL=redis://:$REDIS_PASSWORD@redis:6379/0"
+            echo "ARC_SIGNING_KEYS=$ARC_SIGNING_KEYS"
+            echo "ARC_SIGNING_KID=$ARC_SIGNING_KID"
+            echo "ARC_RECOVERY_PEPPER=$ARC_RECOVERY_PEPPER"
+            echo "ARC_ALLOWED_ORIGINS=[\"https://$SITE\"]"
+            echo "ARC_ALLOWED_HOSTS=[\"$SITE\",\"127.0.0.1\"]"
+            echo "ARC_COOKIE_SECURE=true"
+            echo "ARC_HSTS=true"
+            echo "ARC_EXPOSE_DOCS=false"
+          } > api.env
+
       - name: Configure SSH
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -107,8 +165,16 @@ jobs:
             StrictHostKeyChecking yes
           EOF
 
-      - name: Upload compose file
-        run: scp infra/docker-compose.release.yml prod:"$DEPLOY_DIR/docker-compose.yml"
+      - name: Upload compose file and secrets
+        run: |
+          ssh prod "set -e; umask 077; mkdir -p '$DEPLOY_DIR/secrets.new'"
+          scp -q "$RUNNER_TEMP"/secrets/api.env "$RUNNER_TEMP"/secrets/redis_password \
+              "$RUNNER_TEMP"/secrets/levels.json prod:"$DEPLOY_DIR/secrets.new/"
+          scp -q infra/docker-compose.release.yml prod:"$DEPLOY_DIR/docker-compose.yml"
+          # Swap the whole directory at once, so a half-copied set is never used.
+          ssh prod "set -e; cd '$DEPLOY_DIR'; chmod 600 secrets.new/*
+            rm -rf secrets.old; [ -d secrets ] && mv secrets secrets.old; mv secrets.new secrets; rm -rf secrets.old"
+          rm -rf "$RUNNER_TEMP/secrets"
 
       - name: Pull and start the release
         env:

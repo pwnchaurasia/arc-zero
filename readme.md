@@ -144,18 +144,32 @@ internet ─▶ nginx (host, :443, Let's Encrypt) ─▶ 127.0.0.1:8080 ─▶ w
    (never reuse an admin user across projects), e.g. `arc_zero` / `arc_zero`. Use the
    *direct* connection string, not a pgbouncer "pooler" one. Pick a region close to the
    droplet: every game request reads it.
-7. **Secrets** in `/opt/arc-zero/secrets/` (owned by `deploy`, mode 600):
-   - `api.env` from `infra/api.env.example`. `ARC_DATABASE_URL` must end in `?ssl=require`;
-     the API refuses to start otherwise.
-   - `redis_password` (`python3 -c "import secrets;print(secrets.token_urlsafe(32))"`).
-   - `levels.json`, generated on your laptop from a secret seed and `scp`'d here. Keep the
-     seed in your password manager: the same seed always regenerates the same levels.
-     `ARC_LEVEL_SEED=<secret> cargo run --release -p arc-levelgen -- --out levels.json`
-8. **GitHub** (repo → Settings → Environments → `production`):
-   - secrets: `DEPLOY_HOST` (droplet IP), `DEPLOY_USER` (`deploy`), `DEPLOY_SSH_KEY`,
-     `DEPLOY_KNOWN_HOSTS` (`ssh-keyscan -t ed25519 <droplet-ip>`, checked against the server's
-     `/etc/ssh/ssh_host_ed25519_key.pub`),
-   - variables: `SITE_ADDRESS` = `play.pwnchaurasia.dev`; optional `DEPLOY_PORT`, `DEPLOY_DIR`.
+7. **GitHub** (repo → Settings → Environments → `production`). All configuration lives
+   here; every release writes it to `/opt/arc-zero/secrets/` on the server, so the server
+   holds nothing you set by hand and a new droplet only needs steps 1–5.
+
+   | Secret | Value |
+   |---|---|
+   | `DEPLOY_HOST` | droplet IP |
+   | `DEPLOY_USER` | `deploy` |
+   | `DEPLOY_SSH_KEY` | private half of the deploy key (whole file) |
+   | `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan -t ed25519 <droplet-ip>`, checked against `/etc/ssh/ssh_host_ed25519_key.pub` |
+   | `ARC_DATABASE_URL` | `postgresql+asyncpg://user:pass@host:port/db?ssl=require` (provider URL with `+asyncpg`, `sslmode`→`ssl`, other options removed) |
+   | `ARC_SIGNING_KEYS` | `{"k1": "<random 48+ chars>"}` |
+   | `ARC_RECOVERY_PEPPER` | random 48+ chars. **Also keep in your password manager: losing it breaks every recovery key** |
+   | `REDIS_PASSWORD` | random letters and digits |
+   | `ARC_LEVEL_SEED` | random 48+ chars. **Also keep in your password manager: the same seed rebuilds the same levels** |
+
+   Generate the random ones with `python3 -c "import secrets;print(secrets.token_hex(32))"`.
+
+   | Variable | Value |
+   |---|---|
+   | `SITE_ADDRESS` | `play.pwnchaurasia.dev` |
+   | `ARC_SIGNING_KID` | `k1` (optional; for key rotation) |
+   | `DEPLOY_PORT`, `DEPLOY_DIR` | optional |
+
+   Changing a secret takes effect on the next release. Levels are regenerated from the
+   seed on every deploy, so changing the generator code changes the levels: do that deliberately.
 
 The API refuses to start in production unless cookies are Secure, HSTS is on, docs are
 hidden, every origin is HTTPS and the database connection is encrypted.
@@ -196,6 +210,6 @@ pg_restore --no-owner --clean --if-exists -d "postgresql://…?sslmode=require" 
 
 ### Rotating the signing key
 
-Add a new key to `ARC_SIGNING_KEYS`, point `ARC_SIGNING_KID` at it, deploy, and
+Add a new key to the `ARC_SIGNING_KEYS` secret, point the `ARC_SIGNING_KID` variable at it, release, and
 remove the old key after 7 days (the longest guest-ticket lifetime). Never change
 `ARC_RECOVERY_PEPPER`: it would invalidate every recovery key.

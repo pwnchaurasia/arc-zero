@@ -1,0 +1,73 @@
+# Production stack, image-based: the release workflow copies this file to the
+# server as docker-compose.yml and sets IMAGE_PREFIX / IMAGE_TAG. No source code
+# lives on the server. Secrets live next to it in ./secrets/ (see README).
+name: arc-zero
+services:
+  web:
+    image: ${IMAGE_PREFIX:?}/arc-zero-web:${IMAGE_TAG:?}
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS, e.g. play.example.com}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+    volumes: [caddy_data:/data, caddy_config:/config]
+    depends_on: { api: { condition: service_healthy } }
+    networks: [edge, internal]
+
+  api:
+    image: ${IMAGE_PREFIX:?}/arc-zero-api:${IMAGE_TAG:?}
+    restart: unless-stopped
+    env_file: [secrets/api.env]
+    secrets: [levels.json]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    networks: [internal]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+  migrate:
+    image: ${IMAGE_PREFIX:?}/arc-zero-api:${IMAGE_TAG:?}
+    command: ["alembic", "upgrade", "head"]
+    env_file: [secrets/api.env]
+    depends_on: { postgres: { condition: service_healthy } }
+    networks: [internal]
+    restart: "no"
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: arc
+      POSTGRES_DB: arc
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U arc"], interval: 5s, retries: 20 }
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Sessions live here, so persist them (AOF) across restarts.
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$(cat /run/secrets/redis_password)\""]
+    secrets: [redis_password]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning ping"]
+      interval: 5s
+      retries: 20
+    networks: [internal]
+
+secrets:
+  levels.json: { file: ./secrets/levels.json }
+  postgres_password: { file: ./secrets/postgres_password }
+  redis_password: { file: ./secrets/redis_password }
+
+volumes: { pgdata: {}, redisdata: {}, caddy_data: {}, caddy_config: {} }
+
+networks:
+  edge: {}
+  internal: { internal: true }

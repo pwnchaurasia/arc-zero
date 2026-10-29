@@ -1,0 +1,13 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "arc-engine"
+version = "0.1.0"
+description = "Deterministic game rules for Arc Zero (native Python extension)."
+requires-python = ">=3.12"
+
+[tool.maturin]
+module-name = "arc_engine"
+features = ["extension-module"]

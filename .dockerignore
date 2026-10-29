@@ -1,0 +1,15 @@
+**/target
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+apps/web/dist
+apps/web/dev-dist
+apps/web/src/wasm/pkg
+**/.env
+**/.env.*
+**/levels.json
+infra/secrets
+.git

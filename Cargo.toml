@@ -1,0 +1,34 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/arc-engine",
+    "crates/arc-engine-wasm",
+    "crates/arc-engine-py",
+    "crates/arc-levelgen",
+]
+# The Python extension needs maturin to link; build it through uv/maturin, not `cargo test`.
+default-members = ["crates/arc-engine", "crates/arc-engine-wasm", "crates/arc-levelgen"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+arc-engine = { path = "crates/arc-engine" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

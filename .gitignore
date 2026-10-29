@@ -1,0 +1,27 @@
+# Build output
+/target/
+**/node_modules/
+apps/web/dist/
+apps/web/dev-dist/
+apps/web/src/wasm/pkg/
+apps/web/test-results/
+apps/web/playwright-report/
+**/__pycache__/
+**/.venv/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+*.egg-info/
+
+# Secrets and server-only data: NEVER commit these
+.env
+.env.*
+!.env.example
+levels.json
+*.levels.json
+infra/secrets/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # The release workflow runs this whole suite before anything is deployed.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  engine:
+    name: Rust engine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - name: Levels generate and are finishable
+        run: ARC_LEVEL_SEED=ci-only-seed-not-secret-0123456789abcdef cargo run --release -p arc-levelgen -- --out /tmp/levels.json
+
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: { POSTGRES_USER: arc, POSTGRES_PASSWORD: arc, POSTGRES_DB: arc }
+        ports: ["55432:5432"]
+        options: --health-cmd "pg_isready -U arc" --health-interval 2s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["56379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 2s --health-retries 20
+    defaults:
+      run: { working-directory: apps/api }
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: uv run ruff check . && uv run ruff format --check .
+      - run: uv run mypy src tests
+      - run: uv run pytest -q
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: apps/web }
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install --locked wasm-pack --version 0.13.1
+      - uses: pnpm/action-setup@v4
+        with: { package_json_file: apps/web/package.json, version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm, cache-dependency-path: apps/web/pnpm-lock.yaml }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm wasm
+      - run: pnpm determinism
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  e2e:
+    name: End-to-end (production build, strict CSP)
+    runs-on: ubuntu-latest
+    needs: [api, web]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: { POSTGRES_USER: arc, POSTGRES_PASSWORD: arc, POSTGRES_DB: arc }
+        ports: ["55432:5432"]
+        options: --health-cmd "pg_isready -U arc" --health-interval 2s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["56379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 2s --health-retries 20
+    env:
+      ARC_ENV: development
+      ARC_DATABASE_URL: postgresql+asyncpg://arc:arc@localhost:55432/arc
+      ARC_REDIS_URL: redis://localhost:56379/0
+      ARC_LEVELS_PATH: /tmp/levels.json
+      ARC_SIGNING_KEYS: '{"k1": "ci-only-signing-key-not-secret-0123456789abcdef"}'
+      ARC_RECOVERY_PEPPER: ci-only-pepper-not-secret-0123456789abcdef
+      ARC_ALLOWED_ORIGINS: '["http://localhost:4173"]'
+      ARC_ALLOWED_HOSTS: '["localhost","127.0.0.1"]'
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install --locked wasm-pack --version 0.13.1
+      - uses: astral-sh/setup-uv@v6
+      - uses: pnpm/action-setup@v4
+        with: { package_json_file: apps/web/package.json, version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm, cache-dependency-path: apps/web/pnpm-lock.yaml }
+      - run: ARC_LEVEL_SEED=ci-only-seed-not-secret-0123456789abcdef cargo run --release -p arc-levelgen -- --out /tmp/levels.json
+      - working-directory: apps/api
+        run: |
+          uv sync --frozen
+          uv run alembic upgrade head
+          uv run uvicorn --factory arc_api.main:app --port 8000 --no-access-log &
+      - working-directory: apps/web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm wasm
+          pnpm build
+          pnpm exec playwright install --with-deps chromium
+          pnpm preview &
+          npx --yes wait-on http://localhost:4173 http://127.0.0.1:8000/api/v1/ready
+          pnpm e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with: { name: playwright-traces, path: apps/web/test-results }

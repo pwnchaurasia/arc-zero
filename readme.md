@@ -109,11 +109,14 @@ git push -u origin release/26.10.01
    which starts the release and waits until every service is healthy,
 5. checks `https://play.pwnchaurasia.dev/api/v1/ready` through nginx.
 
-**Make `main` PR-only** (repo → Settings → Branches → Add rule for `main`), otherwise
-the "commit is on main" guarantee means nothing:
-- Require a pull request before merging
-- Require status checks to pass: `Rust engine`, `API`, `Web`, `End-to-end (production build, strict CSP)`
-- Require branches to be up to date before merging (so what was tested is exactly what lands)
+**`main` only accepts tested pull requests**, enforced by the ruleset in
+`.github/rulesets/main.json`: repo → Settings → Rules → Rulesets → New ruleset →
+**Import a ruleset** → choose that file → Create. It:
+- requires a pull request (no direct pushes to `main`),
+- requires the `CI passed` check, which succeeds only if every CI job succeeded,
+- requires the branch to be up to date with `main`, so what was tested is exactly what lands,
+- blocks force-pushes and deleting `main`,
+- has **no bypass list**: nobody, including repository admins, can merge without green CI.
 
 **Rollback:** cut a new release branch from an older commit on `main`, e.g.
 `git switch -c release/26.10.03 <old-commit> && git push -u origin release/26.10.03`.

@@ -31,14 +31,16 @@ WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
 COPY apps/api/alembic.ini /app/alembic.ini
 COPY apps/api/migrations /app/migrations
+# WEB_CONCURRENCY = uvicorn worker processes. 1 suits a 1-vCPU droplet: a second worker
+# costs ~70 MB of RAM without adding CPU. Raise it on bigger machines.
 ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-    ARC_ENV=production ARC_LEVELS_PATH=/run/secrets/levels.json
+    ARC_ENV=production ARC_LEVELS_PATH=/run/secrets/levels.json WEB_CONCURRENCY=1
 USER arc
 EXPOSE 8000
-HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2).status == 200 else 1)"
 # Only reachable through Caddy on the private network, which sets X-Forwarded-For.
 # No access log: we do not store player IP addresses.
 CMD ["uvicorn", "--factory", "arc_api.main:app", "--host", "0.0.0.0", "--port", "8000", \
-     "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "*", "--no-access-log", \
+     "--proxy-headers", "--forwarded-allow-ips", "*", "--no-access-log", \
      "--no-server-header"]

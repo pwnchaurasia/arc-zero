@@ -1,18 +1,25 @@
-# Production edge: TLS (automatic HTTPS), static app, API reverse proxy, security headers.
+# App container edge: serves the static app, proxies /api to FastAPI, and sets the
+# security headers. TLS is terminated by the host's nginx (see infra/nginx/), which
+# forwards to this container on 127.0.0.1:8080 only.
+#
 # Keep the CSP in sync with `preview.headers` in apps/web/vite.config.ts (the e2e
 # check runs the production build under that same policy).
 {
-	email {$ACME_EMAIL}
+	auto_https off
+	admin off
 	servers {
+		# nginx reaches us from the Docker bridge (a private address); trust only
+		# that hop for the real client IP. Anything else cannot spoof it.
 		trusted_proxies static private_ranges
+		client_ip_headers X-Forwarded-For
 	}
 }
 
-{$SITE_ADDRESS} {
+:80 {
 	encode zstd gzip
 
 	header {
-		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
 		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; font-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
@@ -25,7 +32,8 @@
 
 	handle /api/* {
 		reverse_proxy api:8000 {
-			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-For {client_ip}
+			header_up X-Forwarded-Proto https
 		}
 	}
 

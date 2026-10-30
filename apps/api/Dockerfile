@@ -2,8 +2,11 @@
 # Build context: repository root (the API links the Rust engine in crates/).
 
 FROM python:3.13-slim-bookworm AS build
+# The venv is created at its FINAL path: venv scripts (alembic, uvicorn) hard-code the
+# interpreter path in their shebang, so a venv moved after creation cannot start.
 ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH \
-    UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
+    UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never \
+    UV_PROJECT_ENVIRONMENT=/app/.venv
 RUN apt-get update \
  && apt-get install -y --no-install-recommends build-essential curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
@@ -25,7 +28,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM python:3.13-slim-bookworm AS runtime
 RUN useradd --system --uid 10001 --home /app arc
 WORKDIR /app
-COPY --from=build /src/apps/api/.venv /app/.venv
+COPY --from=build /app/.venv /app/.venv
 COPY apps/api/alembic.ini /app/alembic.ini
 COPY apps/api/migrations /app/migrations
 ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \

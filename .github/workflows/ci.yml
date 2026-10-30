@@ -18,6 +18,7 @@ jobs:
   engine:
     name: Rust engine
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - run: rustup show active-toolchain || rustup toolchain install
@@ -31,6 +32,7 @@ jobs:
   api:
     name: API
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:17-alpine
@@ -56,6 +58,7 @@ jobs:
   web:
     name: Web
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run: { working-directory: apps/web }
     steps:
@@ -78,6 +81,7 @@ jobs:
   e2e:
     name: End-to-end (production build, strict CSP)
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     needs: [api, web]
     services:
       postgres:
@@ -96,7 +100,7 @@ jobs:
       ARC_LEVELS_PATH: /tmp/levels.json
       ARC_SIGNING_KEYS: '{"k1": "ci-only-signing-key-not-secret-0123456789abcdef"}'
       ARC_RECOVERY_PEPPER: ci-only-pepper-not-secret-0123456789abcdef
-      ARC_ALLOWED_ORIGINS: '["http://localhost:4173"]'
+      ARC_ALLOWED_ORIGINS: '["http://127.0.0.1:4173"]'
       ARC_ALLOWED_HOSTS: '["localhost","127.0.0.1"]'
     steps:
       - uses: actions/checkout@v4
@@ -109,20 +113,36 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm, cache-dependency-path: apps/web/pnpm-lock.yaml }
       - run: ARC_LEVEL_SEED=ci-only-seed-not-secret-0123456789abcdef cargo run --release -p arc-levelgen -- --out /tmp/levels.json
-      - working-directory: apps/api
+      - name: Start API
+        working-directory: apps/api
         run: |
           uv sync --frozen
           uv run alembic upgrade head
-          uv run uvicorn --factory arc_api.main:app --port 8000 --no-access-log &
-      - working-directory: apps/web
+          nohup uv run uvicorn --factory arc_api.main:app --host 127.0.0.1 --port 8000 \
+            --no-access-log > "$RUNNER_TEMP/api.log" 2>&1 < /dev/null &
+      - name: Build web and start preview
+        working-directory: apps/web
         run: |
           pnpm install --frozen-lockfile
           pnpm wasm
           pnpm build
           pnpm exec playwright install --with-deps chromium
-          pnpm preview &
-          npx --yes wait-on http://localhost:4173 http://127.0.0.1:8000/api/v1/ready
-          pnpm e2e
+          # Pin IPv4: on the runner `localhost` may resolve to ::1 for one tool and
+          # 127.0.0.1 for another, so a waiter can knock on the wrong door forever.
+          nohup pnpm preview --host 127.0.0.1 > "$RUNNER_TEMP/preview.log" 2>&1 < /dev/null &
+      - name: Wait for both servers (max 2 min)
+        run: npx --yes wait-on --timeout 120000 http-get://127.0.0.1:4173 http-get://127.0.0.1:8000/api/v1/ready
+      - name: Run e2e
+        working-directory: apps/web
+        timeout-minutes: 10
+        env:
+          E2E_BASE_URL: http://127.0.0.1:4173
+        run: pnpm e2e
+      - name: Server logs
+        if: failure()
+        run: |
+          echo "::group::api.log"; cat "$RUNNER_TEMP/api.log" || true; echo "::endgroup::"
+          echo "::group::preview.log"; cat "$RUNNER_TEMP/preview.log" || true; echo "::endgroup::"
       - if: failure()
         uses: actions/upload-artifact@v4
         with: { name: playwright-traces, path: apps/web/test-results }

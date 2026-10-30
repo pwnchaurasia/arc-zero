@@ -8,11 +8,14 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import parse_qs, urlsplit
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MIN_SECRET_LEN = 32
+# asyncpg `ssl` modes that guarantee an encrypted connection.
+ENCRYPTED_SSL_MODES = frozenset({"require", "verify-ca", "verify-full"})
 
 
 class Settings(BaseSettings):
@@ -23,6 +26,10 @@ class Settings(BaseSettings):
 
     database_url: SecretStr = SecretStr("postgresql+asyncpg://arc:arc@localhost:5432/arc")
     redis_url: SecretStr = SecretStr("redis://localhost:6379/0")
+    # Per worker process (the image runs 2). Hosted poolers in session mode allow few
+    # connections (Supabase free: ~15), so 2 * (5 + 2) = 14 stays under the cap.
+    db_pool_size: int = Field(default=5, ge=1, le=50)
+    db_max_overflow: int = Field(default=2, ge=0, le=50)
     levels_path: Path = Path("levels.json")
 
     # HMAC keys for signed tokens (guest tickets, PoW challenges), by key id.
@@ -85,6 +92,11 @@ class Settings(BaseSettings):
             problems.append("ARC_HSTS must be true")
         if any(o.startswith("http://") for o in self.allowed_origins):
             problems.append("ARC_ALLOWED_ORIGINS must be https")
+        query = parse_qs(urlsplit(self.database_url.get_secret_value()).query)
+        if query.get("ssl", [""])[0] not in ENCRYPTED_SSL_MODES:
+            problems.append(
+                "ARC_DATABASE_URL must end with ?ssl=require (or verify-ca/verify-full)"
+            )
         if problems:
             raise ValueError("unsafe production settings: " + "; ".join(problems))
 

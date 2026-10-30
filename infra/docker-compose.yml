@@ -1,17 +1,17 @@
-# Production stack built from source (manual deploys / testing the images locally).
-# Automated releases use docker-compose.release.yml instead. Secrets: infra/secrets/.
+# Full stack built from source, with a local Postgres: for testing the production
+# images on one machine. Automated releases use docker-compose.release.yml.
 name: arc-zero
 services:
   web:
     build: { context: .., dockerfile: apps/web/Dockerfile }
     restart: unless-stopped
-    ports: ["80:80", "443:443", "443:443/udp"]
-    environment:
-      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS, e.g. play.example.com}
-      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
-    volumes: [caddy_data:/data, caddy_config:/config]
+    # Only the host's nginx can reach this; it is never exposed publicly.
+    ports: ["127.0.0.1:8080:80"]
     depends_on: { api: { condition: service_healthy } }
     networks: [edge, internal]
+    read_only: true
+    tmpfs: [/data, /config, /tmp]
+    security_opt: ["no-new-privileges:true"]
 
   api:
     build: { context: .., dockerfile: apps/api/Dockerfile }
@@ -65,7 +65,7 @@ secrets:
   postgres_password: { file: ./secrets/postgres_password }
   redis_password: { file: ./secrets/redis_password }
 
-volumes: { pgdata: {}, redisdata: {}, caddy_data: {}, caddy_config: {} }
+volumes: { pgdata: {}, redisdata: {} }
 
 networks:
   edge: {}

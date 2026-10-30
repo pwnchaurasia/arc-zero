@@ -39,44 +39,16 @@ Python in CI.
 
 We cannot stop a bot that genuinely solves puzzles; there are no leaderboards, so there is little reason to.
 
-## Development
+## Development and testing
 
-Prerequisites: Rust (pinned by `rust-toolchain.toml`), wasm-pack, uv, Node 22 + pnpm, Docker.
-
-```bash
-docker compose -f infra/docker-compose.dev.yml up -d       # Postgres :55432, Redis :56379
-
-# API
-cd apps/api
-cp .env.example .env                                       # fill in the secrets
-ARC_LEVEL_SEED=$(python3 -c "import secrets;print(secrets.token_urlsafe(48))") \
-  cargo run --release -p arc-levelgen -- --out levels.json
-uv sync && uv run alembic upgrade head
-uv run uvicorn --factory arc_api.main:app --reload --no-access-log
-
-# Web (another terminal)
-cd apps/web
-pnpm install && pnpm wasm && pnpm dev                      # http://localhost:5173
-```
-
-## Checks
+See **[DEVELOPMENT.md](DEVELOPMENT.md)**. In short:
 
 ```bash
-cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo test
-cd apps/api && uv run ruff check . && uv run mypy src tests && uv run pytest
-cd apps/web && pnpm lint && pnpm typecheck && pnpm test && pnpm determinism && pnpm build
+make setup        # once: secrets, Postgres + Redis, dependencies, WASM, levels, DB
+make api          # terminal 1: http://localhost:8000
+make web          # terminal 2: http://localhost:5173
+make ci           # before a PR: every check CI runs, incl. e2e in Docker under CI conditions
 ```
-
-### E2E
-
-Runs the production build under the production CSP against a live API:
-
-```bash
-cd apps/web && pnpm build && pnpm preview &                # :4173 with CSP headers
-E2E_CHANNEL=chrome pnpm e2e                                # or `playwright install chromium`
-```
-
-`ARC_ALLOWED_ORIGINS` must include `http://localhost:4173`.
 
 ## Deploying
 
@@ -109,11 +81,14 @@ git push -u origin release/26.10.01
    which starts the release and waits until every service is healthy,
 5. checks `https://play.pwnchaurasia.dev/api/v1/ready` through nginx.
 
-**Make `main` PR-only** (repo → Settings → Branches → Add rule for `main`), otherwise
-the "commit is on main" guarantee means nothing:
-- Require a pull request before merging
-- Require status checks to pass: `Rust engine`, `API`, `Web`, `End-to-end (production build, strict CSP)`
-- Require branches to be up to date before merging (so what was tested is exactly what lands)
+**`main` only accepts tested pull requests**, enforced by the ruleset in
+`.github/rulesets/main.json`: repo → Settings → Rules → Rulesets → New ruleset →
+**Import a ruleset** → choose that file → Create. It:
+- requires a pull request (no direct pushes to `main`),
+- requires the `CI passed` check, which succeeds only if every CI job succeeded,
+- requires the branch to be up to date with `main`, so what was tested is exactly what lands,
+- blocks force-pushes and deleting `main`,
+- has **no bypass list**: nobody, including repository admins, can merge without green CI.
 
 **Rollback:** cut a new release branch from an older commit on `main`, e.g.
 `git switch -c release/26.10.03 <old-commit> && git push -u origin release/26.10.03`.

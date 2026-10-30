@@ -21,7 +21,13 @@ const CSP = [
   "frame-ancestors 'none'",
 ].join("; ");
 
-const api = { "/api": { target: "http://127.0.0.1:8000", changeOrigin: false } };
+// Where /api is proxied. Docker e2e sets API_PROXY_TARGET=http://api:8000.
+const api = {
+  "/api": { target: process.env.API_PROXY_TARGET ?? "http://127.0.0.1:8000", changeOrigin: false },
+};
+
+// Host names `vite preview` accepts besides localhost (Docker e2e reaches it as "web").
+const previewHosts = process.env.PREVIEW_ALLOWED_HOSTS?.split(",").filter(Boolean);
 
 export default defineConfig({
   plugins: [
@@ -68,6 +74,7 @@ export default defineConfig({
     port: 4173,
     strictPort: true,
     proxy: api,
+    ...(previewHosts?.length ? { allowedHosts: previewHosts } : {}),
     headers: { "Content-Security-Policy": CSP, "X-Content-Type-Options": "nosniff" },
   },
   test: { environment: "node", include: ["src/**/*.test.ts"] },

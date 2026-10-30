@@ -60,11 +60,24 @@ export async function bottlePosition(page: Page, count: number, i: number) {
   return { x: box.x + (W - rowW) / 2 + i * w * (1 + gap) + w / 2, y: box.y + top + h * 0.6 };
 }
 
-/** Collects console errors (CSP violations show up here) for a test to assert on. */
+/**
+ * Warnings that mean our app misbehaved. Everything else at warning level is ignored:
+ * on GPU-less machines (CI, Docker) Chrome renders WebGL in software and logs driver
+ * noise such as "GL Driver Message ... GPU stall due to ReadPixels".
+ */
+const APP_WARNING = /brick blast:|Content.Security.Policy|Refused to/i;
+
+/**
+ * Collects console errors (CSP violations are errors), uncaught exceptions, and our own
+ * warnings (e.g. a WASM/server divergence) for a test to assert on.
+ */
 export function watchConsole(page: Page): string[] {
   const errors: string[] = [];
   page.on("console", (m) => {
-    if (m.type() === "error" || m.type() === "warning") errors.push(`${m.type()}: ${m.text()}`);
+    const text = m.text();
+    if (m.type() === "error" || (m.type() === "warning" && APP_WARNING.test(text))) {
+      errors.push(`${m.type()}: ${text}`);
+    }
   });
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   return errors;

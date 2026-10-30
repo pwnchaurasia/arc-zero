@@ -13,6 +13,7 @@ import type { BbState } from "../../api/types";
 import { haptic, sfx } from "../../feel/audio";
 import { bbConstants, engine, type BbConstants } from "../../engine/wasm";
 import { hpColor } from "../colors";
+import { drawBevelled } from "./bevel";
 import { createPixi, prefersReducedMotion, tween } from "../pixi";
 
 /** Engine encodings (see crates/arc-engine-wasm): cells are [tag, kind, hp]. */
@@ -227,10 +228,17 @@ export class BrickBlastView {
    * rasterised at its on-screen pixel size and counter-scaled. Otherwise each
    * label would allocate a texture thousands of pixels wide.
    */
-  private makeText(text: string, logicalSize: number, fill: number): Text {
+  private makeText(text: string, logicalSize: number, fill: number, outlined = false): Text {
+    const fontSize = Math.max(6, logicalSize * this.scale);
     const t = new Text({
       text,
-      style: { fontSize: Math.max(6, logicalSize * this.scale), fill, fontWeight: "800" },
+      style: {
+        fontSize,
+        fill,
+        fontWeight: "800",
+        // A soft dark outline keeps numbers readable on the light facets of a block.
+        ...(outlined ? { stroke: { color: 0x000000, width: fontSize * 0.14, alpha: 0.45 } } : {}),
+      },
     });
     t.anchor.set(0.5);
     t.scale.set(1 / this.scale);
@@ -270,18 +278,9 @@ export class BrickBlastView {
           tri_tr: [b, a, b, b, a, a],
         };
         const shape = SHAPES[kind] ?? "square";
-        g.poly(pts[shape]).fill(color).stroke({ width: cell * 0.03, color: 0xffffff, alpha: 0.25 });
-        const label = this.makeText(String(hp), cell * (hp >= 100 ? 0.3 : 0.36), 0xffffff);
-        // Centroid of the visible shape, so numbers sit inside triangles.
-        const offsets: Record<string, [number, number]> = {
-          square: [0.5, 0.5],
-          tri_bl: [0.36, 0.64],
-          tri_br: [0.64, 0.64],
-          tri_tl: [0.36, 0.36],
-          tri_tr: [0.64, 0.36],
-        };
-        const [ox, oy] = offsets[shape] ?? [0.5, 0.5];
-        label.position.set(cell * ox, cell * oy);
+        const centre = drawBevelled(g, pts[shape], color, cell * 0.025);
+        const label = this.makeText(String(hp), cell * (hp >= 100 ? 0.3 : 0.36), 0xffffff, true);
+        label.position.set(centre.x, centre.y);
         node.addChild(g, label);
         node.position.set(x0, y0);
         this.cellLayer.addChild(node);

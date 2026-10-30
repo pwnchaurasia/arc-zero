@@ -5,7 +5,9 @@
 //! too hard, block HP is scaled down until it becomes finishable.
 
 use arc_engine::brick_blast::bot::play_level;
-use arc_engine::brick_blast::{Cell, LevelScript, PowerKind, Row, Shape, COLS, EMPTY_ROW, MAX_HP};
+use arc_engine::brick_blast::{
+    Cell, LevelScript, PowerKind, Row, Shape, COLS, EMPTY_ROW, MAX_BALLS, MAX_HP,
+};
 use arc_engine::rng::Rng;
 use rayon::prelude::*;
 use serde::Serialize;
@@ -13,6 +15,11 @@ use serde::Serialize;
 use crate::derive_seed;
 
 const BOT_AIMS: u16 = 31;
+/// No block is ever weaker than this, on any level (design decision 2026-10-30).
+const MIN_BLOCK_HP: u16 = 50;
+/// Balls on level 1 and level 100; levels in between interpolate.
+const START_BALLS_FIRST: f64 = 30.0;
+const START_BALLS_LAST: f64 = 60.0;
 const MAX_ATTEMPTS: u32 = 24;
 const WINNERS_WANTED: usize = 3;
 
@@ -63,16 +70,21 @@ fn pick_power(rng: &mut Rng, pool: &[(PowerKind, u32)]) -> PowerKind {
     pool[0].0
 }
 
-fn build_script(level: u16, seed: u64, hp_scale: f64) -> LevelScript {
+/// `extra_balls` is added when the bot could not finish a layout, so a level gets
+/// easier by giving the player more balls, never by dropping blocks below MIN_BLOCK_HP.
+fn build_script(level: u16, seed: u64, extra_balls: u16) -> LevelScript {
     let mut rng = Rng::new(seed);
     let t = f64::from(level - 1) / 99.0;
     let tutorial = level <= 3;
 
-    let start_balls = if tutorial { 3 } else { 3 + level / 6 };
+    let start_balls = to_u16(lerp(START_BALLS_FIRST, START_BALLS_LAST, t))
+        .saturating_add(extra_balls)
+        .min(MAX_BALLS);
     let total_rows = usize::from(to_u16(lerp(4.0, 24.0, t)));
     let start_count = (2 + usize::from(level) / 30).min(5).min(total_rows - 1);
-    let hp_lo = lerp(1.0, 40.0, t);
-    let hp_hi = lerp(5.0, 150.0, t);
+    // Block HP range: 50-70 on level 1, rising to 90-150 on level 100.
+    let hp_lo = lerp(f64::from(MIN_BLOCK_HP), 90.0, t);
+    let hp_hi = lerp(70.0, f64::from(MAX_HP), t);
     let max_blocks = i64::from(to_u16(lerp(4.0, 7.0, t)));
     let tri_chance = if level < 16 {
         0
@@ -93,13 +105,15 @@ fn build_script(level: u16, seed: u64, hp_scale: f64) -> LevelScript {
         let mut cols: Vec<usize> = (0..COLS).collect();
         rng.shuffle(&mut cols);
         let blocks = usize::try_from(rng.range(2, max_blocks)).unwrap_or(2);
-        // Later rows are tougher than earlier ones.
-        let row_factor = 0.55 + 0.45 * i as f64 / (total_rows.max(2) - 1) as f64;
+        // Later rows are tougher than earlier ones (within the level's HP range).
+        let row_factor = 0.8 + 0.2 * i as f64 / (total_rows.max(2) - 1) as f64;
         for &c in &cols[..blocks] {
-            let hp_min = (hp_lo * row_factor * hp_scale).max(1.0);
-            let hp_max = (hp_hi * row_factor * hp_scale).max(hp_min);
+            let hp_min = (hp_lo * row_factor).max(f64::from(MIN_BLOCK_HP));
+            let hp_max = (hp_hi * row_factor).max(hp_min);
             let hp = rng.range(i64::from(to_u16(hp_min)), i64::from(to_u16(hp_max)));
-            let hp = u16::try_from(hp).unwrap_or(1).clamp(1, MAX_HP);
+            let hp = u16::try_from(hp)
+                .unwrap_or(MIN_BLOCK_HP)
+                .clamp(MIN_BLOCK_HP, MAX_HP);
             let shape = if rng.chance(tri_chance, 100) {
                 shapes[usize::try_from(rng.below(4)).unwrap_or(0)]
             } else {
@@ -143,13 +157,13 @@ fn required_margin(level: u16) -> u8 {
 
 fn build_level(master: &str, level: u16) -> BbLevel {
     let mut winners: Vec<BbLevel> = Vec::new();
-    let mut hp_scale = 1.0;
+    let mut extra_balls = 0u16;
     for attempt in 0..MAX_ATTEMPTS {
         if attempt > 0 && attempt % 4 == 0 && winners.is_empty() {
-            hp_scale *= 0.85;
+            extra_balls += 10;
         }
         let seed = derive_seed(master, &["bb", &level.to_string(), &attempt.to_string()]);
-        let script = build_script(level, seed, hp_scale);
+        let script = build_script(level, seed, extra_balls);
         let Ok(run) = play_level(&script, BOT_AIMS) else {
             continue;
         };

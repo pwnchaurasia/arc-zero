@@ -1,0 +1,83 @@
+# Full end-to-end test stack, identical on every machine and close to CI:
+# Linux, headless Chromium with no GPU, the production API image, and the production
+# web build served under the production CSP. Run it with `make e2e-docker`.
+#
+# Everything here is throwaway test data: the keys and seed below are not secrets.
+name: arc-zero-e2e
+
+x-api-env: &api-env
+  ARC_ENV: development
+  ARC_DATABASE_URL: postgresql+asyncpg://arc:arc@postgres:5432/arc
+  ARC_REDIS_URL: redis://redis:6379/0
+  ARC_LEVELS_PATH: /levels/levels.json
+  ARC_SIGNING_KEYS: '{"k1": "e2e-only-signing-key-not-secret-0123456789"}'
+  ARC_SIGNING_KID: k1
+  ARC_RECOVERY_PEPPER: e2e-only-pepper-not-secret-0123456789abcdef
+  ARC_ALLOWED_ORIGINS: '["http://web:4173"]'
+  ARC_ALLOWED_HOSTS: '["web", "api", "127.0.0.1", "localhost"]'
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment: { POSTGRES_USER: arc, POSTGRES_PASSWORD: arc, POSTGRES_DB: arc }
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U arc"], interval: 2s, retries: 30 }
+
+  redis:
+    image: redis:7-alpine
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 2s, retries: 30 }
+
+  # Builds the levels with the same generator as production (non-secret test seed).
+  levels:
+    image: rust:1.90-slim-bookworm
+    working_dir: /src
+    environment:
+      RUSTUP_TOOLCHAIN: "1.90.0" # use the image's toolchain as-is
+      CARGO_TARGET_DIR: /target
+      ARC_LEVEL_SEED: e2e-only-level-seed-not-secret-0123456789abcdef
+    command: ["cargo", "run", "--locked", "--release", "-p", "arc-levelgen", "--", "--out", "/levels/levels.json"]
+    volumes:
+      - ..:/src:ro
+      - cargo-target:/target
+      - cargo-registry:/usr/local/cargo/registry
+      - levels:/levels
+
+  migrate:
+    build: { context: .., dockerfile: apps/api/Dockerfile }
+    image: arc-zero-e2e-api
+    command: ["alembic", "upgrade", "head"]
+    environment: *api-env
+    depends_on: { postgres: { condition: service_healthy } }
+
+  api:
+    image: arc-zero-e2e-api
+    environment: *api-env
+    volumes: [levels:/levels:ro]
+    depends_on:
+      levels: { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  web:
+    build: { context: .., dockerfile: apps/web/Dockerfile, target: preview }
+    environment:
+      API_PROXY_TARGET: http://api:8000
+      PREVIEW_ALLOWED_HOSTS: web
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4173').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 2s
+      retries: 30
+    depends_on: { api: { condition: service_healthy } }
+
+  e2e:
+    build: { context: .., dockerfile: apps/web/Dockerfile, target: e2e }
+    environment:
+      E2E_BASE_URL: http://web:4173
+      CI: "1" # same retry policy as CI
+    volumes: ["../apps/web/test-results:/src/apps/web/test-results"]
+    depends_on: { web: { condition: service_healthy } }
+    profiles: [test] # started only by `docker compose run e2e`
+
+volumes:
+  levels: {}
+  cargo-target: {}
+  cargo-registry: {}

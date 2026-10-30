@@ -20,10 +20,14 @@ target_metadata = Base.metadata
 
 
 def _url() -> str:
+    # Containers pass ARC_DATABASE_URL directly; locally it comes from apps/api/.env
+    # through the app's own settings.
     url = os.environ.get("ARC_DATABASE_URL")
-    if not url:
-        raise RuntimeError("ARC_DATABASE_URL is not set")
-    return url
+    if url:
+        return url
+    from arc_api.config import Settings
+
+    return Settings().database_url.get_secret_value()
 
 
 def run_migrations_offline() -> None:

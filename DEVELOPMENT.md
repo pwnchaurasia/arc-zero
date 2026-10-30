@@ -27,12 +27,11 @@ database migrations. Safe to run again: it never overwrites your `.env`.
 
 ## 3. Day to day
 
-Two terminals:
-
 ```bash
-make api     # http://localhost:8000  (API, reloads on save)
-make web     # http://localhost:5173  (game, hot reload)
+make dev     # API (:8000) + game (:5173) in one terminal; Ctrl+C stops both
 ```
+
+Or in two terminals, if you prefer separate logs: `make api` and `make web`.
 
 Open **http://localhost:5173**. Use `localhost`, not `127.0.0.1`: the API only accepts
 requests from the origins listed in `apps/api/.env`, and blocks others with a 403.

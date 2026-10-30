@@ -8,7 +8,7 @@ E2E := docker compose -f infra/docker-compose.e2e.yml
 DEV_LEVEL_SEED := dev-only-level-seed-not-secret-0123456789abcdef
 
 .DEFAULT_GOAL := help
-.PHONY: help doctor setup env services services-down levels wasm engine migrate api web preview \
+.PHONY: help doctor setup env services services-down levels wasm engine migrate dev api web preview \
 	test test-rust test-api test-web lint fmt check e2e e2e-docker e2e-docker-down ci clean
 
 help: ## List commands
@@ -52,6 +52,10 @@ migrate: ## Apply database migrations
 	cd apps/api && uv run alembic upgrade head
 
 # ------------------------------------------------------------------ run
+
+dev: services ## Play locally: API + web in one terminal, open http://localhost:5173 (Ctrl+C stops)
+	@echo "Starting API (:8000) and web (:5173). Open http://localhost:5173 ; Ctrl+C stops both."
+	@$(MAKE) -j2 --no-print-directory api web
 
 api: ## Run the API with auto-reload on :8000
 	cd apps/api && uv run uvicorn --factory arc_api.main:app --reload --no-access-log

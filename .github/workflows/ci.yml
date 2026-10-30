@@ -1,11 +1,12 @@
 name: CI
 
+# Tests run once per change: on its pull request. `main` only accepts merges whose
+# checks passed (branch protection), and releases deploy only commits already on
+# `main`, so re-running the suite after merging or when releasing would test the
+# same code again.
 on:
-  push:
-    branches: [main]
   pull_request:
-  # The release workflow runs this whole suite before anything is deployed.
-  workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read

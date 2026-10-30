@@ -87,23 +87,38 @@ hosted elsewhere (encrypted connection), so losing the droplet loses no player d
 
 ### Releasing
 
-Push a branch named `release/YY.MM.XX` (year, month, release number that month):
+Each change is tested **once**, on its pull request:
+
+```
+feature branch ──PR──▶ CI (engine, API, web, e2e) ──merge──▶ main ──branch release/YY.MM.XX──▶ deploy
+                       the only test run                    no CI      checks the commit is on main,
+                                                                       builds images, deploys
+```
 
 ```bash
 git switch main && git pull
-git switch -c release/26.10.01
+git switch -c release/26.10.01        # YY.MM.XX: year, month, release number that month
 git push -u origin release/26.10.01
 ```
 
 `.github/workflows/release.yml` then:
 1. rejects any other branch name format,
-2. runs the full CI suite (engine, API, web, e2e under the production CSP),
+2. refuses commits that are not on `main` (so untested code can't be deployed),
 3. builds the API and web images and pushes them to `ghcr.io/pwnchaurasia/arc-zero-{api,web}:YY.MM.XX`,
-4. SSHes to the server, pulls those images, runs migrations and restarts,
-5. fails the release if `https://play.pwnchaurasia.dev/api/v1/ready` is not healthy.
+4. writes the config from GitHub secrets, uploads it over SSH and runs `infra/deploy/activate.sh`,
+   which starts the release and waits until every service is healthy,
+5. checks `https://play.pwnchaurasia.dev/api/v1/ready` through nginx.
 
-**Rollback:** on the server, set `IMAGE_TAG=<previous version>` in `/opt/arc-zero/.env`
-and run `docker compose up -d`. (Migrations are additive; check before rolling back across one that is not.)
+**Make `main` PR-only** (repo → Settings → Branches → Add rule for `main`), otherwise
+the "commit is on main" guarantee means nothing:
+- Require a pull request before merging
+- Require status checks to pass: `Rust engine`, `API`, `Web`, `End-to-end (production build, strict CSP)`
+- Require branches to be up to date before merging (so what was tested is exactly what lands)
+
+**Rollback:** cut a new release branch from an older commit on `main`, e.g.
+`git switch -c release/26.10.03 <old-commit> && git push -u origin release/26.10.03`.
+For an instant rollback without CI, set `IMAGE_TAG=<previous version>` in `/opt/arc-zero/.env`
+on the server and run `docker compose up -d`.
 
 ### One-time server setup (DigitalOcean droplet, shared with other sites)
 

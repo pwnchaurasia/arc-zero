@@ -147,3 +147,24 @@ jobs:
       - if: failure()
         uses: actions/upload-artifact@v4
         with: { name: playwright-traces, path: apps/web/test-results }
+
+  # The single check that `main` requires (see .github/rulesets/main.json). It passes
+  # only if every job above succeeded, so adding or renaming a job can never silently
+  # remove it from the merge requirement.
+  gate:
+    name: CI passed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [engine, api, web, e2e]
+    if: always()
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "job results: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then
+              echo "::error::Not every CI job succeeded; merging into main is blocked."
+              exit 1
+            fi
+          done

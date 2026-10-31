@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     allowed_origins: list[str] = ["http://localhost:5173"]
     allowed_hosts: list[str] = ["localhost", "127.0.0.1", "testserver"]
     expose_docs: bool = False
+    # Local playtesting only: every level can be started, skipping the unlock order and
+    # the guest gate. Wins are still verified. Refused in production (check_production).
+    dev_unlock_all: bool = False
     hsts: bool = False
 
     cookie_secure: bool = False
@@ -88,6 +91,8 @@ class Settings(BaseSettings):
             problems.append("ARC_COOKIE_SECURE must be true")
         if self.expose_docs:
             problems.append("ARC_EXPOSE_DOCS must be false")
+        if self.dev_unlock_all:
+            problems.append("ARC_DEV_UNLOCK_ALL is for local playtesting only")
         if not self.hsts:
             problems.append("ARC_HSTS must be true")
         if any(o.startswith("http://") for o in self.allowed_origins):

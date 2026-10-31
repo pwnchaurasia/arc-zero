@@ -24,7 +24,42 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Same environment as the deploy, so every secret and variable lives in one place:
+    # Settings -> Environments -> production.
+    environment: production
     steps:
+      - name: Check backup settings
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          S3_ACCESS_KEY: ${{ secrets.BACKUP_S3_ACCESS_KEY }}
+          S3_SECRET_KEY: ${{ secrets.BACKUP_S3_SECRET_KEY }}
+          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+          S3_BUCKET: ${{ vars.BACKUP_S3_BUCKET }}
+        run: |
+          fail=0
+          need() { if [ -z "$2" ]; then echo "::error::Missing $1 in Settings -> Environments -> production"; fail=1; fi; }
+          need "secret BACKUP_DATABASE_URL" "$DATABASE_URL"
+          need "secret BACKUP_S3_ACCESS_KEY" "$S3_ACCESS_KEY"
+          need "secret BACKUP_S3_SECRET_KEY" "$S3_SECRET_KEY"
+          need "variable BACKUP_AGE_RECIPIENT" "$AGE_RECIPIENT"
+          need "variable BACKUP_S3_BUCKET" "$S3_BUCKET"
+          if [ -n "$DATABASE_URL" ]; then
+            case "$DATABASE_URL" in
+              postgresql+asyncpg://*|*'?ssl='*|*'&ssl='*)
+                echo "::error::BACKUP_DATABASE_URL is in the app's format. pg_dump needs postgresql://...?sslmode=require (no '+asyncpg', and 'sslmode' instead of 'ssl')."
+                fail=1 ;;
+              postgresql://*sslmode=require*|postgresql://*sslmode=verify-ca*|postgresql://*sslmode=verify-full*) ;;
+              *)
+                echo "::error::BACKUP_DATABASE_URL must look like postgresql://user:pass@host:port/db?sslmode=require"
+                fail=1 ;;
+            esac
+          fi
+          if [ -n "$AGE_RECIPIENT" ] && [[ "$AGE_RECIPIENT" != age1* ]]; then
+            echo "::error::BACKUP_AGE_RECIPIENT must be an age public key (starts with age1). Never the private key."
+            fail=1
+          fi
+          exit $fail
+
       - name: Install age
         run: sudo apt-get update -qq && sudo apt-get install -y -qq age
 
@@ -36,10 +71,6 @@ jobs:
           PG_IMAGE: ${{ vars.BACKUP_PG_IMAGE || 'postgres:17-alpine' }}
         run: |
           set -euo pipefail
-          case "$DATABASE_URL" in
-            *sslmode=require*|*sslmode=verify-ca*|*sslmode=verify-full*) ;;
-            *) echo "::error::BACKUP_DATABASE_URL must use sslmode=require (or verify-*)"; exit 1 ;;
-          esac
           file="arc-zero-$(date -u +%Y-%m-%dT%H%MZ).dump.age"
           # pg_dump runs in a container so its version can match the server (BACKUP_PG_IMAGE).
           # Only the app's `public` schema: hosted Postgres (e.g. Supabase) has its own

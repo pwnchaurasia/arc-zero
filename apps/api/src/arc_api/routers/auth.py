@@ -151,6 +151,34 @@ async def restore(
     response.status_code = 204
 
 
+@router.post("/recovery-key")
+async def new_recovery_key(who: PrincipalDep, state: StateDep, db: DbDep) -> RegisterOut:
+    """Replaces a signed-in player's recovery key (e.g. the old one was never saved).
+
+    Being signed in is the proof of ownership: there is no email or password, and the
+    old key cannot be shown again because only its hash is stored. The old key stops
+    working immediately; the new one is returned once.
+    """
+    if who.player_id is None:
+        raise ApiError(401, "not_signed_in", "Sign in on a device that has your progress first.")
+    await state.limiter.hit(f"new-key:{who.player_id}", 3, 86400)
+    pepper = state.settings.recovery_pepper.get_secret_value().encode()
+    for _ in range(3):
+        key = generate_key()
+        try:
+            await db.execute(
+                update(Player)
+                .where(Player.id == who.player_id)
+                .values(key_hash=hash_key(key, pepper), last_active=func.now())
+            )
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            continue
+        return RegisterOut(recovery_key=key)
+    raise ApiError(500, "internal", "Could not create a new key.")
+
+
 @router.post("/logout", status_code=204)
 async def logout(response: Response, who: PrincipalDep, state: StateDep) -> None:
     if who.session_token:

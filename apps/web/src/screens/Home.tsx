@@ -2,19 +2,24 @@ import type { GameId } from "../api/types";
 import { useSession } from "../state/session";
 import { GearIcon } from "../ui/icons";
 import { Button, IconButton } from "../ui/kit";
+import { GameLogo } from "./GameLogo";
 
-export const GAMES: { id: GameId; name: string; tagline: string; accent: string }[] = [
+/**
+ * Games on the home screen. Set `image` to a square logo in public/games/
+ * (e.g. "/games/water-sort.webp") to replace the drawn placeholder.
+ */
+export const GAMES: { id: GameId; name: string; tagline: string; image?: string }[] = [
   {
     id: "water-sort",
     name: "Water Sort",
     tagline: "Pour until every bottle holds one colour.",
-    accent: "from-sky-500/30 to-fuchsia-500/20",
+    image: "/games/water-sort.webp",
   },
   {
     id: "brick-blast",
     name: "Brick Blast",
     tagline: "Aim once. Bounce everything. Break it all.",
-    accent: "from-amber-500/30 to-rose-500/20",
+    image: "/games/brick-blast.webp",
   },
 ];
 
@@ -30,7 +35,7 @@ export function Home({
   const { me, error, refresh } = useSession();
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto">
+    <div className="mx-auto flex h-full w-full max-w-6xl flex-col overflow-y-auto">
       <header className="flex items-center justify-between px-5 pb-2 pt-5">
         <div>
           <h1 className="text-3xl font-black tracking-tight">Arc Zero</h1>
@@ -68,7 +73,8 @@ export function Home({
         </button>
       )}
 
-      <main className="grid gap-4 p-5">
+      {/* 2 tiles per row on phones, up to 5 on a laptop. */}
+      <main className="grid grid-cols-2 gap-4 p-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
         {GAMES.map((g) => {
           const progress = me?.games[g.id];
           const cleared = progress ? Object.keys(progress.stars).length : 0;
@@ -79,19 +85,28 @@ export function Home({
               type="button"
               key={g.id}
               onClick={() => onOpen(g.id)}
-              className={`rounded-3xl border border-line bg-gradient-to-br ${g.accent} p-5 text-left transition active:scale-[0.98]`}
+              className="group flex flex-col overflow-hidden rounded-3xl border border-line bg-panel text-left transition hover:border-accent/60 active:scale-[0.98]"
             >
-              <h2 className="text-2xl font-extrabold">{g.name}</h2>
-              <p className="mt-1 text-muted">{g.tagline}</p>
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-ink/60">
-                <div
-                  className="h-full rounded-full bg-accent transition-all"
-                  style={{ width: `${(cleared / total) * 100}%` }}
-                />
+              <div className="overflow-hidden">
+                <div className="transition duration-300 group-hover:scale-105">
+                  <GameLogo game={g.id} image={g.image} />
+                </div>
               </div>
-              <p className="mt-2 text-sm text-muted">
-                {cleared}/{total} levels · {stars} ★
-              </p>
+              <div className="flex flex-1 flex-col p-3">
+                <h2 className="text-base font-extrabold leading-tight sm:text-lg">{g.name}</h2>
+                <p className="mt-1 line-clamp-2 text-xs text-muted">{g.tagline}</p>
+                <div className="mt-auto pt-3">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-ink/60">
+                    <div
+                      className="h-full rounded-full bg-accent transition-all"
+                      style={{ width: `${(cleared / total) * 100}%` }}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-xs text-muted">
+                    {cleared}/{total} levels · {stars} ★
+                  </p>
+                </div>
+              </div>
             </button>
           );
         })}

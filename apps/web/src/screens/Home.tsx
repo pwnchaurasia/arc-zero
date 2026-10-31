@@ -13,11 +13,13 @@ export const GAMES: { id: GameId; name: string; tagline: string; image?: string 
     id: "water-sort",
     name: "Water Sort",
     tagline: "Pour until every bottle holds one colour.",
+    image: "/games/water-sort.webp",
   },
   {
     id: "brick-blast",
     name: "Brick Blast",
     tagline: "Aim once. Bounce everything. Break it all.",
+    image: "/games/brick-blast.webp",
   },
 ];
 

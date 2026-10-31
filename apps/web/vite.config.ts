@@ -37,7 +37,7 @@ export default defineConfig({
       registerType: "autoUpdate",
       // External registerSW.js (no inline script), so the strict CSP holds.
       injectRegister: "script",
-      includeAssets: ["icons/*.png", "icons/*.svg"],
+      includeAssets: ["icons/*.png", "icons/*.svg", "games/*.webp"],
       manifest: {
         name: "Arc Zero",
         short_name: "Arc Zero",
@@ -55,7 +55,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,wasm,png,svg,webmanifest}"],
+        globPatterns: ["**/*.{js,css,html,wasm,png,svg,webp,webmanifest}"],
         // Never cache or fall back for the API: progress always comes from the server.
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [],

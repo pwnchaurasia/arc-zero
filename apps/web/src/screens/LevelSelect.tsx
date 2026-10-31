@@ -29,7 +29,7 @@ export function LevelSelect({
         {Array.from({ length: count }, (_, i) => i + 1).map((level) => {
           const stars = progress?.stars[String(level)] ?? 0;
           const behindGate = gated && me !== null && level > me.guest_max_level;
-          const open = level <= unlocked && !behindGate;
+          const open = !!me?.all_levels_open || (level <= unlocked && !behindGate);
           return (
             <button
               type="button"

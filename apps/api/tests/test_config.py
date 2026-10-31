@@ -37,6 +37,7 @@ def test_safe_production_settings_load() -> None:
         ("expose_docs", True),
         ("allowed_origins", ["http://play.example.com"]),
         ("recovery_pepper", "short"),
+        ("dev_unlock_all", True),
     ],
 )
 def test_unsafe_production_settings_rejected(field: str, value: Any) -> None:

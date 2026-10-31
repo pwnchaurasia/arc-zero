@@ -55,6 +55,13 @@ export function Home({
         </div>
       )}
 
+      {me?.all_levels_open && (
+        <p className="mx-5 mt-3 rounded-2xl border border-fuchsia-400/40 bg-fuchsia-500/10 p-3 text-sm text-fuchsia-200">
+          <strong>Playtest mode:</strong> every level is open. Local only; the live game refuses
+          this setting.
+        </p>
+      )}
+
       {me?.registration_required && (
         <button
           type="button"

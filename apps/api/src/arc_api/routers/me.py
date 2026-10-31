@@ -25,6 +25,8 @@ class GameOut(StrictModel):
 
 class MeOut(StrictModel):
     signed_in: bool
+    # True only in local playtest mode (ARC_DEV_UNLOCK_ALL): every level can be played.
+    all_levels_open: bool = False
     guest_max_level: int
     registration_required: bool
     games: dict[str, GameOut]
@@ -61,6 +63,7 @@ async def me(who: PrincipalDep, state: StateDep, db: DbDep) -> MeOut:
     gate = state.settings.guest_max_level
     return MeOut(
         signed_in=who.player_id is not None,
+        all_levels_open=state.settings.dev_unlock_all,
         guest_max_level=gate,
         registration_required=who.player_id is None
         and any(len(stars[g]) >= gate for g in GAME_IDS),

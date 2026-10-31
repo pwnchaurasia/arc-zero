@@ -33,6 +33,11 @@ make dev     # API (:8000) + game (:5173) in one terminal; Ctrl+C stops both
 
 Or in two terminals, if you prefer separate logs: `make api` and `make web`.
 
+**Playtesting any level:** `make dev-unlocked` opens every level (no unlock order, no
+level-3 gate) so you can jump straight to level 80 and judge the difficulty. A banner
+on the home screen shows when it's on. Wins are still verified. The setting is
+`ARC_DEV_UNLOCK_ALL=true`, and the API refuses to start with it in production.
+
 Open **http://localhost:5173**. Use `localhost`, not `127.0.0.1`: the API only accepts
 requests from the origins listed in `apps/api/.env`, and blocks others with a 403.
 

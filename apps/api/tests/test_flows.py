@@ -140,6 +140,39 @@ async def test_me_gives_guest_one_stable_identity(app_client: AsyncClient) -> No
     assert r.status_code == 200, r.text
 
 
+async def test_playtest_mode_opens_every_level_but_still_verifies_wins(
+    app_client: AsyncClient,
+) -> None:
+    app_client.app.state.arc.settings.dev_unlock_all = True  # type: ignore[attr-defined]
+    me = (await app_client.get("/api/v1/me")).json()
+    assert me["all_levels_open"] is True
+    headers = {"x-guest-ticket": me["guest_ticket"]}
+
+    # A brand-new guest can start any level, past the unlock order and the level-3 gate.
+    start = await app_client.post("/api/v1/games/water-sort/levels/5/start", headers=headers)
+    assert start.status_code == 200, start.text
+    r = await app_client.post("/api/v1/games/brick-blast/levels/4/start", headers=headers)
+    assert r.status_code == 200, r.text
+
+    # Wins are still verified by replay: a fake completion is rejected.
+    r = await app_client.post(
+        "/api/v1/games/water-sort/levels/5/complete",
+        json={"attempt_id": start.json()["attempt_id"], "moves": []},
+        headers=headers,
+    )
+    assert r.json()["error"]["code"] == "not_solved"
+
+
+async def test_playtest_mode_is_off_by_default(app_client: AsyncClient) -> None:
+    me = (await app_client.get("/api/v1/me")).json()
+    assert me["all_levels_open"] is False
+    r = await app_client.post(
+        "/api/v1/games/water-sort/levels/5/start",
+        headers={"x-guest-ticket": me["guest_ticket"]},
+    )
+    assert r.status_code == 403
+
+
 async def test_signed_in_player_can_replace_a_lost_recovery_key(app_client: AsyncClient) -> None:
     url = "/api/v1/auth/recovery-key"
     # Guests have no key to replace.

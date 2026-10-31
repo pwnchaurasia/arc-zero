@@ -180,7 +180,7 @@ Setup, once:
      --bucket pwn-backups --lifecycle-configuration \
      '{"Rules":[{"ID":"expire-30d","Status":"Enabled","Prefix":"arc-zero/","Expiration":{"Days":30}}]}'
    ```
-4. **GitHub** (Settings → Secrets and variables → Actions):
+4. **GitHub** (Settings → Environments → `production`, next to the deploy secrets):
    - secrets: `BACKUP_DATABASE_URL` (libpq form: `postgresql://user:pass@host:port/arc_zero?sslmode=require`),
      `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY`;
    - variables: `BACKUP_AGE_RECIPIENT` (`age1…`), `BACKUP_S3_BUCKET`; optional

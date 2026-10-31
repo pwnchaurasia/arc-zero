@@ -11,6 +11,7 @@ use arc_engine::brick_blast::{
 use arc_engine::rng::Rng;
 use rayon::prelude::*;
 use serde::Serialize;
+use std::time::Instant;
 
 use crate::derive_seed;
 
@@ -20,8 +21,9 @@ const MIN_BLOCK_HP: u16 = 50;
 /// Balls on level 1 and level 100; levels in between interpolate.
 const START_BALLS_FIRST: f64 = 33.0;
 const START_BALLS_LAST: f64 = 60.0;
-const MAX_ATTEMPTS: u32 = 24;
-const WINNERS_WANTED: usize = 3;
+const MAX_ATTEMPTS: u32 = 16;
+/// Balls added after every two layouts the bot could not finish.
+const BALLS_PER_RETRY: u16 = 8;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct BbLevel {
@@ -155,48 +157,58 @@ fn required_margin(level: u16) -> u8 {
     }
 }
 
+/// Builds one level: the first layout the bot can finish with the required margin.
+///
+/// Work is bounded for every seed: after each pair of failed layouts the player gets
+/// more balls (blocks are never weakened), so a finishable layout turns up quickly.
+/// Every 10th level is a breather built with the settings of a level 8 lower.
 fn build_level(master: &str, level: u16) -> BbLevel {
-    let mut winners: Vec<BbLevel> = Vec::new();
+    let started = Instant::now();
+    eprintln!("  bb {level:>3}: started");
+    let breather = level.is_multiple_of(10) && level != 100;
+    let settings_level = if breather { level - 8 } else { level };
     let mut extra_balls = 0u16;
     for attempt in 0..MAX_ATTEMPTS {
-        if attempt > 0 && attempt % 4 == 0 && winners.is_empty() {
-            extra_balls += 10;
+        if attempt > 0 && attempt % 2 == 0 {
+            extra_balls += BALLS_PER_RETRY;
         }
         let seed = derive_seed(master, &["bb", &level.to_string(), &attempt.to_string()]);
-        let script = build_script(level, seed, extra_balls);
+        let script = build_script(settings_level, seed, extra_balls);
+        let attempt_started = Instant::now();
         let Ok(run) = play_level(&script, BOT_AIMS) else {
             continue;
         };
         if !run.won || run.closest < required_margin(level) {
+            eprintln!(
+                "  bb {level:>3}: layout {} rejected (won {}, closest {}, {} turns, {} balls, {:.1?})",
+                attempt + 1,
+                run.won,
+                run.closest,
+                run.turns,
+                script.start_balls,
+                attempt_started.elapsed()
+            );
             continue;
         }
         let total_hp = script.total_hp();
         let difficulty = f64::from(run.turns)
             + 4.0 * f64::from(11u8.saturating_sub(run.closest))
             + f64::from(total_hp) / (f64::from(script.start_balls) * 25.0);
-        winners.push(BbLevel {
+        eprintln!(
+            "  bb {level:>3}: found after {} layout(s), +{extra_balls} balls, {:.1?}",
+            attempt + 1,
+            started.elapsed()
+        );
+        return BbLevel {
             level,
             script,
             total_hp,
             bot_turns: run.turns,
             bot_closest: run.closest,
             difficulty,
-        });
-        if winners.len() >= WINNERS_WANTED {
-            break;
-        }
+        };
     }
-    assert!(
-        !winners.is_empty(),
-        "brick blast level {level}: no finishable layout found"
-    );
-    winners.sort_by(|a, b| a.difficulty.total_cmp(&b.difficulty));
-    let pick = if level.is_multiple_of(10) && level != 100 {
-        0
-    } else {
-        winners.len() / 2
-    };
-    winners.swap_remove(pick)
+    panic!("brick blast level {level}: no finishable layout in {MAX_ATTEMPTS} attempts");
 }
 
 pub fn generate(master: &str, max_level: u16) -> Vec<BbLevel> {

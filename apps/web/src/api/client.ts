@@ -143,6 +143,7 @@ export const api = {
     }),
   restore: (recoveryKey: string, pow: { token: string; nonce: number }) =>
     request<undefined>("POST", "/auth/restore", { recovery_key: recoveryKey, pow }),
+  newRecoveryKey: () => request<{ recovery_key: string }>("POST", "/auth/recovery-key"),
   logout: async () => {
     await request<undefined>("POST", "/auth/logout");
     identity = null;

@@ -27,8 +27,23 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
-      - name: Levels generate and are finishable
-        run: ARC_LEVEL_SEED=ci-only-seed-not-secret-0123456789abcdef cargo run --release -p arc-levelgen -- --out /tmp/levels.json
+      # Every release regenerates the levels from its secret seed, so generation must be
+      # fast for ANY seed, not just one: three seeds, each capped at 10 minutes on this
+      # 4-core runner (the deploy job has 30 minutes in total).
+      - name: Levels generate quickly for several seeds and are finishable
+        run: |
+          cargo build --release -p arc-levelgen
+          for seed in ci-only-seed-not-secret-0123456789abcdef \
+                      ci-only-second-seed-not-secret-0123456789ab \
+                      "$(openssl rand -hex 32)"; do
+            start=$(date +%s)
+            if ! ARC_LEVEL_SEED="$seed" timeout 600 ./target/release/arc-levelgen --out /tmp/levels.json 2> /tmp/levelgen.log; then
+              echo "::error::Level generation failed or took over 10 minutes (seed ${seed:0:12}...)"
+              tail -20 /tmp/levelgen.log
+              exit 1
+            fi
+            echo "seed ${seed:0:12}...: $(( $(date +%s) - start ))s, $(grep -c rejected /tmp/levelgen.log) layouts rejected"
+          done
 
   api:
     name: API

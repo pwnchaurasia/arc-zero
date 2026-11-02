@@ -292,6 +292,18 @@ impl MetroJam {
         self.game.boarded()
     }
 
+    /// Commuters known so far, boarded or not (the queue the server revealed).
+    #[must_use]
+    pub fn known(&self) -> usize {
+        self.game.queue().len()
+    }
+
+    /// Adds commuters the server revealed; boarding continues at once.
+    #[wasm_bindgen(js_name = extendQueue)]
+    pub fn extend_queue(&mut self, more: &[u8]) {
+        self.game.extend_queue(more);
+    }
+
     #[wasm_bindgen(js_name = isWon)]
     #[must_use]
     pub fn is_won(&self) -> bool {

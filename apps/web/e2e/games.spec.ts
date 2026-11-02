@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { bottlePosition, solveWaterSort, watchConsole } from "./helpers";
+import { bottlePosition, solveMetroJam, solveWaterSort, watchConsole } from "./helpers";
 
 test("home loads under the production CSP with no errors", async ({ page }) => {
   const errors = watchConsole(page);
@@ -57,5 +57,48 @@ test("a Brick Blast turn is simulated identically by browser and server", async 
   await expect(page.getByText(/Balls \d+/)).toBeVisible();
   await page.waitForTimeout(500);
   // A divergence between WASM and the server's result is logged as a warning.
+  expect(errors).toEqual([]);
+});
+
+test("a guest clears MetroJam level 1, earns coins, and a replay earns none", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/");
+  await page.getByText("MetroJam").click();
+
+  const play = async () => {
+    const startResp = page.waitForResponse((r) => r.url().includes("/metro-jam/levels/1/start"));
+    await page.getByRole("button", { name: "Level 1", exact: true }).click();
+    const start = (await (await startResp).json()) as { data: Parameters<typeof solveMetroJam>[0] };
+    await page.waitForTimeout(600);
+    const done = page.waitForResponse((r) => r.url().includes("/metro-jam/levels/1/complete"));
+    for (const car of solveMetroJam(start.data)) {
+      // Keyboard path: the visually hidden per-car buttons (one per car on the canvas).
+      await page.getByRole("button", { name: new RegExp(`^Car ${car + 1}:`) }).press("Enter");
+      await page.waitForTimeout(260); // the server rejects inhumanly fast play (200 ms a tap)
+    }
+    return (await (await done).json()) as { coins_earned: number; first_clear: boolean; unlocked_level: number };
+  };
+
+  const first = await play();
+  expect(first.first_clear).toBe(true);
+  expect(first.coins_earned).toBe(5);
+  expect(first.unlocked_level).toBe(2);
+  await expect(page.getByText("Level clear!")).toBeVisible();
+  await expect(page.getByText("+5 coins")).toBeVisible();
+
+  await page.getByRole("button", { name: "All levels" }).click();
+  const again = await play();
+  expect(again.coins_earned).toBe(0);
+  await expect(page.getByText("Replay: no coins this time.")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("the Coins page explains the rules from the server", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: /coins\. Coin rules/ }).click();
+  await expect(page.getByRole("heading", { name: "Earning coins" })).toBeVisible();
+  await expect(page.getByText("Levels 1–3")).toBeVisible();
+  await expect(page.getByText("Replaying a level you've already cleared earns nothing.")).toBeVisible();
   expect(errors).toEqual([]);
 });

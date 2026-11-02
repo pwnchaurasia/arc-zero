@@ -1,4 +1,4 @@
-export type GameId = "water-sort" | "brick-blast";
+export type GameId = "water-sort" | "brick-blast" | "metro-jam";
 
 export interface GameProgress {
   unlocked_level: number;
@@ -12,6 +12,7 @@ export interface Me {
   guest_max_level: number;
   registration_required: boolean;
   games: Record<GameId, GameProgress>;
+  coins: number;
 }
 
 export type Board = number[][];
@@ -100,4 +101,63 @@ export interface PowChallenge {
   challenge: string;
   difficulty: number;
   expires_at: number;
+}
+
+export type MjKind = "microcar" | "hatchback" | "sedan" | "mpv" | "minivan" | "minibus" | "bus";
+export type MjDir = "n" | "e" | "s" | "w";
+export type MjAssist = "extra_bay" | "airlift" | "shuffle";
+/** `[op, vehicle]`: op 0 tap, 1 airlift, 2 shuffle, 3 extra bay. */
+export type MjMove = [number, number];
+
+export interface MjVehicle {
+  kind: MjKind;
+  color: number;
+  x: number;
+  y: number;
+  dir: MjDir;
+}
+
+export interface MjLevelData {
+  width: number;
+  height: number;
+  barriers: [number, number][];
+  vehicles: MjVehicle[];
+  /** The start of the queue; hard levels hide the rest until the queue moves. */
+  queue: number[];
+  queue_len: number;
+  bays: number;
+  visible: number;
+}
+
+export interface MjStart {
+  attempt_id: string;
+  level: number;
+  data: MjLevelData;
+  prices: Record<MjAssist, number>;
+  reward: number;
+  coins: number;
+}
+
+export interface MjBuy {
+  coins: number;
+  owned: Partial<Record<MjAssist, number>>;
+  spent: number;
+}
+
+export interface MjComplete extends LevelWin {
+  level: number;
+  best_stars: number;
+  first_clear: boolean;
+  coins_earned: number;
+  streak_bonus: number;
+  coins: number;
+}
+
+export interface CoinRules {
+  balance: number;
+  start_balance: number;
+  rewards: { first_level: number; last_level: number; coins: number }[];
+  streak_length: number;
+  streak_bonus: number;
+  prices: Record<MjAssist, number>;
 }

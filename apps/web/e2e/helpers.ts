@@ -82,3 +82,90 @@ export function watchConsole(page: Page): string[] {
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   return errors;
 }
+
+interface MjVehicleData {
+  kind: string;
+  color: number;
+  x: number;
+  y: number;
+  dir: "n" | "e" | "s" | "w";
+}
+
+interface MjLevelForTest {
+  width: number;
+  height: number;
+  barriers: [number, number][];
+  vehicles: MjVehicleData[];
+  queue: number[];
+  queue_len: number;
+  bays: number;
+}
+
+const MJ_RIDERS: Record<string, number> = { microcar: 1, hatchback: 2, sedan: 4, mpv: 6, minivan: 9, minibus: 12, bus: 49 };
+const MJ_LENGTH: Record<string, number> = { microcar: 1, hatchback: 1, sedan: 2, mpv: 2, minivan: 3, minibus: 3, bus: 4 };
+const MJ_DELTA = { n: [0, -1], e: [1, 0], s: [0, 1], w: [-1, 0] } as const;
+
+/**
+ * Finds a tap order that wins a fully visible MetroJam level (stands in for a human).
+ * A plain restatement of the rules for tests only; the real rules live in Rust.
+ */
+export function solveMetroJam(level: MjLevelForTest): number[] {
+  const cells = (v: MjVehicleData) => {
+    const [dx, dy] = MJ_DELTA[v.dir];
+    return Array.from({ length: MJ_LENGTH[v.kind] ?? 1 }, (_, i) => [v.x - dx * i, v.y - dy * i] as const);
+  };
+  const seen = new Set<string>();
+  const search = (gone: boolean[], bays: [number, number][], head: number, order: number[]): number[] | null => {
+    if (head === level.queue_len) return order;
+    const key = `${gone.map(Number).join("")}|${JSON.stringify(bays)}|${head}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    if (!bays.some(([v]) => v < 0)) return null;
+    const blocked = new Set<string>(level.barriers.map(([x, y]) => `${x},${y}`));
+    level.vehicles.forEach((v, i) => {
+      if (!gone[i]) cells(v).forEach(([x, y]) => blocked.add(`${x},${y}`));
+    });
+    for (let i = 0; i < level.vehicles.length; i++) {
+      const v = level.vehicles[i];
+      if (!v || gone[i]) continue;
+      const [dx, dy] = MJ_DELTA[v.dir];
+      let [x, y] = [v.x + dx, v.y + dy];
+      let free = true;
+      while (x >= 0 && y >= 0 && x < level.width && y < level.height) {
+        if (blocked.has(`${x},${y}`)) free = false;
+        x += dx;
+        y += dy;
+      }
+      if (!free) continue;
+      const nextGone = [...gone];
+      nextGone[i] = true;
+      const nextBays = bays.map((b) => [...b] as [number, number]);
+      const slot = nextBays.findIndex(([b]) => b < 0);
+      nextBays[slot] = [i, 0];
+      let h = head;
+      for (;;) {
+        const color = level.queue[h];
+        if (color === undefined) break;
+        const at = nextBays.findIndex(
+          ([b, r]) => b >= 0 && level.vehicles[b]?.color === color && r < (MJ_RIDERS[level.vehicles[b]?.kind ?? ""] ?? 0),
+        );
+        if (at < 0) break;
+        const bay = nextBays[at] as [number, number];
+        bay[1] += 1;
+        h += 1;
+        if (bay[1] === MJ_RIDERS[level.vehicles[bay[0]]?.kind ?? ""]) nextBays[at] = [-1, 0];
+      }
+      const found = search(nextGone, nextBays, h, [...order, i]);
+      if (found) return found;
+    }
+    return null;
+  };
+  const start = search(
+    level.vehicles.map(() => false),
+    Array.from({ length: level.bays }, () => [-1, 0] as [number, number]),
+    0,
+    [],
+  );
+  if (!start) throw new Error("no solution found");
+  return start;
+}

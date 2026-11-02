@@ -33,3 +33,18 @@ export function bbConstants(): BbConstants {
   constants ??= JSON.parse(engine.bbConstants()) as BbConstants;
   return constants;
 }
+
+export interface MjConstants {
+  kinds: { kind: string; seats: number; riders: number; length: number }[];
+  maxMoves: number;
+  maxExtraBays: number;
+  shuffleWindow: number;
+}
+
+let mj: MjConstants | null = null;
+
+/** MetroJam vehicle seats and sizes, straight from the engine. */
+export function mjConstants(): MjConstants {
+  mj ??= JSON.parse(engine.mjConstants()) as MjConstants;
+  return mj;
+}

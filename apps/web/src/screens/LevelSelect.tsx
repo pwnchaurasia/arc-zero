@@ -1,5 +1,6 @@
 import type { GameId } from "../api/types";
 import { useSession } from "../state/session";
+import { CoinChip } from "../ui/CoinChip";
 import { LockIcon } from "../ui/icons";
 import { Stars, TopBar } from "../ui/kit";
 import { GAMES } from "./Home";
@@ -24,7 +25,7 @@ export function LevelSelect({
 
   return (
     <div className="flex h-full flex-col">
-      <TopBar title={name} onBack={onBack} />
+      <TopBar title={name} onBack={onBack} right={<CoinChip />} />
       <div className="grid flex-1 auto-rows-min grid-cols-5 gap-2 overflow-y-auto px-4 pb-6">
         {Array.from({ length: count }, (_, i) => i + 1).map((level) => {
           const stars = progress?.stars[String(level)] ?? 0;

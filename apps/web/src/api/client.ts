@@ -2,8 +2,14 @@ import type {
   BbHint,
   BbStart,
   BbTurn,
+  CoinRules,
   GameId,
   Me,
+  MjAssist,
+  MjBuy,
+  MjComplete,
+  MjMove,
+  MjStart,
   PowChallenge,
   WsComplete,
   WsHint,
@@ -133,6 +139,28 @@ export const api = {
       request<BbTurn>("POST", `${game("brick-blast")}/runs/${runId}/turn`, { turn, aim }),
     hint: (runId: string) => request<BbHint>("POST", `${game("brick-blast")}/runs/${runId}/hint`),
   },
+
+  mj: {
+    start: (level: number) => request<MjStart>("POST", `${game("metro-jam")}/levels/${level}/start`),
+    reveal: (level: number, attemptId: string, moves: MjMove[]) =>
+      request<{ queue: number[] }>("POST", `${game("metro-jam")}/levels/${level}/reveal`, {
+        attempt_id: attemptId,
+        moves,
+      }),
+    buy: (level: number, attemptId: string, kind: MjAssist, price: number) =>
+      request<MjBuy>("POST", `${game("metro-jam")}/levels/${level}/assists`, {
+        attempt_id: attemptId,
+        kind,
+        price,
+      }),
+    complete: (level: number, attemptId: string, moves: MjMove[]) =>
+      request<MjComplete>("POST", `${game("metro-jam")}/levels/${level}/complete`, {
+        attempt_id: attemptId,
+        moves,
+      }),
+  },
+
+  coins: () => request<CoinRules>("GET", "/coins"),
 
   powChallenge: (purpose: "register" | "restore") =>
     request<PowChallenge>("POST", "/pow/challenge", { purpose }),

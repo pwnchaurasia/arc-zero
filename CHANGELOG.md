@@ -22,6 +22,26 @@ the newest is at the top.
 - Every move is replayed on the server; wins that don't replay are rejected.
 - Playable without a mouse or touch: each car is also a keyboard and screen-reader button.
 
+### Brick Blast
+- New power-ups: **Scatter** (a ball shatters into three, flying off in random directions;
+  the extras last until they land) and **Boost ×2 / ×3** (your next shot launches two or
+  three times the balls). +2 balls is gone; +3 and +5 stay.
+- Coin assists between shots: **+15 balls** this shot (60), **Laser** a column you pick (70),
+  **Hammer** the lowest row (80).
+- On-screen messages: Multi break, Mega break, Electric shock, Scatter, Boost, Last ball
+  standing, Good shot, Great shot, Unbelievable, Good use of power, Danger zone.
+
+### Water Sort
+- **Hidden colours** from level 4: only each bottle's top colour shows until you uncover it,
+  and what you've seen stays visible (even after undo). Hidden colours never reach your
+  browser before you uncover them.
+- **Taller bottles**: 5 deep from level 4, 6 deep from level 51, up to 9 colours.
+- Coin assist: **one more empty bottle** (60, up to two per level).
+
+### Players
+- Optional **display name** when you save your progress, changeable in Settings
+  (2–20 characters, checked for profanity in English and Hindi/Urdu).
+
 ### Coins
 - One coin balance shared by every game, kept on the server. Everyone starts with 100.
 - Coins come only from the first clear of a level: 5 (levels 1–3), 25 (4–30), 40 (31–70),
@@ -32,7 +52,8 @@ the newest is at the top.
 - MetroJam assists: Extra bay (60), Airlift (80), Shuffle (40).
 - Coins earned before saving your progress move to your account when you save.
 - New **Coins** page explaining the rules, linked from the header on every screen.
-- Water Sort and Brick Blast keep their 3 free hints a day for now; coins come to them later.
+- Water Sort and Brick Blast: first clears pay coins too; 3 free hints a day, then a hint
+  costs 20 coins.
 
 ### Changed
 - Water Sort and Brick Blast: levels 1–3 are now a gentle warm-up.
@@ -43,7 +64,15 @@ the newest is at the top.
 - Install the app: an **Install** button on Android and desktop browsers, and a short
   "Add to Home Screen" guide on iPhone and iPad.
 
+### For developers
+- Levels are now one file per game (`levels/<game>.json`); `make levels GAME=brick-blast`
+  regenerates just one game. In production they are three Docker secrets.
+- First-party analytics in the `play_events` table (counts only; a keyed hash instead of
+  player ids). Example queries in DEVELOPMENT.md.
+
 ### Upgrade notes
-- Database migration `0002` adds the wallet, the coin ledger and assist-free streaks.
+- Database migrations `0002` (wallet, coin ledger, assist-free streaks) and `0003`
+  (display names, play events).
   The release workflow runs migrations automatically.
-- Regenerate levels (the release workflow does this): the levels file now includes MetroJam.
+- Regenerate levels (the release workflow does this): the level files now include MetroJam,
+  and the generator writes a folder of per-game files instead of one `levels.json`.

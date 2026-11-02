@@ -97,7 +97,7 @@ export function CoinsScreen({ onBack }: { onBack: () => void }) {
                   Coins you earn before saving your progress move to your account when you save. One balance, shared
                   by every game.
                 </li>
-                <li>Undo is always free. Every level can be won without spending anything.</li>
+                <li>Every level can be won without spending anything. Stuck? Replay the level for free.</li>
               </ul>
             </section>
 

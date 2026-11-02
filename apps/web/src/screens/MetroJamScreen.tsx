@@ -8,8 +8,8 @@ import { MetroJamView, mjColor, type MjSnapshot } from "../games/metro-jam/Metro
 import { getSettings, useSettings } from "../state/settings";
 import { useSession } from "../state/session";
 import { CoinChip } from "../ui/CoinChip";
-import { LiftIcon, ParkingIcon, RestartIcon, ShuffleIcon, UndoIcon } from "../ui/icons";
-import { IconButton, TopBar } from "../ui/kit";
+import { LiftIcon, ParkingIcon, RestartIcon, ShuffleIcon } from "../ui/icons";
+import { Button, IconButton, TopBar } from "../ui/kit";
 import { ConfirmSpend, type SpendRequest } from "./ConfirmSpend";
 import { ResultCard } from "./ResultCard";
 import { useToast } from "./useToast";
@@ -84,6 +84,8 @@ export function MetroJamScreen({
   const [info, setInfo] = useState<MjStart | null>(null);
   const [moveCount, setMoveCount] = useState(0);
   const [stuck, setStuck] = useState(false);
+  /** The player chose "Use coins" on the stuck card: hide it and point at the assists. */
+  const [choosingAssist, setChoosingAssist] = useState(false);
   const [airlifting, setAirlifting] = useState(false);
   const [coins, setCoins] = useState<number | undefined>(undefined);
   const [owned, setOwned] = useState<Partial<Record<MjAssist, number>>>({});
@@ -97,7 +99,9 @@ export function MetroJamScreen({
 
   const refreshUi = (g: Game) => {
     setMoveCount(g.moves.length);
-    setStuck(g.sim.isStuck());
+    const isStuck = g.sim.isStuck();
+    setStuck(isStuck);
+    if (!isStuck) setChoosingAssist(false);
     setOwned({ ...g.owned });
   };
 
@@ -183,7 +187,7 @@ export function MetroJamScreen({
       if (!Array.from(g.sim.tappable()).includes(vehicle)) {
         sfx.invalid();
         haptic(25);
-        showToast("Every bay is full. Undo, or add a bay.");
+        showToast("Every bay is full. Use an assist, or replay the level.");
         return;
       }
       sfx.tap();
@@ -250,11 +254,6 @@ export function MetroJamScreen({
     refreshUi(g);
   };
 
-  const undo = () => {
-    const g = game.current;
-    if (g?.moves.length) rebuild(g.moves.slice(0, -1));
-  };
-
   const restart = () => rebuild([]);
 
   /** Whether the assist would do anything right now (never charge for a no-op). */
@@ -264,7 +263,7 @@ export function MetroJamScreen({
       if (kind === "airlift") {
         return Array.from(probe.bays()).some((v, i) => i % 2 === 0 && v === -1)
           ? null
-          : "Airlift needs a free bay. Add a bay or undo first.";
+          : "Airlift needs a free bay. Add a bay first.";
       }
       probe.apply(OP[kind], 0);
       return null;
@@ -292,7 +291,7 @@ export function MetroJamScreen({
       showToast(problem);
       return;
     }
-    // Already paid for in this attempt (e.g. given back by undo): free to use.
+    // Already paid for in this attempt (e.g. before a replay): free to use again.
     if ((g.owned[kind] ?? 0) > used(g.moves, kind)) {
       runAssist(g, kind);
       return;
@@ -348,10 +347,7 @@ export function MetroJamScreen({
         right={
           <div className="flex items-center gap-2">
             <CoinChip balance={coins} />
-            <IconButton label="Undo" onClick={undo} disabled={!info || moveCount === 0}>
-              <UndoIcon />
-            </IconButton>
-            <IconButton label="Restart" onClick={restart} disabled={!info || moveCount === 0}>
+            <IconButton label="Replay level" onClick={restart} disabled={!info || moveCount === 0}>
               <RestartIcon />
             </IconButton>
           </div>
@@ -363,11 +359,25 @@ export function MetroJamScreen({
       </div>
       <div className="relative min-h-0 flex-1">
         <div ref={host} className="game-surface absolute inset-0" />
+        {stuck && !choosingAssist && !airlifting && !result && (
+          <div className="absolute inset-0 z-10 grid place-items-center bg-ink/55 p-6 backdrop-blur-[2px]">
+            <div className="pop-in w-full max-w-xs rounded-3xl border border-line bg-panel p-5 text-center shadow-2xl">
+              <h2 className="text-2xl font-black">Stuck!</h2>
+              <p className="mt-1 mb-4 text-sm text-muted">No car can park. Replay the level, or use coins on an assist.</p>
+              <div className="grid gap-3">
+                <Button onClick={restart}>Replay level</Button>
+                <Button variant="secondary" onClick={() => setChoosingAssist(true)}>
+                  Use coins
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Messages float over the scene so it never jumps. */}
         <div className="pointer-events-none absolute inset-x-3 bottom-3 grid gap-2 [&>*]:pointer-events-auto">
-        {stuck && !airlifting && (
+        {stuck && choosingAssist && !airlifting && (
           <p className="rounded-xl bg-amber-950/90 p-3 text-center text-sm text-amber-100 shadow-lg backdrop-blur">
-            Stuck: no car can park. Undo (free), restart, or use an assist.
+            Pick an assist below, or replay the level.
           </p>
         )}
         {airlifting && (
@@ -406,7 +416,9 @@ export function MetroJamScreen({
               type="button"
               disabled={!info || !!result}
               onClick={() => onAssist(kind)}
-              className="relative flex min-h-14 min-w-24 flex-col items-center justify-center rounded-2xl border border-line bg-panel-2 px-3 py-1.5 text-xs font-semibold transition hover:bg-line active:scale-95 disabled:opacity-40"
+              className={`relative flex min-h-14 min-w-24 flex-col items-center justify-center rounded-2xl border bg-panel-2 px-3 py-1.5 text-xs font-semibold transition hover:bg-line active:scale-95 disabled:opacity-40 ${
+                stuck && choosingAssist ? "animate-pulse border-gold" : "border-line"
+              }`}
             >
               <Icon size={20} />
               <span>{title}</span>

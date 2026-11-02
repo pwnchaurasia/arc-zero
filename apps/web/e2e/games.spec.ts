@@ -101,7 +101,8 @@ test("a guest clears MetroJam level 1, earns coins, and a replay earns none", as
         if (wins) return (await res.json()) as MjResult;
         await page.waitForTimeout(260); // the server rejects inhumanly fast play (200 ms a tap)
       }
-      await page.getByRole("button", { name: "Restart" }).click();
+      // Stuck: the game offers a replay (or coins); take the free replay.
+      await page.getByRole("button", { name: "Replay level" }).first().click();
       await page.waitForTimeout(300);
     }
     throw new Error("could not clear level 1 in 20 tries");

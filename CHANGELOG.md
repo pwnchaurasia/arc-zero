@@ -9,14 +9,16 @@ the newest is at the top.
 - Drive cars out of a jam into parking bays; commuters board cars of their colour.
 - Realistic vehicles: the driver takes a seat, so a 2-seater carries 1 passenger,
   a 5-seater 4, and a 50-seat bus 49. Bigger vehicles take up more of the lot (1 to 4 cells).
-- 100 levels. Levels 1–3 are a warm-up that still needs thought; from level 4 it gets hard.
+- 100 levels. Levels 1–3 are a warm-up that still needs thought. Level 5 is as hard as an
+  ordinary puzzle game's late levels, and it keeps climbing to level 100 (the last ten
+  levels have only three bays).
   Only the front of the queue is visible (10 people early on, down to 6); the rest wait
   as "?" in the loop.
 - Commuters wait in a loop at the stop and stream to the cars; cars drive out of the lot,
   round the road and into the bays; full cars pull away. The win screen waits until the
   last car has left.
 - Every level is proven winnable without assists before it ships.
-- Undo is free and unlimited.
+- No undo. When you're stuck, replay the level for free or use coins on an assist.
 - Every move is replayed on the server; wins that don't replay are rejected.
 - Playable without a mouse or touch: each car is also a keyboard and screen-reader button.
 
@@ -33,8 +35,9 @@ the newest is at the top.
 - Water Sort and Brick Blast keep their 3 free hints a day for now; coins come to them later.
 
 ### Changed
-- Water Sort and Brick Blast: levels 1–3 are now a gentle warm-up. Brick Blast's real
-  difficulty curve starts at level 4 (the old level 1).
+- Water Sort and Brick Blast: levels 1–3 are now a gentle warm-up.
+- Brick Blast is much harder: level 10 now plays like the old level 70, and the curve keeps
+  climbing to level 100 (up to 41 rows of 140–150 HP blocks).
 
 ### Added
 - Install the app: an **Install** button on Android and desktop browsers, and a short

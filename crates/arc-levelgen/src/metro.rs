@@ -9,7 +9,7 @@
 //!    keep the candidate closest to the level's target.
 
 use arc_engine::metro_jam::bot::win_rate;
-use arc_engine::metro_jam::{Dir, Game, Kind, Level, Vehicle};
+use arc_engine::metro_jam::{Dir, Game, Kind, Level, Vehicle, MAX_COLORS};
 
 use arc_engine::rng::Rng;
 use rayon::prelude::*;
@@ -23,6 +23,10 @@ const BOT_RUNS: u32 = 48;
 const BOT_NOISE_PCT: [u64; 2] = [20, 3];
 const PLACE_TRIES: usize = 4_000;
 const PLAN_TRIES: usize = 8;
+/// Where levels 4, 5 and 100 sit on the original curve (0 = old level 4, 1 = old level 100).
+const CURVE_AT_4: f64 = 0.15;
+const CURVE_AT_5: f64 = 0.27;
+const CURVE_AT_100: f64 = 1.4;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct MjLevel {
@@ -46,10 +50,6 @@ struct Params {
     stick_pct: u64,
     /// Target share of noisy-bot losses, 0..1.
     target: f64,
-}
-
-fn lerp(a: f64, b: f64, t: f64) -> f64 {
-    a + (b - a) * t.clamp(0.0, 1.0)
 }
 
 fn round_u8(v: f64) -> u8 {
@@ -79,40 +79,54 @@ fn params(level: u16) -> Params {
             target: 0.16 + 0.05 * f64::from(level),
         };
     }
-    let t = f64::from(level - 4) / 96.0;
-    let width = round_u8(lerp(6.0, 9.0, t));
+    // Position on the original curve (0 = old level 4, 1 = old level 100); goes past 1.
+    // Decision 2026-11-02: old level 30 becomes level 5, then keep climbing to level 100.
+    let t = if level == 4 {
+        CURVE_AT_4
+    } else {
+        CURVE_AT_5 + (CURVE_AT_100 - CURVE_AT_5) * f64::from(level - 5) / 95.0
+    };
+    // The original-curve level this plays like: decides which vehicles appear.
+    let eq = 4.0 + 96.0 * t;
+    let width = round_u8(extend(6.0, 9.0, t)).min(10);
     let mut kinds = vec![
         (Kind::Microcar, 3),
         (Kind::Hatchback, 4),
         (Kind::Sedan, 4),
         (Kind::Mpv, 3),
     ];
-    if level >= 8 {
+    if eq >= 8.0 {
         kinds.push((Kind::Minivan, 2));
     }
-    if level >= 20 {
+    if eq >= 20.0 {
         kinds.push((Kind::Minibus, 2));
     }
-    if level >= 30 {
-        kinds.push((Kind::Bus, if level >= 80 { 2 } else { 1 }));
+    if eq >= 30.0 {
+        kinds.push((Kind::Bus, if eq >= 80.0 { 2 } else { 1 }));
     }
     Params {
         width,
-        height: (width + 1).min(10),
-        colors: round_u8(lerp(4.0, 7.0, t)),
-        bays: 4,
-        fill_pct: lerp(55.0, 80.0, t).round() as u64,
+        height: width + 1,
+        colors: round_u8(extend(4.0, 7.0, t)).min(MAX_COLORS),
+        // The last ten levels drop to three bays.
+        bays: if level > 90 { 3 } else { 4 },
+        fill_pct: extend(55.0, 80.0, t).round().min(85.0) as u64,
         kinds,
-        barriers: if level >= 30 {
-            usize::from(round_u8(lerp(1.0, 5.0, t)))
+        barriers: if eq >= 30.0 {
+            usize::from(round_u8(extend(1.0, 5.0, t)).min(7))
         } else {
             0
         },
         // The far end of the queue is always hidden; the view narrows as levels rise.
-        visible: Some(u16::from(round_u8(lerp(12.0, 6.0, t)))),
-        stick_pct: lerp(45.0, 5.0, t).round() as u64,
-        target: lerp(0.35, 0.97, t),
+        visible: Some(u16::from(round_u8(extend(12.0, 6.0, t)).max(4))),
+        stick_pct: extend(45.0, 5.0, t).round().max(3.0) as u64,
+        target: extend(0.35, 0.97, t).min(0.99),
     }
+}
+
+/// Like `lerp`, but continues past `b` for levels beyond the original curve.
+fn extend(a: f64, b: f64, t: f64) -> f64 {
+    a + (b - a) * t.max(0.0)
 }
 
 fn pick_weighted<T: Copy>(rng: &mut Rng, items: &[(T, u64)]) -> T {

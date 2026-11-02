@@ -6,7 +6,7 @@
 
 use arc_engine::brick_blast::bot::play_level;
 use arc_engine::brick_blast::{
-    Cell, LevelScript, PowerKind, Row, Shape, COLS, EMPTY_ROW, MAX_BALLS, MAX_HP,
+    Cell, LevelScript, PowerKind, Row, Shape, COLS, EMPTY_ROW, MAX_BALLS, MAX_HP, MAX_SCRIPT_ROWS,
 };
 use arc_engine::rng::Rng;
 use rayon::prelude::*;
@@ -18,9 +18,15 @@ use crate::derive_seed;
 const BOT_AIMS: u16 = 31;
 /// No block is ever weaker than this, on any level (design decision 2026-10-30).
 const MIN_BLOCK_HP: u16 = 50;
-/// Balls on level 4 (after the intro) and level 100; levels in between interpolate.
+/// Balls at the start and the end of the original curve (old levels 4 and 100).
 const START_BALLS_FIRST: f64 = 33.0;
 const START_BALLS_LAST: f64 = 60.0;
+/// Difficulty on the original curve (0 = old level 4, 1 = old level 100) at level 4,
+/// level 10 and level 100 (decision 2026-11-02: old level 70 becomes level 10, then
+/// keep climbing past the old level 100).
+const CURVE_AT_4: f64 = 0.375;
+const CURVE_AT_10: f64 = 0.6875;
+const CURVE_AT_100: f64 = 1.6;
 /// Levels 1-3 are a gentle introduction (design decision 2026-11-02).
 const INTRO_LEVELS: u16 = 3;
 const INTRO_BALLS: f64 = 40.0;
@@ -81,16 +87,42 @@ fn pick_power(rng: &mut Rng, pool: &[(PowerKind, u32)]) -> PowerKind {
 
 /// `extra_balls` is added when the bot could not finish a layout, so a level gets
 /// easier by giving the player more balls, never by dropping blocks below MIN_BLOCK_HP.
+/// Where a level sits on the original difficulty curve (may go past 1).
+fn curve(level: u16) -> f64 {
+    let l = f64::from(level);
+    if level <= 10 {
+        CURVE_AT_4 + (CURVE_AT_10 - CURVE_AT_4) * (l - 4.0).max(0.0) / 6.0
+    } else {
+        CURVE_AT_10 + (CURVE_AT_100 - CURVE_AT_10) * (l - 10.0) / 90.0
+    }
+}
+
+/// The original-curve level this level plays like; drives power-ups, shapes and margins.
+fn equivalent_level(level: u16) -> u16 {
+    if level <= INTRO_LEVELS {
+        level
+    } else {
+        to_u16(4.0 + 96.0 * curve(level))
+    }
+}
+
+/// Like `lerp`, but continues past `b` for levels beyond the original curve.
+fn extend(a: f64, b: f64, t: f64) -> f64 {
+    a + (b - a) * t.max(0.0)
+}
+
+/// `extra_balls` is added when the bot could not finish a layout, so a level gets
+/// easier by giving the player more balls, never by dropping blocks below MIN_BLOCK_HP.
 fn build_script(level: u16, seed: u64, extra_balls: u16) -> LevelScript {
     let mut rng = Rng::new(seed);
     let intro = level <= INTRO_LEVELS;
-    // The real curve starts after the intro levels.
-    let t = f64::from(level.saturating_sub(INTRO_LEVELS + 1)) / f64::from(99 - INTRO_LEVELS);
+    let t = curve(level);
+    let eq = equivalent_level(level);
 
     let base_balls = if intro {
         INTRO_BALLS
     } else {
-        lerp(START_BALLS_FIRST, START_BALLS_LAST, t)
+        extend(START_BALLS_FIRST, START_BALLS_LAST, t)
     };
     let start_balls = to_u16(base_balls)
         .saturating_add(extra_balls)
@@ -98,33 +130,37 @@ fn build_script(level: u16, seed: u64, extra_balls: u16) -> LevelScript {
     let total_rows = if intro {
         3 + usize::from(level)
     } else {
-        usize::from(to_u16(lerp(6.0, 28.0, t)))
+        usize::from(to_u16(extend(6.0, 28.0, t))).min(MAX_SCRIPT_ROWS)
     };
     let start_count = if intro {
         2
     } else {
-        (3 + usize::from(level) / 25).min(6).min(total_rows - 1)
+        (3 + usize::from(eq) / 25).min(6).min(total_rows - 1)
     };
-    // Block HP range: 50-60 in the intro, ~55-78 on level 4, rising to ~110-150 on level 100.
+    // Block HP range: 50-60 in the intro, ~72-102 on level 4, ~93-127 on level 10,
+    // up to 140-150 by level 100.
     let (hp_lo, hp_hi) = if intro {
         (f64::from(MIN_BLOCK_HP), 60.0)
     } else {
-        (lerp(55.0, 110.0, t), lerp(78.0, f64::from(MAX_HP), t))
+        (
+            extend(55.0, 110.0, t).min(140.0),
+            extend(78.0, f64::from(MAX_HP), t).min(f64::from(MAX_HP)),
+        )
     };
     let (min_blocks, max_blocks) = if intro {
         (2, 3)
     } else {
         (
-            i64::from(to_u16(lerp(2.0, 4.0, t))),
-            i64::from(to_u16(lerp(4.0, 8.0, t))),
+            i64::from(to_u16(extend(2.0, 4.0, t)).min(5)),
+            i64::from(to_u16(extend(4.0, 8.0, t)).min(8)),
         )
     };
-    let tri_chance = if level < 7 {
+    let tri_chance = if eq < 7 {
         0
     } else {
-        u64::from(to_u16(lerp(10.0, 40.0, (f64::from(level) - 7.0) / 93.0)))
+        u64::from(to_u16(lerp(10.0, 40.0, (f64::from(eq) - 7.0) / 93.0)))
     };
-    let pool = power_pool(level);
+    let pool = power_pool(eq);
     let shapes = [Shape::TriBl, Shape::TriBr, Shape::TriTl, Shape::TriTr];
 
     // Rows in the order they reach the player: index 0 is lowest on the board at the start.
@@ -150,11 +186,7 @@ fn build_script(level: u16, seed: u64, extra_balls: u16) -> LevelScript {
             };
             row[c] = Cell::Block { shape, hp };
         }
-        let powers = if level >= 51 && rng.chance(1, 3) {
-            2
-        } else {
-            1
-        };
+        let powers = if eq >= 51 && rng.chance(1, 3) { 2 } else { 1 };
         for &c in cols[blocks..].iter().take(powers) {
             if rng.chance(7, 10) {
                 row[c] = Cell::Power {
@@ -188,11 +220,12 @@ fn required_margin(level: u16) -> u8 {
 ///
 /// Work is bounded for every seed: after each pair of failed layouts the player gets
 /// more balls (blocks are never weakened), so a finishable layout turns up quickly.
-/// Every 10th level is a breather built with the settings of a level 8 lower.
+/// Every 10th level from 20 is a breather built with the settings of a level 8 lower.
+/// Level 10 is not: it is where the old level 70 now sits (decision 2026-11-02).
 fn build_level(master: &str, level: u16) -> BbLevel {
     let started = Instant::now();
     eprintln!("  bb {level:>3}: started");
-    let breather = level.is_multiple_of(10) && level != 100;
+    let breather = level.is_multiple_of(10) && (20..100).contains(&level);
     let settings_level = if breather { level - 8 } else { level };
     let mut extra_balls = 0u16;
     for attempt in 0..MAX_ATTEMPTS {
@@ -205,7 +238,7 @@ fn build_level(master: &str, level: u16) -> BbLevel {
         let Ok(run) = play_level(&script, BOT_AIMS) else {
             continue;
         };
-        if !run.won || run.closest < required_margin(level) {
+        if !run.won || run.closest < required_margin(equivalent_level(level)) {
             eprintln!(
                 "  bb {level:>3}: layout {} rejected (won {}, closest {}, {} turns, {} balls, {:.1?})",
                 attempt + 1,

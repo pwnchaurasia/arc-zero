@@ -50,8 +50,8 @@ export function ConfirmSpend({
             )}
           </dl>
           <p className="text-xs text-muted">
-            Coins spent are taken off this level's reward and aren't refunded. Undo gives the assist back to use
-            again in this attempt.
+            Coins spent are taken off this level's reward and aren't refunded. If you replay the level, assists
+            you paid for in this attempt can be used again for free.
           </p>
           <div className="grid grid-cols-2 gap-3">
             <Button variant="secondary" onClick={onCancel} disabled={busy}>

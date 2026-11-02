@@ -85,9 +85,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Outermost first: headers wrap everything, then host check, then request guard.
     app.add_middleware(
-        RequestGuardMiddleware, allowed_origins=settings.allowed_origins, max_body=MAX_BODY_BYTES
+        RequestGuardMiddleware, allowed_origins=settings.origins, max_body=MAX_BODY_BYTES
     )
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.hosts)
     app.add_middleware(SecurityHeadersMiddleware, hsts=settings.hsts)
     return app
 

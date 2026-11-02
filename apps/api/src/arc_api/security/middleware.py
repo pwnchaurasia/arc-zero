@@ -68,8 +68,26 @@ class SecurityHeadersMiddleware:
 class RequestGuardMiddleware:
     def __init__(self, app: ASGIApp, *, allowed_origins: Iterable[str], max_body: int) -> None:
         self.app = app
-        self.allowed_origins = frozenset(o.rstrip("/") for o in allowed_origins)
+        exact = [o.rstrip("/") for o in allowed_origins]
+        self.allowed_origins = frozenset(o for o in exact if "://*." not in o)
+        # "https://*.example.app" allows any https subdomain of example.app.
+        self.allowed_suffixes = tuple(
+            (o.split("://*.", 1)[0] + "://", "." + o.split("://*.", 1)[1])
+            for o in exact
+            if "://*." in o
+        )
         self.max_body = max_body
+
+    def _origin_allowed(self, origin: str) -> bool:
+        origin = origin.rstrip("/")
+        if origin in self.allowed_origins:
+            return True
+        return any(
+            origin.startswith(scheme)
+            and origin.endswith(suffix)
+            and "/" not in origin[len(scheme) :]
+            for scheme, suffix in self.allowed_suffixes
+        )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope["method"] in SAFE_METHODS:
@@ -78,7 +96,7 @@ class RequestGuardMiddleware:
 
         headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
         origin = headers.get("origin")
-        if origin is not None and origin.rstrip("/") not in self.allowed_origins:
+        if origin is not None and not self._origin_allowed(origin):
             await _reject(send, 403, "forbidden_origin", "Cross-site request blocked.")
             return
         if origin is None and headers.get("sec-fetch-site") == "cross-site":

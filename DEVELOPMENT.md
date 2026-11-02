@@ -139,3 +139,17 @@ DELETE FROM play_events WHERE day < current_date - 365;
 ```
 
 Coin balances and every coin change for saved players are in `wallets` and `coin_ledger`.
+
+## Let friends play your local game (ngrok)
+
+```sh
+make share          # like `make dev`, but accepts requests through any ngrok address
+ngrok http 5173     # in a second terminal; send friends the https://….ngrok-free.app URL
+```
+
+- Sharing mode (`ARC_DEV_TUNNEL=true`) lets `*.ngrok-free.app`, `*.ngrok.app` and
+  `*.ngrok.io` reach the dev server and the API. Other sites stay blocked, and production
+  refuses to start with it set.
+- Friends play as guests on your machine and your database: progress, coins and analytics
+  land in your local data. Stop `make share` and ngrok when you're done.
+- ngrok's free plan shows a one-time "You are about to visit…" page; friends tap **Visit Site**.

@@ -27,7 +27,7 @@ export const GAMES: { id: GameId; name: string; tagline: string; image?: string 
     id: "metro-jam",
     name: "MetroJam",
     tagline: "Clear the jam. Fill every car. Don't block the bays.",
-    accent: "from-emerald-500/30 to-sky-500/20",
+    image: "/games/metro-jam.webp",
   },
 ];
 

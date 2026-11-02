@@ -9,8 +9,12 @@ the newest is at the top.
 - Drive cars out of a jam into parking bays; commuters board cars of their colour.
 - Realistic vehicles: the driver takes a seat, so a 2-seater carries 1 passenger,
   a 5-seater 4, and a 50-seat bus 49. Bigger vehicles take up more of the lot (1 to 4 cells).
-- 100 levels. Levels 1–3 are a warm-up; from level 4 it gets hard, and on later levels
-  only the front of the queue is visible.
+- 100 levels. Levels 1–3 are a warm-up that still needs thought; from level 4 it gets hard.
+  Only the front of the queue is visible (10 people early on, down to 6); the rest wait
+  as "?" in the loop.
+- Commuters wait in a loop at the stop and stream to the cars; cars drive out of the lot,
+  round the road and into the bays; full cars pull away. The win screen waits until the
+  last car has left.
 - Every level is proven winnable without assists before it ships.
 - Undo is free and unlimited.
 - Every move is replayed on the server; wins that don't replay are rejected.

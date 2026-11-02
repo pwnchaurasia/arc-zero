@@ -76,6 +76,8 @@ export function MetroJamScreen({
   const view = useRef<MetroJamView | null>(null);
   const game = useRef<Game | null>(null);
   const picking = useRef(false);
+  /** The animations still playing; the win screen waits for them. */
+  const animating = useRef<Promise<void>>(Promise.resolve());
   /** The canvas and the hidden per-car buttons share one tap handler. */
   const tapRef = useRef<(vehicle: number) => void>(() => undefined);
   const [round, setRound] = useState(0);
@@ -104,7 +106,9 @@ export function MetroJamScreen({
     g.done = true;
     try {
       const res = await api.mj.complete(level, g.start.attempt_id, g.moves);
-      await new Promise((r) => setTimeout(r, 500));
+      // Let the player watch the last commuters board and the last car leave.
+      await animating.current;
+      await new Promise((r) => setTimeout(r, 600));
       if (!game.current) return;
       sfx.win();
       haptic(30);
@@ -127,7 +131,7 @@ export function MetroJamScreen({
       const more = queue.slice(g.known.length);
       g.known = queue;
       g.sim.extendQueue(new Uint8Array(more));
-      void view.current?.play(Array.from(g.sim.takeEvents()), snapshot(g));
+      animating.current = view.current?.play(Array.from(g.sim.takeEvents()), snapshot(g)) ?? Promise.resolve();
       refreshUi(g);
       if (g.sim.isWon()) void submit(g);
     } catch (e) {
@@ -138,7 +142,7 @@ export function MetroJamScreen({
   const apply = (g: Game, op: number, vehicle: number) => {
     g.sim.apply(op, vehicle);
     g.moves.push([op, vehicle]);
-    void view.current?.play(Array.from(g.sim.takeEvents()), snapshot(g));
+    animating.current = view.current?.play(Array.from(g.sim.takeEvents()), snapshot(g)) ?? Promise.resolve();
     refreshUi(g);
     if (g.sim.isWon()) void submit(g);
     else void reveal(g);
@@ -240,6 +244,7 @@ export function MetroJamScreen({
     g.moves = moves;
     g.sim = build(g.start.data, g.known, moves);
     view.current?.sync(snapshot(g));
+    animating.current = Promise.resolve();
     picking.current = false;
     setAirlifting(false);
     refreshUi(g);
@@ -356,27 +361,32 @@ export function MetroJamScreen({
         <span>{info ? `${info.data.bays} bays · ${info.data.queue_len} commuters` : " "}</span>
         {info && <span>{replay ? "Replay: no coins" : `First clear: ${info.reward} coins`}</span>}
       </div>
-      {stuck && !airlifting && (
-        <p className="mx-5 mt-2 rounded-xl bg-amber-500/15 p-3 text-center text-sm text-amber-200">
-          Stuck: no car can park. Undo (free), restart, or use an assist.
-        </p>
-      )}
-      {airlifting && (
-        <div className="mx-5 mt-2 flex items-center justify-between gap-3 rounded-xl bg-sky-500/15 p-3 text-sm text-sky-100">
-          <span>Tap any car to lift it into a bay.</span>
-          <button
-            type="button"
-            className="font-semibold underline"
-            onClick={() => {
-              picking.current = false;
-              setAirlifting(false);
-            }}
-          >
-            Cancel
-          </button>
+      <div className="relative min-h-0 flex-1">
+        <div ref={host} className="game-surface absolute inset-0" />
+        {/* Messages float over the scene so it never jumps. */}
+        <div className="pointer-events-none absolute inset-x-3 bottom-3 grid gap-2 [&>*]:pointer-events-auto">
+        {stuck && !airlifting && (
+          <p className="rounded-xl bg-amber-950/90 p-3 text-center text-sm text-amber-100 shadow-lg backdrop-blur">
+            Stuck: no car can park. Undo (free), restart, or use an assist.
+          </p>
+        )}
+        {airlifting && (
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-sky-950/90 p-3 text-sm text-sky-100 shadow-lg backdrop-blur">
+            <span>Tap any car to lift it into a bay.</span>
+            <button
+              type="button"
+              className="font-semibold underline"
+              onClick={() => {
+                picking.current = false;
+                setAirlifting(false);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
         </div>
-      )}
-      <div ref={host} className="game-surface relative min-h-0 flex-1" />
+      </div>
       {/* The canvas can't be read by screen readers or used by keyboard: one button per car. */}
       <div className="sr-only" role="group" aria-label="Cars in the jam">
         {info?.data.vehicles.map((v, i) =>

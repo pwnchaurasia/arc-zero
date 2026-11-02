@@ -91,7 +91,7 @@ interface MjVehicleData {
   dir: "n" | "e" | "s" | "w";
 }
 
-interface MjLevelForTest {
+export interface MjLevelForTest {
   width: number;
   height: number;
   barriers: [number, number][];
@@ -105,67 +105,87 @@ const MJ_RIDERS: Record<string, number> = { microcar: 1, hatchback: 2, sedan: 4,
 const MJ_LENGTH: Record<string, number> = { microcar: 1, hatchback: 1, sedan: 2, mpv: 2, minivan: 3, minibus: 3, bus: 4 };
 const MJ_DELTA = { n: [0, -1], e: [1, 0], s: [0, 1], w: [-1, 0] } as const;
 
+export interface MjState {
+  gone: boolean[];
+  bays: [number, number][];
+  head: number;
+}
+
+function mjCells(v: MjVehicleData) {
+  const [dx, dy] = MJ_DELTA[v.dir];
+  return Array.from({ length: MJ_LENGTH[v.kind] ?? 1 }, (_, i) => [v.x - dx * i, v.y - dy * i] as const);
+}
+
 /**
- * Finds a tap order that wins a fully visible MetroJam level (stands in for a human).
- * A plain restatement of the rules for tests only; the real rules live in Rust.
+ * Replays taps on the known part of the queue (boarding stops at the first unknown
+ * commuter, as in the game). A plain restatement of the rules for tests only.
  */
-export function solveMetroJam(level: MjLevelForTest): number[] {
-  const cells = (v: MjVehicleData) => {
-    const [dx, dy] = MJ_DELTA[v.dir];
-    return Array.from({ length: MJ_LENGTH[v.kind] ?? 1 }, (_, i) => [v.x - dx * i, v.y - dy * i] as const);
+export function mjSimulate(level: MjLevelForTest, known: number[], taps: number[]): MjState {
+  const state: MjState = {
+    gone: level.vehicles.map(() => false),
+    bays: Array.from({ length: level.bays }, () => [-1, 0] as [number, number]),
+    head: 0,
   };
-  const seen = new Set<string>();
-  const search = (gone: boolean[], bays: [number, number][], head: number, order: number[]): number[] | null => {
-    if (head === level.queue_len) return order;
-    const key = `${gone.map(Number).join("")}|${JSON.stringify(bays)}|${head}`;
-    if (seen.has(key)) return null;
-    seen.add(key);
-    if (!bays.some(([v]) => v < 0)) return null;
-    const blocked = new Set<string>(level.barriers.map(([x, y]) => `${x},${y}`));
-    level.vehicles.forEach((v, i) => {
-      if (!gone[i]) cells(v).forEach(([x, y]) => blocked.add(`${x},${y}`));
-    });
-    for (let i = 0; i < level.vehicles.length; i++) {
-      const v = level.vehicles[i];
-      if (!v || gone[i]) continue;
-      const [dx, dy] = MJ_DELTA[v.dir];
-      let [x, y] = [v.x + dx, v.y + dy];
-      let free = true;
-      while (x >= 0 && y >= 0 && x < level.width && y < level.height) {
-        if (blocked.has(`${x},${y}`)) free = false;
-        x += dx;
-        y += dy;
-      }
-      if (!free) continue;
-      const nextGone = [...gone];
-      nextGone[i] = true;
-      const nextBays = bays.map((b) => [...b] as [number, number]);
-      const slot = nextBays.findIndex(([b]) => b < 0);
-      nextBays[slot] = [i, 0];
-      let h = head;
-      for (;;) {
-        const color = level.queue[h];
-        if (color === undefined) break;
-        const at = nextBays.findIndex(
-          ([b, r]) => b >= 0 && level.vehicles[b]?.color === color && r < (MJ_RIDERS[level.vehicles[b]?.kind ?? ""] ?? 0),
-        );
-        if (at < 0) break;
-        const bay = nextBays[at] as [number, number];
-        bay[1] += 1;
-        h += 1;
-        if (bay[1] === MJ_RIDERS[level.vehicles[bay[0]]?.kind ?? ""]) nextBays[at] = [-1, 0];
-      }
-      const found = search(nextGone, nextBays, h, [...order, i]);
-      if (found) return found;
+  for (const v of taps) {
+    state.gone[v] = true;
+    const slot = state.bays.findIndex(([b]) => b < 0);
+    state.bays[slot] = [v, 0];
+    for (;;) {
+      const color = known[state.head];
+      if (color === undefined) break;
+      const at = state.bays.findIndex(
+        ([b, r]) => b >= 0 && level.vehicles[b]?.color === color && r < (MJ_RIDERS[level.vehicles[b]?.kind ?? ""] ?? 0),
+      );
+      if (at < 0) break;
+      const bay = state.bays[at] as [number, number];
+      bay[1] += 1;
+      state.head += 1;
+      if (bay[1] === MJ_RIDERS[level.vehicles[bay[0]]?.kind ?? ""]) state.bays[at] = [-1, 0];
     }
-    return null;
+  }
+  return state;
+}
+
+/** Cars that could drive out and park right now. */
+export function mjTappable(level: MjLevelForTest, state: MjState): number[] {
+  if (!state.bays.some(([b]) => b < 0)) return [];
+  const blocked = new Set<string>(level.barriers.map(([x, y]) => `${x},${y}`));
+  level.vehicles.forEach((v, i) => {
+    if (!state.gone[i]) mjCells(v).forEach(([x, y]) => blocked.add(`${x},${y}`));
+  });
+  return level.vehicles.flatMap((v, i) => {
+    if (state.gone[i]) return [];
+    const [dx, dy] = MJ_DELTA[v.dir];
+    for (let x = v.x + dx, y = v.y + dy; x >= 0 && y >= 0 && x < level.width && y < level.height; x += dx, y += dy) {
+      if (blocked.has(`${x},${y}`)) return [];
+    }
+    return [i];
+  });
+}
+
+/**
+ * A careful player: park the car whose colour is needed soonest among the commuters
+ * in view (beyond the seats already parked for it). `jitter` breaks ties differently
+ * on each retry.
+ */
+export function mjNextTap(level: MjLevelForTest, known: number[], state: MjState, jitter: number): number | null {
+  const options = mjTappable(level, state);
+  if (!options.length) return null;
+  const need = (color: number) => {
+    let parked = state.bays
+      .filter(([b]) => b >= 0 && level.vehicles[b]?.color === color)
+      .reduce((n, [b, r]) => n + (MJ_RIDERS[level.vehicles[b]?.kind ?? ""] ?? 0) - r, 0);
+    for (let i = state.head; i < known.length; i++) {
+      if (known[i] !== color) continue;
+      if (parked === 0) return i - state.head;
+      parked -= 1;
+    }
+    return 1e6;
   };
-  const start = search(
-    level.vehicles.map(() => false),
-    Array.from({ length: level.bays }, () => [-1, 0] as [number, number]),
-    0,
-    [],
-  );
-  if (!start) throw new Error("no solution found");
-  return start;
+  const score = (v: number) => {
+    const car = level.vehicles[v];
+    if (!car) return 1e9;
+    return need(car.color) * 100 + (MJ_RIDERS[car.kind] ?? 0) + ((v * 7 + jitter * 13) % 11) / 100;
+  };
+  return options.reduce((best, v) => (score(v) < score(best) ? v : best));
 }

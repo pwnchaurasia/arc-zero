@@ -59,22 +59,19 @@ fn round_u8(v: f64) -> u8 {
 /// Levels 1–3 are a gentle introduction; real difficulty starts at level 4.
 fn params(level: u16) -> Params {
     if level <= 3 {
+        // Easy but needs thought (decision 2026-11-02): a few cars block each other,
+        // 4 colours, 4 bays, and only the next 10 commuters are visible.
         return Params {
-            width: 5,
-            height: 6,
-            colors: 3,
-            bays: 5,
-            fill_pct: 40 + 5 * u64::from(level),
-            kinds: vec![
-                (Kind::Microcar, 2),
-                (Kind::Hatchback, 4),
-                (Kind::Sedan, 3),
-                (Kind::Mpv, 1),
-            ],
+            width: 6,
+            height: 7,
+            colors: 4,
+            bays: 4,
+            fill_pct: 48 + 4 * u64::from(level),
+            kinds: vec![(Kind::Microcar, 2), (Kind::Hatchback, 4), (Kind::Sedan, 3), (Kind::Mpv, 2)],
             barriers: 0,
-            visible: None,
-            stick_pct: 60,
-            target: 0.05 + 0.05 * f64::from(level),
+            visible: Some(10),
+            stick_pct: 45,
+            target: 0.16 + 0.05 * f64::from(level),
         };
     }
     let t = f64::from(level - 4) / 96.0;
@@ -106,7 +103,8 @@ fn params(level: u16) -> Params {
         } else {
             0
         },
-        visible: (level > 30).then(|| u16::from(round_u8(lerp(16.0, 6.0, (t - 0.27) / 0.73)))),
+        // The far end of the queue is always hidden; the view narrows as levels rise.
+        visible: Some(u16::from(round_u8(lerp(12.0, 6.0, t)))),
         stick_pct: lerp(45.0, 5.0, t).round() as u64,
         target: lerp(0.35, 0.97, t),
     }

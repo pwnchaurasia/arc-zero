@@ -26,9 +26,13 @@ class WsLevel:
     colors: int
     empty: int
     min_moves: int
+    capacity: int = 4
+    # Only each bottle's top colour run is visible until uncovered.
+    hidden: bool = False
 
     def board(self) -> list[list[int]]:
-        return arc_engine.ws_generate(self.seed, self.colors, self.empty)
+        """The full board, true colours included. Server-only."""
+        return arc_engine.ws_generate(self.seed, self.colors, self.empty, self.capacity)
 
     def stars_for(self, moves: int) -> int:
         if moves <= math.ceil(self.min_moves * 1.2):
@@ -99,6 +103,8 @@ def load(directory: Path) -> Levels:
             colors=int(item["colors"]),
             empty=int(item["empty"]),
             min_moves=int(item["min_moves"]),
+            capacity=int(item.get("capacity", 4)),
+            hidden=bool(item.get("hidden", False)),
         )
         lvl.board()  # validates parameters through the engine
         ws[lvl.level] = lvl

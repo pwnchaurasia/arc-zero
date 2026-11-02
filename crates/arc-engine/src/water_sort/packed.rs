@@ -1,35 +1,48 @@
 //! Fixed-size, allocation-free board used by the solver.
 //!
-//! Cells store `colour + 1`; `0` means empty. Each bottle is `CAPACITY` bytes, bottom first.
+//! Cells store `colour + 1`; `0` means empty and [`UNKNOWN`] a hidden layer (only on
+//! the client's masked boards; the solver never sees one). Each bottle takes
+//! `MAX_CAPACITY` bytes, bottom first; only the first `cap` are used.
 
-use super::{Board, Move, MoveError, CAPACITY, MAX_BOTTLES};
+use super::{Board, Move, MoveError, HIDDEN, MAX_BOTTLES, MAX_CAPACITY};
 
-pub(super) const KEY_LEN: usize = MAX_BOTTLES * CAPACITY;
+pub(super) const KEY_LEN: usize = MAX_BOTTLES * MAX_CAPACITY;
+const UNKNOWN: u8 = u8::MAX;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct Packed {
     n: u8,
+    cap: u8,
     cells: [u8; KEY_LEN],
 }
 
 impl Packed {
     pub(super) fn from_board(board: &Board) -> Self {
+        let cap = usize::from(board.capacity).min(MAX_CAPACITY);
         let mut cells = [0u8; KEY_LEN];
         for (i, bottle) in board.bottles.iter().take(MAX_BOTTLES).enumerate() {
-            for (j, &c) in bottle.iter().take(CAPACITY).enumerate() {
-                cells[i * CAPACITY + j] = c.saturating_add(1);
+            for (j, &c) in bottle.iter().take(cap).enumerate() {
+                cells[i * MAX_CAPACITY + j] = if c == HIDDEN { UNKNOWN } else { c + 1 };
             }
         }
         let n = u8::try_from(board.bottles.len().min(MAX_BOTTLES)).expect("MAX_BOTTLES fits u8");
-        Self { n, cells }
+        Self {
+            n,
+            cap: u8::try_from(cap).expect("capacity fits u8"),
+            cells,
+        }
     }
 
     pub(super) fn bottles(&self) -> usize {
         usize::from(self.n)
     }
 
+    fn cap(&self) -> usize {
+        usize::from(self.cap)
+    }
+
     fn bottle(&self, i: usize) -> &[u8] {
-        &self.cells[i * CAPACITY..(i + 1) * CAPACITY]
+        &self.cells[i * MAX_CAPACITY..i * MAX_CAPACITY + self.cap()]
     }
 
     fn len(&self, i: usize) -> usize {
@@ -50,6 +63,9 @@ impl Packed {
         }
         let bottle = self.bottle(i);
         let top = bottle[l - 1];
+        if top == UNKNOWN {
+            return 0;
+        }
         bottle[..l].iter().rev().take_while(|c| **c == top).count()
     }
 
@@ -59,7 +75,7 @@ impl Packed {
     }
 
     fn is_complete(&self, i: usize) -> bool {
-        self.len(i) == CAPACITY && self.is_mono(i)
+        self.len(i) == self.cap() && self.is_mono(i)
     }
 
     pub(super) fn pour_amount(&self, from: usize, to: usize) -> Result<usize, MoveError> {
@@ -75,13 +91,16 @@ impl Packed {
             return Err(MoveError::SourceEmpty);
         }
         let to_len = self.len(to);
-        if to_len == CAPACITY {
+        if to_len == self.cap() {
             return Err(MoveError::TargetFull);
+        }
+        if self.top(from) == UNKNOWN || (to_len > 0 && self.top(to) == UNKNOWN) {
+            return Err(MoveError::Hidden);
         }
         if to_len > 0 && self.top(to) != self.top(from) {
             return Err(MoveError::ColorMismatch);
         }
-        Ok(self.top_run(from).min(CAPACITY - to_len))
+        Ok(self.top_run(from).min(self.cap() - to_len))
     }
 
     pub(super) fn apply(&mut self, from: usize, to: usize, amount: usize) {
@@ -89,8 +108,8 @@ impl Packed {
         let to_len = self.len(to);
         let color = self.top(from);
         for k in 0..amount {
-            self.cells[from * CAPACITY + from_len - 1 - k] = 0;
-            self.cells[to * CAPACITY + to_len + k] = color;
+            self.cells[from * MAX_CAPACITY + from_len - 1 - k] = 0;
+            self.cells[to * MAX_CAPACITY + to_len + k] = color;
         }
     }
 
@@ -118,14 +137,14 @@ impl Packed {
 
     /// Canonical key: bottles sorted, so boards that differ only in bottle order collide.
     pub(super) fn key(&self) -> [u8; KEY_LEN] {
-        let mut chunks = [[0u8; CAPACITY]; MAX_BOTTLES];
+        let mut chunks = [[0u8; MAX_CAPACITY]; MAX_BOTTLES];
         for (i, chunk) in chunks.iter_mut().enumerate().take(self.bottles()) {
-            chunk.copy_from_slice(self.bottle(i));
+            chunk.copy_from_slice(&self.cells[i * MAX_CAPACITY..(i + 1) * MAX_CAPACITY]);
         }
         chunks[..self.bottles()].sort_unstable();
         let mut key = [0u8; KEY_LEN];
         for (i, chunk) in chunks.iter().enumerate() {
-            key[i * CAPACITY..(i + 1) * CAPACITY].copy_from_slice(chunk);
+            key[i * MAX_CAPACITY..(i + 1) * MAX_CAPACITY].copy_from_slice(chunk);
         }
         key
     }

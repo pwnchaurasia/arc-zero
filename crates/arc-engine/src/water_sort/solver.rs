@@ -128,9 +128,7 @@ mod tests {
     use super::*;
 
     fn b(bottles: &[&[u8]]) -> Board {
-        Board {
-            bottles: bottles.iter().map(|x| x.to_vec()).collect(),
-        }
+        Board::new(4, bottles.iter().map(|x| x.to_vec()).collect())
     }
 
     #[test]
@@ -159,7 +157,7 @@ mod tests {
     fn generated_boards_are_usually_solvable_and_solutions_replay() {
         let mut solved = 0;
         for seed in 0..20 {
-            let board = Board::generate(seed, 4, 2);
+            let board = Board::generate(seed, 4, 2, 4);
             if let SolveOutcome::Solved { moves, .. } = solve(&board, 200_000, 1) {
                 assert!(replay(&board, &moves).unwrap().is_solved());
                 solved += 1;
@@ -171,7 +169,7 @@ mod tests {
     #[test]
     fn optimal_is_never_longer_than_weighted() {
         for seed in 0..8 {
-            let board = Board::generate(seed, 4, 2);
+            let board = Board::generate(seed, 4, 2, 4);
             let (SolveOutcome::Solved { moves: opt, .. }, SolveOutcome::Solved { moves: fast, .. }) =
                 (solve(&board, 200_000, 1), solve(&board, 200_000, 3))
             else {
@@ -182,8 +180,24 @@ mod tests {
     }
 
     #[test]
+    fn taller_and_extra_bottles_still_solve() {
+        let board = Board::generate(11, 4, 2, 6);
+        let SolveOutcome::Solved { moves, .. } = solve(&board, 400_000, 1) else {
+            panic!("expected a solution");
+        };
+        assert!(replay(&board, &moves).unwrap().is_solved());
+        // An extra empty bottle never makes a board harder.
+        let mut more = board.clone();
+        more.add_bottle().unwrap();
+        let SolveOutcome::Solved { moves: easier, .. } = solve(&more, 400_000, 1) else {
+            panic!("expected a solution");
+        };
+        assert!(easier.len() <= moves.len());
+    }
+
+    #[test]
     fn hint_follows_from_current_state() {
-        let board = Board::generate(5, 4, 2);
+        let board = Board::generate(5, 4, 2, 4);
         let SolveOutcome::Solved { moves, .. } = solve(&board, 200_000, 1) else {
             return;
         };

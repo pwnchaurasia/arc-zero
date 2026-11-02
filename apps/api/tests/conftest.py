@@ -32,11 +32,20 @@ REDIS_URL = os.environ.get("ARC_TEST_REDIS", "redis://localhost:56379/15")
 ORIGIN = "http://testserver"
 
 
-def solve_ws(board: list[list[int]]) -> list[tuple[int, int]]:
+# Water Sort test levels: level -> (capacity, hidden). Level 2 hides colours in taller bottles.
+WS_SHAPES = {1: (4, False), 2: (5, True), 3: (4, False), 4: (4, False), 5: (4, False)}
+
+
+def ws_full_board(level: int) -> list[list[int]]:
+    """The true board of a test level (what only the server knows on hidden levels)."""
+    return arc_engine.ws_generate(1000 + level, 3, 2, WS_SHAPES[level][0])
+
+
+def solve_ws(board: list[list[int]], capacity: int = 4) -> list[tuple[int, int]]:
     """Solves a board by following engine hints (stands in for a human player)."""
     moves: list[tuple[int, int]] = []
     while True:
-        kind, move = arc_engine.ws_hint(board, moves, 200_000)
+        kind, move = arc_engine.ws_hint(board, capacity, moves, 200_000)
         if kind == "solved":
             return moves
         assert kind == "move" and move is not None, kind
@@ -73,15 +82,16 @@ def mj_level() -> dict[str, Any]:
 def make_levels(path: Path) -> None:
     ws = []
     for level in range(1, 6):
-        seed = 1000 + level
-        board = arc_engine.ws_generate(seed, 3, 2)
+        capacity, hidden = WS_SHAPES[level]
         ws.append(
             {
                 "level": level,
-                "seed": seed,
+                "seed": 1000 + level,
                 "colors": 3,
                 "empty": 2,
-                "min_moves": len(solve_ws(board)),
+                "capacity": capacity,
+                "hidden": hidden,
+                "min_moves": len(solve_ws(ws_full_board(level), capacity)),
             }
         )
     bb = [{"level": level, "script": bb_script(1)} for level in range(1, 6)]
@@ -177,7 +187,8 @@ async def play_ws_level(
     start = r.json()
     ticket = start.get("guest_ticket") or ticket
     headers = {"x-guest-ticket": ticket} if ticket else {}
-    moves = solve_ws(start["board"])
+    # A human can't see hidden colours; this test player knows the true board.
+    moves = solve_ws(ws_full_board(level), WS_SHAPES[level][0])
     r = await client.post(
         f"/api/v1/games/water-sort/levels/{level}/complete",
         json={"attempt_id": start["attempt_id"], "moves": moves},

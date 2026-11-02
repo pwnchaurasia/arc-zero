@@ -22,33 +22,77 @@ fn err(e: impl std::fmt::Display) -> PyErr {
 
 // ---------------------------------------------------------------- Water Sort
 
-/// Builds the board for a level seed (colours are 0-based ids).
-#[pyfunction]
-fn ws_generate(seed: u64, colors: u8, empty: u8) -> PyResult<Vec<Vec<u16>>> {
-    let total = usize::from(colors) + usize::from(empty);
-    if !(2..=ws::MAX_COLORS).contains(&usize::from(colors)) || total > ws::MAX_BOTTLES {
-        return Err(err(format!(
-            "unsupported board: {colors} colours + {empty} empty"
-        )));
-    }
-    // Widen so Python receives lists of ints (a Vec<u8> would become `bytes`).
-    Ok(ws::Board::generate(seed, colors, empty)
-        .bottles
+// Widen so Python receives lists of ints (a Vec<u8> would become `bytes`).
+fn widen(bottles: Vec<Vec<u8>>) -> Vec<Vec<u16>> {
+    bottles
         .into_iter()
         .map(|b| b.into_iter().map(u16::from).collect())
-        .collect())
+        .collect()
+}
+
+/// Builds the board for a level seed (colours are 0-based ids).
+#[pyfunction]
+fn ws_generate(seed: u64, colors: u8, empty: u8, capacity: u8) -> PyResult<Vec<Vec<u16>>> {
+    let total = usize::from(colors) + usize::from(empty);
+    if !(2..=ws::MAX_COLORS).contains(&usize::from(colors))
+        || total > ws::MAX_BOTTLES
+        || !(ws::MIN_CAPACITY..=ws::MAX_CAPACITY).contains(&usize::from(capacity))
+    {
+        return Err(err(format!(
+            "unsupported board: {colors} colours + {empty} empty, capacity {capacity}"
+        )));
+    }
+    Ok(widen(
+        ws::Board::generate(seed, colors, empty, capacity).bottles,
+    ))
 }
 
 /// Replays moves from `board`. Returns whether the result is solved.
 /// Raises `EngineError` on the first illegal move.
 #[pyfunction]
-fn ws_replay(py: Python<'_>, board: Vec<Vec<u8>>, moves: Vec<(u8, u8)>) -> PyResult<bool> {
+fn ws_replay(
+    py: Python<'_>,
+    board: Vec<Vec<u8>>,
+    capacity: u8,
+    moves: Vec<(u8, u8)>,
+) -> PyResult<bool> {
     py.allow_threads(|| {
-        ws::replay(&ws::Board { bottles: board }, &moves)
+        ws::replay(&ws::Board::new(capacity, board), &moves)
             .map(|b| b.is_solved())
             .map_err(|e| e.to_string())
     })
     .map_err(err)
+}
+
+/// What the player may see after `moves`: the masked board (hidden layers are 255)
+/// and the layers seen so far, as hex (pass it back next time so undo never re-hides).
+/// For levels without hidden colours, everything is visible.
+#[pyfunction]
+fn ws_view(
+    board: Vec<Vec<u8>>,
+    capacity: u8,
+    moves: Vec<(u8, u8)>,
+    hidden: bool,
+    seen_hex: &str,
+) -> PyResult<(Vec<Vec<u16>>, String)> {
+    let start = ws::Board::new(capacity, board);
+    if !hidden {
+        let full = ws::replay(&start, &moves).map_err(err)?;
+        return Ok((widen(full.bottles), String::new()));
+    }
+    let seen = if seen_hex.is_empty() {
+        0
+    } else {
+        u128::from_str_radix(seen_hex, 16).map_err(err)?
+    };
+    let (full, seen) = ws::replay_revealing(&start, &moves, Some(seen)).map_err(err)?;
+    Ok((widen(full.masked(seen).bottles), format!("{seen:x}")))
+}
+
+/// Number of extra bottles a move list adds (each must have been paid for).
+#[pyfunction]
+fn ws_bottles_added(moves: Vec<(u8, u8)>) -> usize {
+    ws::bottles_added(&moves)
 }
 
 /// Next move from the player's current position.
@@ -57,11 +101,12 @@ fn ws_replay(py: Python<'_>, board: Vec<Vec<u8>>, moves: Vec<(u8, u8)>) -> PyRes
 fn ws_hint(
     py: Python<'_>,
     board: Vec<Vec<u8>>,
+    capacity: u8,
     moves: Vec<(u8, u8)>,
     budget: usize,
 ) -> PyResult<(&'static str, Option<(u8, u8)>)> {
     let outcome = py
-        .allow_threads(|| ws::hint(&ws::Board { bottles: board }, &moves, budget))
+        .allow_threads(|| ws::hint(&ws::Board::new(capacity, board), &moves, budget))
         .map_err(err)?;
     Ok(match outcome {
         ws::HintOutcome::Move(m) => ("move", Some(m)),
@@ -241,6 +286,10 @@ fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ws_generate, m)?)?;
     m.add_function(wrap_pyfunction!(ws_replay, m)?)?;
     m.add_function(wrap_pyfunction!(ws_hint, m)?)?;
+    m.add_function(wrap_pyfunction!(ws_view, m)?)?;
+    m.add_function(wrap_pyfunction!(ws_bottles_added, m)?)?;
+    m.add("WS_ADD_BOTTLE", ws::ADD_BOTTLE)?;
+    m.add("WS_MAX_EXTRA_BOTTLES", ws::MAX_EXTRA_BOTTLES)?;
     m.add_function(wrap_pyfunction!(bb_new_run, m)?)?;
     m.add_function(wrap_pyfunction!(bb_validate_script, m)?)?;
     m.add_function(wrap_pyfunction!(bb_public_state, m)?)?;

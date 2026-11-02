@@ -25,10 +25,19 @@ export type WsMove = [number, number];
 export interface WsStart {
   attempt_id: string;
   level: number;
+  /** Units each bottle holds on this level (4 to 6). */
+  capacity: number;
+  /** True when colours under each bottle's top run are hidden until uncovered. */
+  hidden: boolean;
+  /** Masked on hidden levels: 255 is a colour not seen yet. */
   board: Board;
   three_star_moves: number;
   two_star_moves: number;
   hints_left: number;
+  prices: Record<string, number>;
+  hint_price: number;
+  reward: number;
+  coins: number;
 }
 
 export interface LevelWin {
@@ -41,12 +50,17 @@ export interface WsComplete extends LevelWin {
   level: number;
   moves: number;
   best_stars: number;
+  first_clear: boolean;
+  coins_earned: number;
+  streak_bonus: number;
+  coins: number | null;
 }
 
 export interface WsHint {
   move: WsMove | null;
   dead_end: boolean;
   hints_left: number;
+  coins: number | null;
 }
 
 export type Shape = "square" | "tri_bl" | "tri_br" | "tri_tl" | "tri_tr";
@@ -157,9 +171,10 @@ export interface MjStart {
   coins: number;
 }
 
+/** Result of buying an assist (MetroJam, Water Sort): balance, assists owned this attempt. */
 export interface MjBuy {
   coins: number;
-  owned: Partial<Record<MjAssist, number>>;
+  owned: Partial<Record<string, number>>;
   spent: number;
 }
 

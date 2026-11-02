@@ -3,6 +3,7 @@ import type {
   BbStart,
   BbAssist,
   BbTurn,
+  Board,
   CoinRules,
   GameId,
   Me,
@@ -127,10 +128,22 @@ export const api = {
         attempt_id: attemptId,
         moves,
       }),
-    hint: (level: number, attemptId: string, moves: WsMove[]) =>
+    hint: (level: number, attemptId: string, moves: WsMove[], pay?: number) =>
       request<WsHint>("POST", `${game("water-sort")}/levels/${level}/hint`, {
         attempt_id: attemptId,
         moves,
+        pay: pay ?? null,
+      }),
+    reveal: (level: number, attemptId: string, moves: WsMove[]) =>
+      request<{ board: Board }>("POST", `${game("water-sort")}/levels/${level}/reveal`, {
+        attempt_id: attemptId,
+        moves,
+      }),
+    buy: (level: number, attemptId: string, price: number) =>
+      request<MjBuy>("POST", `${game("water-sort")}/levels/${level}/assists`, {
+        attempt_id: attemptId,
+        kind: "extra_bottle",
+        price,
       }),
   },
 

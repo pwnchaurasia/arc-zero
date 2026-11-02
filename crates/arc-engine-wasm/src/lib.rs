@@ -22,11 +22,18 @@ pub struct WaterSort {
 
 #[wasm_bindgen]
 impl WaterSort {
+    /// `{"capacity": n, "bottles": [...]}`. The board may be masked: hidden layers are 255.
     #[wasm_bindgen(constructor)]
     pub fn new(board_json: &str) -> Result<WaterSort, JsError> {
         let board: ws::Board = serde_json::from_str(board_json).map_err(js_err)?;
-        board.validate().map_err(js_err)?;
+        board.validate_masked().map_err(js_err)?;
         Ok(Self { board })
+    }
+
+    /// The paid assist: one more empty bottle.
+    #[wasm_bindgen(js_name = addBottle)]
+    pub fn add_bottle(&mut self) -> Result<(), JsError> {
+        self.board.add_bottle().map_err(js_err)
     }
 
     /// Units a pour would move, or -1 if illegal.

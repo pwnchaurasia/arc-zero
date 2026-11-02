@@ -15,7 +15,7 @@ import arc_engine
 from fastapi import APIRouter, Path, Request
 from pydantic import Field
 
-from arc_api import hints, store
+from arc_api import analytics, hints, store
 from arc_api.errors import ApiError
 from arc_api.levels import GameId
 from arc_api.principal import Principal, PrincipalDep, issue_ticket
@@ -91,6 +91,7 @@ async def start(
         _run_key(run_id),
         {"owner": who.owner, "level": level, "state": state_json, "last_turn_ms": 0},
     )
+    await analytics.record(db, state, who, "start", GAME, level)
     return StartOut(
         run_id=run_id,
         level=level,
@@ -147,6 +148,18 @@ async def turn(
                 }
             )
         await store.put_json(state.redis, key, run)
+        if result.status in ("won", "lost"):
+            kind = "clear" if result.status == "won" else "lost"
+            await analytics.record(
+                db,
+                state,
+                who,
+                kind,
+                GAME,
+                int(run["level"]),
+                stars=result.stars or None,
+                detail=f"turns:{result.turn}",
+            )
         return out
 
 
@@ -165,4 +178,5 @@ async def hint(
     if aim is None:
         raise ApiError(503, "hint_unavailable", "No hint available right now. Not charged.")
     left = await hints.consume(db, state, who, GAME)
+    await analytics.record(db, state, who, "hint", GAME, int(run["level"]))
     return HintOut(aim=aim, hints_left=left)

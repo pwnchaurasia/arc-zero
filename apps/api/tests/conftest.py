@@ -139,7 +139,9 @@ async def app_client(settings: Settings, _database: None) -> AsyncIterator[Async
     await redis.flushdb()
     await redis.aclose()
     conn = await asyncpg.connect(TEST_DB_URL)
-    await conn.execute("TRUNCATE players, game_progress, level_results, hint_usage CASCADE")
+    await conn.execute(
+        "TRUNCATE players, game_progress, level_results, hint_usage, play_events CASCADE"
+    )
     await conn.close()
 
     app = create_app(settings.model_copy())

@@ -8,6 +8,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -40,6 +41,8 @@ class Player(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     # HMAC(pepper, recovery key). The key itself is never stored.
     key_hash: Mapped[bytes] = mapped_column(LargeBinary(32), unique=True, nullable=False)
+    # Optional, not unique, checked for profanity (arc_api.names).
+    display_name: Mapped[str | None] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -131,6 +134,31 @@ class CoinLedger(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class PlayEvent(Base):
+    """First-party analytics: one row per start, clear, hint, assist or sign-up.
+
+    `who` is a keyed hash of the player or guest id, so distinct players can be
+    counted without storing who they are. See DEVELOPMENT.md for queries.
+    """
+
+    __tablename__ = "play_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    day: Mapped[date] = mapped_column(Date, server_default=text("CURRENT_DATE"), nullable=False)
+    # start | clear | lost | hint | assist | register
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    game_id: Mapped[str | None] = mapped_column(String(32))
+    level: Mapped[int | None] = mapped_column(Integer)
+    who: Mapped[str] = mapped_column(String(16), nullable=False)
+    signed_in: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    stars: Mapped[int | None] = mapped_column(SmallInteger)
+    coins: Mapped[int | None] = mapped_column(Integer)
+    detail: Mapped[str | None] = mapped_column(String(32))
 
 
 def make_engine(url: str, pool_size: int, max_overflow: int) -> AsyncEngine:

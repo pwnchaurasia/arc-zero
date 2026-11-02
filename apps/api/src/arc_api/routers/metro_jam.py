@@ -15,7 +15,7 @@ import arc_engine
 from fastapi import APIRouter, Path, Request
 from pydantic import Field
 
-from arc_api import coins, store
+from arc_api import analytics, coins, store
 from arc_api.errors import ApiError
 from arc_api.levels import GameId, MjLevel
 from arc_api.principal import Principal, PrincipalDep, issue_ticket
@@ -138,6 +138,7 @@ async def start(
             "spent": 0,
         },
     )
+    await analytics.record(db, state, who, "start", GAME, level)
     return StartOut(
         attempt_id=attempt_id,
         level=level,
@@ -183,6 +184,7 @@ async def buy_assist(
         bought[body.kind] = bought.get(body.kind, 0) + 1
         attempt["spent"] = int(attempt.get("spent", 0)) + price
         await store.put_json(state.redis, key, attempt)
+        await analytics.record(db, state, who, "assist", GAME, level, coins=price, detail=body.kind)
         return BuyOut(coins=left, owned=bought, spent=attempt["spent"])
 
 
@@ -230,4 +232,15 @@ async def complete(
         )
         attempt["result"] = out.model_dump()
         await store.put_json(state.redis, key, attempt)
+        await analytics.record(
+            db,
+            state,
+            who,
+            "clear",
+            GAME,
+            level,
+            stars=stars,
+            coins=paid.earned + paid.streak_bonus,
+            detail=f"assists:{used}",
+        )
         return out

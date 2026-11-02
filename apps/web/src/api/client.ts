@@ -164,11 +164,13 @@ export const api = {
 
   powChallenge: (purpose: "register" | "restore") =>
     request<PowChallenge>("POST", "/pow/challenge", { purpose }),
-  register: (pow: { token: string; nonce: number }) =>
+  register: (pow: { token: string; nonce: number }, name?: string) =>
     request<{ recovery_key: string }>("POST", "/auth/register", {
       guest_ticket: guestTicket.get() ?? "",
       pow,
+      name: name?.trim() || null,
     }),
+  setName: (name: string) => request<{ name: string }>("POST", "/me/name", { name }),
   restore: (recoveryKey: string, pow: { token: string; nonce: number }) =>
     request<undefined>("POST", "/auth/restore", { recovery_key: recoveryKey, pow }),
   newRecoveryKey: () => request<{ recovery_key: string }>("POST", "/auth/recovery-key"),

@@ -50,7 +50,9 @@ export function Home({
       <header className="flex items-center justify-between px-5 pb-2 pt-5">
         <div>
           <h1 className="text-3xl font-black tracking-tight">Arc Zero</h1>
-          <p className="text-sm text-muted">No ads. No tracking. Just games.</p>
+          <p className="text-sm text-muted">
+            {me?.name ? `Playing as ${me.name}` : "No ads. No tracking. Just games."}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <CoinChip />

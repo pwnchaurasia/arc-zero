@@ -87,10 +87,76 @@ function KeyReveal({ recoveryKey, onDone }: { recoveryKey: string; onDone: () =>
 }
 
 /** The Level-3 gate: create an account (no email, no password) and show the recovery key once. */
+/** Display-name input. The server has the final say (profanity, length). */
+function NameField({
+  value,
+  onChange,
+  disabled,
+  optional = false,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  optional?: boolean;
+}) {
+  return (
+    <label className="block space-y-1">
+      <span className="text-sm text-muted">Your name{optional ? " (optional, you can change it later)" : ""}</span>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        maxLength={20}
+        autoComplete="nickname"
+        placeholder="e.g. Pawan"
+        className="min-h-11 w-full rounded-2xl border border-line bg-panel-2 px-4 text-white outline-none focus:border-accent"
+      />
+    </label>
+  );
+}
+
+function NameSetting({ current, onSaved }: { current: string | null; onSaved: () => Promise<void> }) {
+  const [value, setValue] = useState(current ?? "");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const changed = value.trim() !== (current ?? "") && value.trim().length > 0;
+
+  const save = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const res = await api.setName(value);
+      setValue(res.name);
+      setNote({ ok: true, text: "Saved." });
+      await onSaved();
+    } catch (e) {
+      setNote({ ok: false, text: message(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <NameField value={value} onChange={setValue} disabled={busy} />
+      {changed && (
+        <Button variant="secondary" className="w-full" onClick={save} disabled={busy}>
+          {busy ? "Saving…" : "Save name"}
+        </Button>
+      )}
+      {note && (
+        <p className={`text-sm ${note.ok ? "text-emerald-300" : "text-red-300"}`}>{note.text}</p>
+      )}
+    </div>
+  );
+}
+
 export function CheckpointModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { refresh } = useSession();
   const [step, setStep] = useState<"intro" | "working" | "key">("intro");
   const [key, setKey] = useState("");
+  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
@@ -98,7 +164,7 @@ export function CheckpointModal({ open, onClose }: { open: boolean; onClose: () 
     setError(null);
     try {
       const pow = await proveWork("register");
-      const { recovery_key } = await api.register(pow);
+      const { recovery_key } = await api.register(pow, name);
       guestTicket.clear();
       setKey(recovery_key);
       setStep("key");
@@ -123,6 +189,7 @@ export function CheckpointModal({ open, onClose }: { open: boolean; onClose: () 
             Nice work. Save your progress to keep playing. No email, no password: you get a
             six-word key that restores your progress on any device.
           </p>
+          <NameField value={name} onChange={setName} disabled={step === "working"} optional />
           {error && <p className="rounded-xl bg-red-500/15 p-3 text-sm text-red-300">{error}</p>}
           <Button className="w-full" onClick={save} disabled={step === "working"}>
             {step === "working" ? "Securing your account…" : "Save my progress"}
@@ -249,6 +316,7 @@ export function SettingsModal({
         />
       </div>
       <div className="mt-6 space-y-3 border-t border-line pt-5">
+        {me?.signed_in && <NameSetting current={me.name} onSaved={refresh} />}
         {me?.signed_in &&
           (keyStep === "idle" ? (
             <Button variant="secondary" className="w-full" onClick={() => setKeyStep("confirm")}>

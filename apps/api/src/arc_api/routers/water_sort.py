@@ -14,7 +14,7 @@ import arc_engine
 from fastapi import APIRouter, Path, Request
 from pydantic import Field
 
-from arc_api import hints, store
+from arc_api import analytics, hints, store
 from arc_api.errors import ApiError
 from arc_api.levels import GameId, WsLevel
 from arc_api.principal import Principal, PrincipalDep, issue_ticket
@@ -102,6 +102,7 @@ async def start(
         {"owner": who.owner, "level": level, "issued_ms": int(time.time() * 1000)},
     )
     three, two = lvl.star_thresholds
+    await analytics.record(db, state, who, "start", GAME, level)
     return StartOut(
         attempt_id=attempt_id,
         level=level,
@@ -155,6 +156,9 @@ async def complete(
         )
         attempt["result"] = result.model_dump()
         await store.put_json(state.redis, key, attempt)
+        await analytics.record(
+            db, state, who, "clear", GAME, level, stars=stars, detail=f"moves:{len(body.moves)}"
+        )
         return result
 
 
@@ -183,4 +187,5 @@ async def hint(
     if kind != "move" or move is None:
         raise ApiError(503, "hint_unavailable", "No hint available right now. Not charged.")
     left = await hints.consume(db, state, who, GAME)
+    await analytics.record(db, state, who, "hint", GAME, level)
     return HintOut(move=move, hints_left=left)

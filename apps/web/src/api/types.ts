@@ -9,6 +9,8 @@ export interface GameProgress {
 
 export interface Me {
   signed_in: boolean;
+  /** Display name (signed-in players only). */
+  name: string | null;
   /** Local playtest mode only (ARC_DEV_UNLOCK_ALL): every level can be played. */
   all_levels_open: boolean;
   guest_max_level: number;

@@ -17,9 +17,12 @@ use crate::derive_seed;
 const BOT_AIMS: u16 = 31;
 /// No block is ever weaker than this, on any level (design decision 2026-10-30).
 const MIN_BLOCK_HP: u16 = 50;
-/// Balls on level 1 and level 100; levels in between interpolate.
+/// Balls on level 4 (after the intro) and level 100; levels in between interpolate.
 const START_BALLS_FIRST: f64 = 33.0;
 const START_BALLS_LAST: f64 = 60.0;
+/// Levels 1-3 are a gentle introduction (design decision 2026-11-02).
+const INTRO_LEVELS: u16 = 3;
+const INTRO_BALLS: f64 = 40.0;
 const MAX_ATTEMPTS: u32 = 24;
 const WINNERS_WANTED: usize = 3;
 
@@ -78,18 +81,42 @@ fn pick_power(rng: &mut Rng, pool: &[(PowerKind, u32)]) -> PowerKind {
 /// easier by giving the player more balls, never by dropping blocks below MIN_BLOCK_HP.
 fn build_script(level: u16, seed: u64, extra_balls: u16) -> LevelScript {
     let mut rng = Rng::new(seed);
-    let t = f64::from(level - 1) / 99.0;
+    let intro = level <= INTRO_LEVELS;
+    // The real curve starts after the intro levels.
+    let t = f64::from(level.saturating_sub(INTRO_LEVELS + 1)) / f64::from(99 - INTRO_LEVELS);
 
-    let start_balls = to_u16(lerp(START_BALLS_FIRST, START_BALLS_LAST, t))
+    let base_balls = if intro {
+        INTRO_BALLS
+    } else {
+        lerp(START_BALLS_FIRST, START_BALLS_LAST, t)
+    };
+    let start_balls = to_u16(base_balls)
         .saturating_add(extra_balls)
         .min(MAX_BALLS);
-    let total_rows = usize::from(to_u16(lerp(6.0, 28.0, t)));
-    let start_count = (3 + usize::from(level) / 25).min(6).min(total_rows - 1);
-    // Block HP range: ~55-78 on level 1, rising to ~110-150 on level 100.
-    let hp_lo = lerp(55.0, 110.0, t);
-    let hp_hi = lerp(78.0, f64::from(MAX_HP), t);
-    let min_blocks = i64::from(to_u16(lerp(2.0, 4.0, t)));
-    let max_blocks = i64::from(to_u16(lerp(4.0, 8.0, t)));
+    let total_rows = if intro {
+        3 + usize::from(level)
+    } else {
+        usize::from(to_u16(lerp(6.0, 28.0, t)))
+    };
+    let start_count = if intro {
+        2
+    } else {
+        (3 + usize::from(level) / 25).min(6).min(total_rows - 1)
+    };
+    // Block HP range: 50-60 in the intro, ~55-78 on level 4, rising to ~110-150 on level 100.
+    let (hp_lo, hp_hi) = if intro {
+        (f64::from(MIN_BLOCK_HP), 60.0)
+    } else {
+        (lerp(55.0, 110.0, t), lerp(78.0, f64::from(MAX_HP), t))
+    };
+    let (min_blocks, max_blocks) = if intro {
+        (2, 3)
+    } else {
+        (
+            i64::from(to_u16(lerp(2.0, 4.0, t))),
+            i64::from(to_u16(lerp(4.0, 8.0, t))),
+        )
+    };
     let tri_chance = if level < 7 {
         0
     } else {

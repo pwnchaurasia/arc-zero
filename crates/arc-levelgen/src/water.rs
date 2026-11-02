@@ -121,7 +121,10 @@ fn assign(tier_levels: &[u16], mut pool: Vec<Candidate>, colors: u8) -> Vec<WsLe
     let mut used = vec![false; pool.len()];
     let mut out = Vec::with_capacity(n);
     for (i, &level) in tier_levels.iter().enumerate() {
-        let q = if level.is_multiple_of(10) && level != 100 {
+        let q = if level <= 3 {
+            // Gentle introduction: the easiest boards of the tier.
+            0.03 * i as f64
+        } else if level.is_multiple_of(10) && level != 100 {
             0.1
         } else {
             0.15 + 0.75 * (i as f64 + 0.5) / n as f64

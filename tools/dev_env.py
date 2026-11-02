@@ -23,7 +23,7 @@ def main() -> int:
         "ARC_ENV": "development",
         "ARC_DATABASE_URL": "postgresql+asyncpg://arc:arc@localhost:55432/arc",
         "ARC_REDIS_URL": "redis://localhost:56379/0",
-        "ARC_LEVELS_PATH": "levels.json",
+        "ARC_LEVELS_PATH": "levels",
         "ARC_SIGNING_KEYS": json.dumps({"k1": secrets.token_urlsafe(48)}),
         "ARC_SIGNING_KID": "k1",
         "ARC_RECOVERY_PEPPER": secrets.token_urlsafe(48),

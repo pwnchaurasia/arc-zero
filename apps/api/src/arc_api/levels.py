@@ -1,6 +1,7 @@
-"""Server-only level catalogue, loaded from the file written by `arc-levelgen`.
+"""Server-only level catalogue, loaded from the files written by `arc-levelgen`.
 
-The file reveals every level, so it must never be served or committed.
+One file per game (`<dir>/<game>.json`), so regenerating one game leaves the others
+alone. The files reveal every level, so they must never be served or committed.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import arc_engine
 
 GameId = Literal["water-sort", "brick-blast", "metro-jam"]
 GAME_IDS: Final[tuple[GameId, ...]] = ("water-sort", "brick-blast", "metro-jam")
-SUPPORTED_VERSION = 1
+SUPPORTED_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,13 +79,20 @@ def _contiguous(levels: dict[int, Any], name: str) -> None:
         raise ValueError(f"{name} levels must be numbered 1..N without gaps")
 
 
-def load(path: Path) -> Levels:
+def _read_game(directory: Path, game: GameId) -> list[dict[str, Any]]:
+    path = directory / f"{game}.json"
     data = json.loads(path.read_text("utf-8"))
-    if data.get("version") != SUPPORTED_VERSION:
-        raise ValueError(f"unsupported levels file version {data.get('version')}")
+    if data.get("version") != SUPPORTED_VERSION or data.get("game") != game:
+        raise ValueError(f"{path}: expected {game} levels, version {SUPPORTED_VERSION}")
+    items = data.get("levels")
+    if not isinstance(items, list) or not items:
+        raise ValueError(f"{path}: no levels")
+    return items
 
+
+def load(directory: Path) -> Levels:
     ws: dict[int, WsLevel] = {}
-    for item in data.get("water_sort", []):
+    for item in _read_game(directory, "water-sort"):
         lvl = WsLevel(
             level=int(item["level"]),
             seed=int(item["seed"]),
@@ -96,13 +104,13 @@ def load(path: Path) -> Levels:
         ws[lvl.level] = lvl
 
     bb: dict[int, BbLevel] = {}
-    for item in data.get("brick_blast", []):
+    for item in _read_game(directory, "brick-blast"):
         script_json = json.dumps(item["script"], separators=(",", ":"))
         arc_engine.bb_validate_script(script_json)
         bb[int(item["level"])] = BbLevel(level=int(item["level"]), script_json=script_json)
 
     mj: dict[int, MjLevel] = {}
-    for item in data.get("metro_jam", []):
+    for item in _read_game(directory, "metro-jam"):
         level_json = json.dumps(item["data"], separators=(",", ":"))
         arc_engine.mj_validate(level_json)
         mj[int(item["level"])] = MjLevel(
@@ -116,6 +124,4 @@ def load(path: Path) -> Levels:
     _contiguous(ws, "water_sort")
     _contiguous(bb, "brick_blast")
     _contiguous(mj, "metro_jam")
-    if not ws or not bb or not mj:
-        raise ValueError("levels file must contain every game")
     return Levels(water_sort=ws, brick_blast=bb, metro_jam=mj)

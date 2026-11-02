@@ -22,7 +22,7 @@ make setup
 
 This creates `apps/api/.env` with fresh **local-only** secrets, starts Postgres
 (`localhost:55432`) and Redis (`localhost:56379`) in Docker, installs dependencies,
-builds the WASM engine, generates levels into `apps/api/levels.json` and applies the
+builds the WASM engine, generates levels into `apps/api/levels/` (one file per game) and applies the
 database migrations. Safe to run again: it never overwrites your `.env`.
 
 ## 3. Day to day
@@ -86,7 +86,7 @@ your branch ──PR──▶ CI (Rust, API, web, e2e) ──"CI passed"──�
 | Symptom | Fix |
 |---|---|
 | `403 forbidden_origin` in the browser | open `localhost`, not `127.0.0.1`; or add your origin to `ARC_ALLOWED_ORIGINS` in `apps/api/.env` |
-| API fails at start: `levels.json` not found | `make levels` |
+| API fails at start: a levels file not found (e.g. `levels/water-sort.json`) | `make levels` (and check `ARC_LEVELS_PATH=levels` in `apps/api/.env`) |
 | `connection refused` on 55432 / 56379 | `make services` (is Docker Desktop running?) |
 | game logic changed but the browser behaves the old way | `make wasm`, then hard-reload (the service worker caches the old build in `make preview`) |
 | web app fails to import `src/wasm/pkg/...` | `make wasm` (that folder is generated, not committed) |

@@ -31,7 +31,8 @@ class Settings(BaseSettings):
     # for 2 workers plus migrations and backups.
     db_pool_size: int = Field(default=5, ge=1, le=50)
     db_max_overflow: int = Field(default=2, ge=0, le=50)
-    levels_path: Path = Path("levels.json")
+    # Directory holding one levels file per game (`<game>.json`).
+    levels_path: Path = Path("levels")
 
     # HMAC keys for signed tokens (guest tickets, PoW challenges), by key id.
     # Rotate by adding a new key, switching `signing_kid`, and removing the old

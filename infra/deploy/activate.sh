@@ -3,7 +3,7 @@
 #
 #   activate.sh <deploy-dir> <image-prefix> <image-tag>
 #
-# Expects <deploy-dir>/secrets.new/{api.env,redis_password,levels.json} and
+# Expects <deploy-dir>/secrets.new/{api.env,redis_password,<game>.json for each game} and
 # <deploy-dir>/docker-compose.yml to have been uploaded already.
 # Set SKIP_PULL=1 to use local images (testing).
 set -euo pipefail
@@ -11,14 +11,15 @@ set -euo pipefail
 dir=${1:?deploy dir} prefix=${2:?image prefix} tag=${3:?image tag}
 cd "$dir"
 
-for f in api.env redis_password levels.json; do
+LEVEL_FILES="water-sort.json brick-blast.json metro-jam.json"
+for f in api.env redis_password $LEVEL_FILES; do
   [ -s "secrets.new/$f" ] || { echo "missing secrets.new/$f" >&2; exit 1; }
 done
 # Containers read these as their own (non-root) users through bind mounts, which keep
 # host permissions. The parent directory stays 700, so other host users still can't.
 chmod 700 secrets.new
 chmod 600 secrets.new/api.env secrets.new/redis_password
-chmod 644 secrets.new/levels.json
+for f in $LEVEL_FILES; do chmod 644 "secrets.new/$f"; done
 
 # Swap the whole directory at once so a half-copied set is never used.
 rm -rf secrets.old

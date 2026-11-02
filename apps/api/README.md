@@ -10,7 +10,7 @@ docker compose -f ../../infra/docker-compose.dev.yml up -d   # Postgres + Redis
 cp .env.example .env                                         # then fill in secrets
 uv sync
 uv run alembic upgrade head
-ARC_LEVEL_SEED=... cargo run --release -p arc-levelgen -- --out levels.json
+ARC_LEVEL_SEED=... cargo run --release -p arc-levelgen -- --out-dir levels
 uv run uvicorn --factory arc_api.main:app --reload --no-access-log
 ```
 

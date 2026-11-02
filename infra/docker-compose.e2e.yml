@@ -9,7 +9,7 @@ x-api-env: &api-env
   ARC_ENV: development
   ARC_DATABASE_URL: postgresql+asyncpg://arc:arc@postgres:5432/arc
   ARC_REDIS_URL: redis://redis:6379/0
-  ARC_LEVELS_PATH: /levels/levels.json
+  ARC_LEVELS_PATH: /levels
   ARC_SIGNING_KEYS: '{"k1": "e2e-only-signing-key-not-secret-0123456789"}'
   ARC_SIGNING_KID: k1
   ARC_RECOVERY_PEPPER: e2e-only-pepper-not-secret-0123456789abcdef
@@ -34,7 +34,7 @@ services:
       RUSTUP_TOOLCHAIN: "1.90.0" # use the image's toolchain as-is
       CARGO_TARGET_DIR: /target
       ARC_LEVEL_SEED: e2e-only-level-seed-not-secret-0123456789abcdef
-    command: ["cargo", "run", "--locked", "--release", "-p", "arc-levelgen", "--", "--out", "/levels/levels.json"]
+    command: ["cargo", "run", "--locked", "--release", "-p", "arc-levelgen", "--", "--out-dir", "/levels"]
     volumes:
       - ..:/src:ro
       # Bind mounts (not named volumes) so `down -v` keeps the Rust build cache between runs.

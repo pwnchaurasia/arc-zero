@@ -19,7 +19,8 @@ services:
     image: ${IMAGE_PREFIX:?}/arc-zero-api:${IMAGE_TAG:?}
     restart: unless-stopped
     env_file: [secrets/api.env]
-    secrets: [levels.json]
+    # One levels file per game; ARC_LEVELS_PATH=/run/secrets.
+    secrets: [water-sort.json, brick-blast.json, metro-jam.json]
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -50,7 +51,9 @@ services:
     networks: [internal]
 
 secrets:
-  levels.json: { file: ./secrets/levels.json }
+  water-sort.json: { file: ./secrets/water-sort.json }
+  brick-blast.json: { file: ./secrets/brick-blast.json }
+  metro-jam.json: { file: ./secrets/metro-jam.json }
   redis_password: { file: ./secrets/redis_password }
 
 volumes: { redisdata: {} }

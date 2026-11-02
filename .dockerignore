@@ -11,5 +11,6 @@ apps/web/src/wasm/pkg
 **/.env
 **/.env.*
 **/levels.json
+apps/api/levels/
 infra/secrets
 .git

@@ -5,21 +5,24 @@
 //! file is server-only: it must never be committed or served to clients.
 //!
 //! Usage:
-//!   ARC_LEVEL_SEED=<secret> arc-levelgen --out levels.json [--game all|water-sort|brick-blast|metro-jam] [--levels 100]
+//!   ARC_LEVEL_SEED=<secret> arc-levelgen --out-dir levels [--game all|water-sort|brick-blast|metro-jam] [--levels 100]
+//!
+//! Each game gets its own file (`levels/<game>.json`), so regenerating one game never
+//! touches the others.
 
 mod brick;
 mod metro;
 mod water;
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 
 use arc_engine::hash::Fnv64;
 use serde::Serialize;
 
-pub const LEVELS_FILE_VERSION: u32 = 1;
+pub const LEVELS_FILE_VERSION: u32 = 2;
 
 /// Derives an independent per-item seed from the master secret.
 pub fn derive_seed(master: &str, parts: &[&str]) -> u64 {
@@ -32,19 +35,34 @@ pub fn derive_seed(master: &str, parts: &[&str]) -> u64 {
     u64::from_str_radix(&h.hex(), 16).expect("fnv hex is valid")
 }
 
+/// One game's levels: `<out-dir>/<game>.json`.
 #[derive(Serialize)]
-struct LevelsFile {
+struct LevelsFile<'a, T: Serialize> {
     version: u32,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    water_sort: Vec<water::WsLevel>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    brick_blast: Vec<brick::BbLevel>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    metro_jam: Vec<metro::MjLevel>,
+    game: &'a str,
+    levels: &'a [T],
+}
+
+/// Writes atomically (temp file, then rename) so the API never reads a half-written file.
+fn write_game<T: Serialize>(dir: &Path, game: &str, levels: &[T]) -> Result<(), String> {
+    let file = LevelsFile {
+        version: LEVELS_FILE_VERSION,
+        game,
+        levels,
+    };
+    let json = serde_json::to_vec(&file).map_err(|e| format!("serialise {game}: {e}"))?;
+    let path = dir.join(format!("{game}.json"));
+    let tmp = dir.join(format!(".{game}.json.tmp"));
+    std::fs::File::create(&tmp)
+        .and_then(|mut f| f.write_all(&json))
+        .and_then(|()| std::fs::rename(&tmp, &path))
+        .map_err(|e| format!("write {}: {e}", path.display()))?;
+    eprintln!("wrote {}", path.display());
+    Ok(())
 }
 
 struct Args {
-    out: PathBuf,
+    out_dir: PathBuf,
     game: String,
     levels: u16,
 }
@@ -57,15 +75,17 @@ fn parse_args() -> Result<Args, String> {
     while let Some(arg) = it.next() {
         let mut value = || it.next().ok_or(format!("{arg} needs a value"));
         match arg.as_str() {
-            "--out" => out = Some(PathBuf::from(value()?)),
+            "--out-dir" => out = Some(PathBuf::from(value()?)),
             "--game" => game = value()?,
             "--levels" => {
                 levels = value()?.parse().map_err(|e| format!("--levels: {e}"))?;
             }
             "-h" | "--help" => {
-                return Err("usage: ARC_LEVEL_SEED=<secret> arc-levelgen --out <file> \
+                return Err(
+                    "usage: ARC_LEVEL_SEED=<secret> arc-levelgen --out-dir <dir> \
                             [--game all|water-sort|brick-blast|metro-jam] [--levels 1..=100]"
-                    .to_owned())
+                        .to_owned(),
+                )
             }
             other => return Err(format!("unknown argument {other}")),
         }
@@ -80,7 +100,7 @@ fn parse_args() -> Result<Args, String> {
         return Err("--levels must be 1..=100".to_owned());
     }
     Ok(Args {
-        out: out.ok_or("--out is required")?,
+        out_dir: out.ok_or("--out-dir is required")?,
         game,
         levels,
     })
@@ -102,50 +122,43 @@ fn main() -> ExitCode {
         }
     };
 
-    let started = Instant::now();
-    let mut file = LevelsFile {
-        version: LEVELS_FILE_VERSION,
-        water_sort: Vec::new(),
-        brick_blast: Vec::new(),
-        metro_jam: Vec::new(),
-    };
-    if matches!(args.game.as_str(), "all" | "water-sort") {
-        file.water_sort = water::generate(&master, args.levels);
-        eprintln!(
-            "water sort: {} levels ({:.1?})",
-            file.water_sort.len(),
-            started.elapsed()
-        );
-    }
-    if matches!(args.game.as_str(), "all" | "brick-blast") {
-        file.brick_blast = brick::generate(&master, args.levels);
-        eprintln!(
-            "brick blast: {} levels ({:.1?})",
-            file.brick_blast.len(),
-            started.elapsed()
-        );
-    }
-    if matches!(args.game.as_str(), "all" | "metro-jam") {
-        file.metro_jam = metro::generate(&master, args.levels);
-        eprintln!(
-            "metro jam: {} levels ({:.1?})",
-            file.metro_jam.len(),
-            started.elapsed()
-        );
-    }
-
-    let json = match serde_json::to_vec(&file) {
-        Ok(j) => j,
-        Err(e) => {
-            eprintln!("serialise: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let write = std::fs::File::create(&args.out).and_then(|mut f| f.write_all(&json));
-    if let Err(e) = write {
-        eprintln!("write {}: {e}", args.out.display());
+    if let Err(e) = std::fs::create_dir_all(&args.out_dir) {
+        eprintln!("create {}: {e}", args.out_dir.display());
         return ExitCode::FAILURE;
     }
-    eprintln!("wrote {}", args.out.display());
+    let started = Instant::now();
+    let wants = |game: &str| args.game == "all" || args.game == game;
+    let mut result = Ok(());
+    if wants("water-sort") {
+        let levels = water::generate(&master, args.levels);
+        eprintln!(
+            "water sort: {} levels ({:.1?})",
+            levels.len(),
+            started.elapsed()
+        );
+        result = result.and(write_game(&args.out_dir, "water-sort", &levels));
+    }
+    if wants("brick-blast") {
+        let levels = brick::generate(&master, args.levels);
+        eprintln!(
+            "brick blast: {} levels ({:.1?})",
+            levels.len(),
+            started.elapsed()
+        );
+        result = result.and(write_game(&args.out_dir, "brick-blast", &levels));
+    }
+    if wants("metro-jam") {
+        let levels = metro::generate(&master, args.levels);
+        eprintln!(
+            "metro jam: {} levels ({:.1?})",
+            levels.len(),
+            started.elapsed()
+        );
+        result = result.and(write_game(&args.out_dir, "metro-jam", &levels));
+    }
+    if let Err(e) = result {
+        eprintln!("{e}");
+        return ExitCode::FAILURE;
+    }
     ExitCode::SUCCESS
 }

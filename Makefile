@@ -39,8 +39,8 @@ services: ## Start local Postgres (:55432) and Redis (:56379)
 services-down: ## Stop local Postgres and Redis (data is kept)
 	$(DEV) down
 
-levels: ## Generate local levels into apps/api/levels.json
-	ARC_LEVEL_SEED=$(DEV_LEVEL_SEED) cargo run --release -p arc-levelgen -- --out apps/api/levels.json
+levels: ## Generate local levels into apps/api/levels/ (one game only: make levels GAME=brick-blast)
+	ARC_LEVEL_SEED=$(DEV_LEVEL_SEED) cargo run --release -p arc-levelgen -- --out-dir apps/api/levels --game $(or $(GAME),all)
 
 wasm: ## Build the Rust engine for the browser (after any change in crates/)
 	cd apps/web && pnpm wasm

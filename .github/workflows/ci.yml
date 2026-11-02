@@ -37,7 +37,7 @@ jobs:
                       ci-only-second-seed-not-secret-0123456789ab \
                       "$(openssl rand -hex 32)"; do
             start=$(date +%s)
-            if ! ARC_LEVEL_SEED="$seed" timeout 600 ./target/release/arc-levelgen --out /tmp/levels.json 2> /tmp/levelgen.log; then
+            if ! ARC_LEVEL_SEED="$seed" timeout 600 ./target/release/arc-levelgen --out-dir /tmp/levels 2> /tmp/levelgen.log; then
               echo "::error::Level generation failed or took over 10 minutes (seed ${seed:0:12}...)"
               tail -20 /tmp/levelgen.log
               exit 1
@@ -113,7 +113,7 @@ jobs:
       ARC_ENV: development
       ARC_DATABASE_URL: postgresql+asyncpg://arc:arc@localhost:55432/arc
       ARC_REDIS_URL: redis://localhost:56379/0
-      ARC_LEVELS_PATH: /tmp/levels.json
+      ARC_LEVELS_PATH: /tmp/levels
       ARC_SIGNING_KEYS: '{"k1": "ci-only-signing-key-not-secret-0123456789abcdef"}'
       ARC_RECOVERY_PEPPER: ci-only-pepper-not-secret-0123456789abcdef
       ARC_ALLOWED_ORIGINS: '["http://127.0.0.1:4173"]'
@@ -128,7 +128,7 @@ jobs:
         with: { package_json_file: apps/web/package.json, version: 11 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm, cache-dependency-path: apps/web/pnpm-lock.yaml }
-      - run: ARC_LEVEL_SEED=ci-only-seed-not-secret-0123456789abcdef cargo run --release -p arc-levelgen -- --out /tmp/levels.json
+      - run: ARC_LEVEL_SEED=ci-only-seed-not-secret-0123456789abcdef cargo run --release -p arc-levelgen -- --out-dir /tmp/levels
       - name: Start API
         working-directory: apps/api
         run: |

@@ -86,14 +86,16 @@ def make_levels(path: Path) -> None:
         )
     bb = [{"level": level, "script": bb_script(1)} for level in range(1, 6)]
     mj = [{"level": level, "data": mj_level()} for level in range(1, 6)]
-    path.write_text(
-        json.dumps({"version": 1, "water_sort": ws, "brick_blast": bb, "metro_jam": mj})
-    )
+    path.mkdir(parents=True, exist_ok=True)
+    for game, levels in (("water-sort", ws), ("brick-blast", bb), ("metro-jam", mj)):
+        (path / f"{game}.json").write_text(
+            json.dumps({"version": 2, "game": game, "levels": levels})
+        )
 
 
 @pytest.fixture(scope="session")
 def settings(tmp_path_factory: pytest.TempPathFactory) -> Settings:
-    levels = tmp_path_factory.mktemp("levels") / "levels.json"
+    levels = tmp_path_factory.mktemp("levels")
     make_levels(levels)
     return Settings(
         env="test",

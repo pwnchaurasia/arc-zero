@@ -1,6 +1,7 @@
 import type {
   BbHint,
   BbStart,
+  BbAssist,
   BbTurn,
   CoinRules,
   GameId,
@@ -137,7 +138,10 @@ export const api = {
     start: (level: number) => request<BbStart>("POST", `${game("brick-blast")}/levels/${level}/start`),
     turn: (runId: string, turn: number, aim: number) =>
       request<BbTurn>("POST", `${game("brick-blast")}/runs/${runId}/turn`, { turn, aim }),
-    hint: (runId: string) => request<BbHint>("POST", `${game("brick-blast")}/runs/${runId}/hint`),
+    hint: (runId: string, pay?: number) =>
+      request<BbHint>("POST", `${game("brick-blast")}/runs/${runId}/hint`, { pay: pay ?? null }),
+    assist: (runId: string, turn: number, kind: BbAssist, price: number, col = 0) =>
+      request<BbTurn>("POST", `${game("brick-blast")}/runs/${runId}/assist`, { turn, kind, col, price }),
   },
 
   mj: {

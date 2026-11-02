@@ -9,6 +9,8 @@ export interface SpendRequest {
   reward: number | null;
   /** Coins already spent in this attempt. */
   spent: number;
+  /** Extra game-specific line under the standard warning. */
+  note?: string;
 }
 
 /** Every coin spend goes through this dialog: price, balance after, and what it does to the reward. */
@@ -50,8 +52,7 @@ export function ConfirmSpend({
             )}
           </dl>
           <p className="text-xs text-muted">
-            Coins spent are taken off this level's reward and aren't refunded. If you replay the level, assists
-            you paid for in this attempt can be used again for free.
+            Coins spent are taken off this level's reward and aren't refunded.{r.note ? ` ${r.note}` : ""}
           </p>
           <div className="grid grid-cols-2 gap-3">
             <Button variant="secondary" onClick={onCancel} disabled={busy}>

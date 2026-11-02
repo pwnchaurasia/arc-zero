@@ -306,6 +306,7 @@ export function MetroJamScreen({
       balance: coins ?? 0,
       reward: replay ? null : g.start.reward,
       spent: g.spent,
+      note: "If you replay the level, assists you paid for in this attempt can be used again for free.",
     });
   };
 

@@ -51,6 +51,9 @@ export interface WsHint {
 
 export type Shape = "square" | "tri_bl" | "tri_br" | "tri_tl" | "tri_tr";
 export type PowerKind =
+  | "scatter"
+  | "boost2"
+  | "boost3"
   | "laser_h"
   | "laser_v"
   | "laser_x"
@@ -75,6 +78,10 @@ export interface BbState {
   status: BbStatus;
   rows_remaining: number;
   closest: number;
+  /** Ball multiplier for the next shot (from a boost power-up); absent = 1. */
+  boost?: number;
+  /** Extra balls for the next shot (paid assist); absent = 0. */
+  bonus?: number;
 }
 
 export interface BbStart {
@@ -93,11 +100,19 @@ export interface BbTurn {
   stars: number;
   unlocked_level: number | null;
   registration_required: boolean;
+  /** Set on a win. */
+  first_clear: boolean | null;
+  coins_earned: number;
+  streak_bonus: number;
+  coins: number | null;
 }
+
+export type BbAssist = "bonus_balls" | "laser" | "hammer";
 
 export interface BbHint {
   aim: number;
   hints_left: number;
+  coins: number | null;
 }
 
 export interface PowChallenge {

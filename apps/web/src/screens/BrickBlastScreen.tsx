@@ -1,17 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
-import type { BbState, BbTurn } from "../api/types";
+import type { BbAssist, BbState, BbTurn, CoinRules } from "../api/types";
 import { engine, loadEngine } from "../engine/wasm";
 import { sfx } from "../feel/audio";
 import { BrickBlastView } from "../games/brick-blast/BrickBlastView";
 import { useSession } from "../state/session";
+import { CoinChip } from "../ui/CoinChip";
 import { BulbIcon, FastIcon, SkipIcon } from "../ui/icons";
 import { IconButton, TopBar } from "../ui/kit";
+import { ConfirmSpend, type SpendRequest } from "./ConfirmSpend";
 import { ResultCard } from "./ResultCard";
 import { useToast } from "./useToast";
 
 const SPEEDS = [1, 2, 4] as const;
+
+const ASSISTS: { kind: BbAssist; title: string; what: string; icon: string }[] = [
+  { kind: "bonus_balls", title: "+15 balls", what: "15 extra balls for your next shot only.", icon: "＋" },
+  { kind: "laser", title: "Laser", what: "Destroys every block in the column you picked.", icon: "⚡" },
+  { kind: "hammer", title: "Hammer", what: "Smashes every block in the lowest row.", icon: "🔨" },
+];
+
+/** A spend waiting for confirmation: an assist (laser with its column) or a paid hint. */
+type Pending = SpendRequest & ({ type: "assist"; kind: BbAssist; col: number } | { type: "hint" });
 
 function stateFromError(e: unknown): BbState | null {
   if (e instanceof ApiError && e.details.state && typeof e.details.state === "object") {
@@ -46,6 +57,14 @@ export function BrickBlastScreen({
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, showToast] = useToast();
+  const [rules, setRules] = useState<CoinRules | null>(null);
+  const [coins, setCoins] = useState<number | undefined>(undefined);
+  const [spent, setSpent] = useState(0);
+  const [picking, setPicking] = useState(false);
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [buying, setBuying] = useState(false);
+  const replay = me ? me.games["brick-blast"].stars[String(level)] !== undefined : false;
+  const reward = rules ? (rules.rewards.find((r) => level >= r.first_level && level <= r.last_level)?.coins ?? 0) : 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -55,6 +74,8 @@ export function BrickBlastScreen({
     setLost(false);
     setError(null);
     setOffline(false);
+    setSpent(0);
+    setPicking(false);
 
     const settle = (next: BbState, turnResult: BbTurn | null) => {
       const r = run.current;
@@ -124,7 +145,10 @@ export function BrickBlastScreen({
       const start = await api.bb.start(level);
       if (cancelled || !host.current) return;
       run.current = { id: start.run_id, state: start.state, busy: false };
-      created = await BrickBlastView.create(host.current, { onFire: (aim) => void fire(aim) });
+      created = await BrickBlastView.create(host.current, {
+        onFire: (aim) => void fire(aim),
+        onColumn: (col) => onColumnRef.current(col),
+      });
       if (cancelled) {
         created.destroy();
         return;
@@ -149,6 +173,92 @@ export function BrickBlastScreen({
   useEffect(() => {
     view.current?.setSpeed(speed);
   }, [speed, playing]);
+
+  // Prices and the coin balance for the confirmation popups.
+  useEffect(() => {
+    api.coins().then(
+      (r) => {
+        setRules(r);
+        setCoins(r.balance);
+      },
+      () => undefined,
+    );
+  }, []);
+
+  const onColumnRef = useRef<(col: number) => void>(() => undefined);
+  onColumnRef.current = (col: number) => {
+    view.current?.setColumnPicking(false);
+    setPicking(false);
+    askAssist("laser", col);
+  };
+
+  const askAssist = (kind: BbAssist, col = 0) => {
+    const a = ASSISTS.find((x) => x.kind === kind);
+    const price = rules?.prices["brick-blast"]?.[kind];
+    if (!a || price === undefined) return;
+    setPending({
+      type: "assist",
+      kind,
+      col,
+      title: kind === "laser" ? `Laser on column ${col + 1}` : a.title,
+      what: a.what,
+      price,
+      balance: coins ?? 0,
+      reward: replay ? null : reward,
+      spent,
+    });
+  };
+
+  const onAssist = (kind: BbAssist) => {
+    const r = run.current;
+    if (!r || r.busy || r.state.status !== "playing") return;
+    if (kind === "bonus_balls" && (r.state.bonus ?? 0) > 0) {
+      showToast("Your next shot already has 15 extra balls.");
+      return;
+    }
+    if (kind === "laser") {
+      setPicking(true);
+      view.current?.setAimEnabled(false);
+      view.current?.setColumnPicking(true);
+      return;
+    }
+    askAssist(kind);
+  };
+
+  const cancelPicking = () => {
+    setPicking(false);
+    view.current?.setColumnPicking(false);
+    if (run.current?.state.status === "playing") view.current?.setAimEnabled(true);
+  };
+
+  const confirmSpend = async () => {
+    const r = run.current;
+    const p = pending;
+    if (!r || !p) return;
+    setBuying(true);
+    try {
+      if (p.type === "hint") {
+        const res = await api.bb.hint(r.id, p.price);
+        if (res.coins !== null) setCoins(res.coins);
+        view.current?.showHintAim(res.aim);
+      } else {
+        const res = await api.bb.assist(r.id, r.state.turn, p.kind, p.price, p.col);
+        if (res.coins !== null) setCoins(res.coins);
+        apply(res.state, res);
+        sfx.laser();
+      }
+      setSpent((s) => s + p.price);
+      void refresh();
+    } catch (e) {
+      const synced = stateFromError(e);
+      if (synced) apply(synced, null);
+      showToast(e instanceof ApiError ? e.message : "Could not do that right now.");
+      if (run.current?.state.status === "playing") view.current?.setAimEnabled(true);
+    } finally {
+      setBuying(false);
+      setPending(null);
+    }
+  };
 
   /** Re-sends a turn that may or may not have reached the server, then shows the truth. */
   const retry = async () => {
@@ -182,6 +292,20 @@ export function BrickBlastScreen({
   const hint = async () => {
     const r = run.current;
     if (!r || r.busy) return;
+    if (hints <= 0) {
+      // Free hints used up today: a hint costs coins, after confirmation.
+      if (!rules) return;
+      setPending({
+        type: "hint",
+        title: "a hint",
+        what: "Shows a good aim for this shot.",
+        price: rules.hint_price,
+        balance: coins ?? 0,
+        reward: replay ? null : reward,
+        spent,
+      });
+      return;
+    }
     try {
       const res = await api.bb.hint(r.id);
       setHints(res.hints_left);
@@ -215,9 +339,12 @@ export function BrickBlastScreen({
               </IconButton>
             </div>
           ) : (
-            <IconButton label="Hint" badge={hints} onClick={hint} disabled={!state || hints <= 0}>
-              <BulbIcon />
-            </IconButton>
+            <div className="flex items-center gap-2">
+              <CoinChip balance={coins} />
+              <IconButton label={hints > 0 ? "Hint" : "Hint (coins)"} badge={hints} onClick={hint} disabled={!state}>
+                <BulbIcon />
+              </IconButton>
+            </div>
           )
         }
       />
@@ -226,8 +353,45 @@ export function BrickBlastScreen({
         <span>Rows left {state?.rows_remaining ?? "–"}</span>
       </div>
       <div ref={host} className="game-surface relative min-h-0 flex-1" />
+      {picking && (
+        <div className="absolute inset-x-5 top-28 flex items-center justify-between gap-3 rounded-xl bg-sky-950/90 p-3 text-sm text-sky-100 shadow-lg">
+          <span>Tap a column for the laser.</span>
+          <button type="button" className="font-semibold underline" onClick={cancelPicking}>
+            Cancel
+          </button>
+        </div>
+      )}
+      {/* Always shown while the level runs (disabled mid-shot) so the board never jumps. */}
+      {state?.status === "playing" && (
+        <div className="flex justify-center gap-3 px-4 pb-[max(env(safe-area-inset-bottom),12px)] pt-2">
+          {ASSISTS.map((a) => (
+            <button
+              key={a.kind}
+              type="button"
+              disabled={!rules || playing || picking || !!pending}
+              onClick={() => onAssist(a.kind)}
+              className="flex min-h-14 min-w-24 flex-col items-center justify-center rounded-2xl border border-line bg-panel-2 px-3 py-1.5 text-xs font-semibold transition hover:bg-line active:scale-95 disabled:opacity-40"
+            >
+              <span className="text-base leading-none" aria-hidden="true">
+                {a.icon}
+              </span>
+              <span>{a.title}</span>
+              <span className="text-[11px] text-gold">{rules?.prices["brick-blast"]?.[a.kind] ?? "…"} coins</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <ConfirmSpend
+        request={pending}
+        busy={buying}
+        onConfirm={() => void confirmSpend()}
+        onCancel={() => {
+          setPending(null);
+          if (run.current?.state.status === "playing") view.current?.setAimEnabled(true);
+        }}
+      />
       {!playing && state?.status === "playing" && state.turn === 0 && (
-        <p className="pointer-events-none absolute inset-x-0 bottom-8 text-center text-sm text-muted">
+        <p className="pointer-events-none absolute inset-x-0 bottom-24 text-center text-sm text-muted">
           Drag to aim, release to fire
         </p>
       )}
@@ -251,7 +415,7 @@ export function BrickBlastScreen({
         <ResultCard
           won={!!result}
           stars={result?.stars ?? 0}
-          detail={result ? `Cleared in ${result.turn} turns` : "A block reached the ground."}
+          detail={result ? winDetail(result) : "A block reached the ground."}
           hasNext={!!result && level < count && (result.unlocked_level ?? 0) > level}
           onNext={() => onLevel(level + 1)}
           onRetry={() => setRound((r) => r + 1)}
@@ -260,4 +424,14 @@ export function BrickBlastScreen({
       )}
     </div>
   );
+}
+
+function winDetail(r: BbTurn): string {
+  const parts = [`Cleared in ${r.turn} turns`];
+  if (r.first_clear === false) parts.push("replay: no coins");
+  else if (r.first_clear) {
+    parts.push(`+${r.coins_earned} coins`);
+    if (r.streak_bonus) parts.push(`+${r.streak_bonus} streak bonus`);
+  }
+  return parts.join(" · ");
 }

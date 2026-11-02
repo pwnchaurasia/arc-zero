@@ -18,7 +18,9 @@ apps/web/playwright-report/
 .env.*
 !.env.example
 levels.json
+apps/api/levels/
 *.levels.json
+apps/api/levels/
 infra/secrets/
 
 # OS / editors

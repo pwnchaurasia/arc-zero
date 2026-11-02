@@ -18,6 +18,10 @@ MIN_SECRET_LEN = 32
 ENCRYPTED_SSL_MODES = frozenset({"require", "verify-ca", "verify-full"})
 
 
+# Domains ngrok hands out (ARC_DEV_TUNNEL, local sharing only).
+TUNNEL_DOMAINS = (".ngrok-free.app", ".ngrok.app", ".ngrok.io")
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ARC_", env_file=".env", extra="ignore")
 
@@ -31,7 +35,8 @@ class Settings(BaseSettings):
     # for 2 workers plus migrations and backups.
     db_pool_size: int = Field(default=5, ge=1, le=50)
     db_max_overflow: int = Field(default=2, ge=0, le=50)
-    levels_path: Path = Path("levels.json")
+    # Directory holding one levels file per game (`<game>.json`).
+    levels_path: Path = Path("levels")
 
     # HMAC keys for signed tokens (guest tickets, PoW challenges), by key id.
     # Rotate by adding a new key, switching `signing_kid`, and removing the old
@@ -47,6 +52,9 @@ class Settings(BaseSettings):
     # Local playtesting only: every level can be started, skipping the unlock order and
     # the guest gate. Wins are still verified. Refused in production (check_production).
     dev_unlock_all: bool = False
+    # Local sharing only: also accept requests through an ngrok tunnel (any
+    # *.ngrok-free.app / *.ngrok.app / *.ngrok.io address). Refused in production.
+    dev_tunnel: bool = False
     hsts: bool = False
 
     cookie_secure: bool = False
@@ -65,8 +73,21 @@ class Settings(BaseSettings):
     engine_threads: int = Field(default=4, ge=1)
     ws_min_ms_per_move: int = Field(default=150, ge=0)
     bb_min_ms_between_turns: int = Field(default=250, ge=0)
+    mj_min_ms_per_move: int = Field(default=200, ge=0)
     ws_hint_budget: int = Field(default=80_000, ge=1_000)
     bb_hint_candidates: int = Field(default=41, ge=5, le=161)
+
+    @property
+    def origins(self) -> list[str]:
+        """Allowed request origins; `https://*.domain` entries match any subdomain."""
+        return self.allowed_origins + (
+            [f"https://*{d}" for d in TUNNEL_DOMAINS] if self.dev_tunnel else []
+        )
+
+    @property
+    def hosts(self) -> list[str]:
+        """Allowed Host headers (Starlette understands `*.domain`)."""
+        return self.allowed_hosts + ([f"*{d}" for d in TUNNEL_DOMAINS] if self.dev_tunnel else [])
 
     @property
     def cookie_name(self) -> str:
@@ -94,6 +115,8 @@ class Settings(BaseSettings):
             problems.append("ARC_EXPOSE_DOCS must be false")
         if self.dev_unlock_all:
             problems.append("ARC_DEV_UNLOCK_ALL is for local playtesting only")
+        if self.dev_tunnel:
+            problems.append("ARC_DEV_TUNNEL is for sharing a local game only")
         if not self.hsts:
             problems.append("ARC_HSTS must be true")
         if any(o.startswith("http://") for o in self.allowed_origins):

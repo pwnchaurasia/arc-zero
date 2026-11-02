@@ -1,9 +1,17 @@
 import type {
   BbHint,
   BbStart,
+  BbAssist,
   BbTurn,
+  Board,
+  CoinRules,
   GameId,
   Me,
+  MjAssist,
+  MjBuy,
+  MjComplete,
+  MjMove,
+  MjStart,
   PowChallenge,
   WsComplete,
   WsHint,
@@ -120,10 +128,22 @@ export const api = {
         attempt_id: attemptId,
         moves,
       }),
-    hint: (level: number, attemptId: string, moves: WsMove[]) =>
+    hint: (level: number, attemptId: string, moves: WsMove[], pay?: number) =>
       request<WsHint>("POST", `${game("water-sort")}/levels/${level}/hint`, {
         attempt_id: attemptId,
         moves,
+        pay: pay ?? null,
+      }),
+    reveal: (level: number, attemptId: string, moves: WsMove[]) =>
+      request<{ board: Board }>("POST", `${game("water-sort")}/levels/${level}/reveal`, {
+        attempt_id: attemptId,
+        moves,
+      }),
+    buy: (level: number, attemptId: string, price: number) =>
+      request<MjBuy>("POST", `${game("water-sort")}/levels/${level}/assists`, {
+        attempt_id: attemptId,
+        kind: "extra_bottle",
+        price,
       }),
   },
 
@@ -131,16 +151,43 @@ export const api = {
     start: (level: number) => request<BbStart>("POST", `${game("brick-blast")}/levels/${level}/start`),
     turn: (runId: string, turn: number, aim: number) =>
       request<BbTurn>("POST", `${game("brick-blast")}/runs/${runId}/turn`, { turn, aim }),
-    hint: (runId: string) => request<BbHint>("POST", `${game("brick-blast")}/runs/${runId}/hint`),
+    hint: (runId: string, pay?: number) =>
+      request<BbHint>("POST", `${game("brick-blast")}/runs/${runId}/hint`, { pay: pay ?? null }),
+    assist: (runId: string, turn: number, kind: BbAssist, price: number, col = 0) =>
+      request<BbTurn>("POST", `${game("brick-blast")}/runs/${runId}/assist`, { turn, kind, col, price }),
   },
+
+  mj: {
+    start: (level: number) => request<MjStart>("POST", `${game("metro-jam")}/levels/${level}/start`),
+    reveal: (level: number, attemptId: string, moves: MjMove[]) =>
+      request<{ queue: number[] }>("POST", `${game("metro-jam")}/levels/${level}/reveal`, {
+        attempt_id: attemptId,
+        moves,
+      }),
+    buy: (level: number, attemptId: string, kind: MjAssist, price: number) =>
+      request<MjBuy>("POST", `${game("metro-jam")}/levels/${level}/assists`, {
+        attempt_id: attemptId,
+        kind,
+        price,
+      }),
+    complete: (level: number, attemptId: string, moves: MjMove[]) =>
+      request<MjComplete>("POST", `${game("metro-jam")}/levels/${level}/complete`, {
+        attempt_id: attemptId,
+        moves,
+      }),
+  },
+
+  coins: () => request<CoinRules>("GET", "/coins"),
 
   powChallenge: (purpose: "register" | "restore") =>
     request<PowChallenge>("POST", "/pow/challenge", { purpose }),
-  register: (pow: { token: string; nonce: number }) =>
+  register: (pow: { token: string; nonce: number }, name?: string) =>
     request<{ recovery_key: string }>("POST", "/auth/register", {
       guest_ticket: guestTicket.get() ?? "",
       pow,
+      name: name?.trim() || null,
     }),
+  setName: (name: string) => request<{ name: string }>("POST", "/me/name", { name }),
   restore: (recoveryKey: string, pow: { token: string; nonce: number }) =>
     request<undefined>("POST", "/auth/restore", { recovery_key: recoveryKey, pow }),
   newRecoveryKey: () => request<{ recovery_key: string }>("POST", "/auth/recovery-key"),

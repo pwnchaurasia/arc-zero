@@ -1,6 +1,8 @@
 import type { GameId } from "../api/types";
+import { useInstall } from "../state/install";
 import { useSession } from "../state/session";
-import { GearIcon } from "../ui/icons";
+import { CoinChip } from "../ui/CoinChip";
+import { GearIcon, InstallIcon } from "../ui/icons";
 import { Button, IconButton } from "../ui/kit";
 import { GameLogo } from "./GameLogo";
 
@@ -21,30 +23,60 @@ export const GAMES: { id: GameId; name: string; tagline: string; image?: string 
     tagline: "Aim once. Bounce everything. Break it all.",
     image: "/games/brick-blast.webp",
   },
+  {
+    id: "metro-jam",
+    name: "MetroJam",
+    tagline: "Clear the jam. Fill every car. Don't block the bays.",
+    image: "/games/metro-jam.webp",
+  },
 ];
 
 export function Home({
   onOpen,
   onSettings,
   onCheckpoint,
+  onIosInstall,
 }: {
   onOpen: (game: GameId) => void;
   onSettings: () => void;
   onCheckpoint: () => void;
+  onIosInstall: () => void;
 }) {
   const { me, error, refresh } = useSession();
+  const install = useInstall();
 
   return (
     <div className="mx-auto flex h-full w-full max-w-6xl flex-col overflow-y-auto">
       <header className="flex items-center justify-between px-5 pb-2 pt-5">
         <div>
           <h1 className="text-3xl font-black tracking-tight">Arc Zero</h1>
-          <p className="text-sm text-muted">No ads. No tracking. Just games.</p>
+          <p className="text-sm text-muted">
+            {me?.name ? `Playing as ${me.name}` : "No ads. No tracking. Just games."}
+          </p>
         </div>
-        <IconButton label="Settings" onClick={onSettings}>
-          <GearIcon />
-        </IconButton>
+        <div className="flex items-center gap-2">
+          <CoinChip />
+          <IconButton label="Settings" onClick={onSettings}>
+            <GearIcon />
+          </IconButton>
+        </div>
       </header>
+
+      {install.mode && (
+        <button
+          type="button"
+          onClick={() => (install.mode === "ios" ? onIosInstall() : void install.install())}
+          className="mx-5 mt-3 flex items-center gap-3 rounded-2xl border border-accent/30 bg-accent/10 p-4 text-left"
+        >
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent/20 text-accent">
+            <InstallIcon />
+          </span>
+          <span>
+            <span className="block font-bold text-accent">Install the app</span>
+            <span className="block text-sm text-muted">Full screen, from your home screen. Still no ads.</span>
+          </span>
+        </button>
+      )}
 
       {error && (
         <div className="mx-5 mt-3 flex items-center justify-between gap-3 rounded-2xl bg-red-500/15 p-4 text-sm text-red-200">

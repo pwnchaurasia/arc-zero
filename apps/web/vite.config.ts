@@ -69,6 +69,10 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: api,
+    // `make share`: let friends in through any ngrok address (local dev only).
+    ...(process.env.ARC_DEV_TUNNEL === "true"
+      ? { allowedHosts: [".ngrok-free.app", ".ngrok.app", ".ngrok.io"] }
+      : {}),
   },
   preview: {
     port: 4173,

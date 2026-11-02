@@ -77,3 +77,37 @@ export const CopyIcon = (p: IconProps) => (
     <path d="M5 15V5a2 2 0 012-2h10" />
   </Icon>
 );
+
+export const CoinIcon = (p: IconProps) => (
+  <Icon size={18} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v10M9.5 9.5h3.75a1.75 1.75 0 0 1 0 3.5h-2.5a1.75 1.75 0 0 0 0 3.5H14.5" />
+  </Icon>
+);
+
+export const ParkingIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="4" y="4" width="16" height="16" rx="3" />
+    <path d="M10 16V8h3a2.5 2.5 0 0 1 0 5h-3" />
+  </Icon>
+);
+
+export const LiftIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 5h16M12 5v4" />
+    <rect x="7" y="12" width="10" height="6" rx="2" />
+    <path d="M9 9h6l2 3H7z" />
+  </Icon>
+);
+
+export const ShuffleIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M16 4h4v4M4 20 20 4M20 16v4h-4M15 15l5 5M4 4l5 5" />
+  </Icon>
+);
+
+export const InstallIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+  </Icon>
+);

@@ -1,6 +1,7 @@
-"""Server-only level catalogue, loaded from the file written by `arc-levelgen`.
+"""Server-only level catalogue, loaded from the files written by `arc-levelgen`.
 
-The file reveals every level, so it must never be served or committed.
+One file per game (`<dir>/<game>.json`), so regenerating one game leaves the others
+alone. The files reveal every level, so they must never be served or committed.
 """
 
 from __future__ import annotations
@@ -13,9 +14,9 @@ from typing import Any, Final, Literal
 
 import arc_engine
 
-GameId = Literal["water-sort", "brick-blast"]
-GAME_IDS: Final[tuple[GameId, ...]] = ("water-sort", "brick-blast")
-SUPPORTED_VERSION = 1
+GameId = Literal["water-sort", "brick-blast", "metro-jam"]
+GAME_IDS: Final[tuple[GameId, ...]] = ("water-sort", "brick-blast", "metro-jam")
+SUPPORTED_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,9 +26,13 @@ class WsLevel:
     colors: int
     empty: int
     min_moves: int
+    capacity: int = 4
+    # Only each bottle's top colour run is visible until uncovered.
+    hidden: bool = False
 
     def board(self) -> list[list[int]]:
-        return arc_engine.ws_generate(self.seed, self.colors, self.empty)
+        """The full board, true colours included. Server-only."""
+        return arc_engine.ws_generate(self.seed, self.colors, self.empty, self.capacity)
 
     def stars_for(self, moves: int) -> int:
         if moves <= math.ceil(self.min_moves * 1.2):
@@ -48,12 +53,29 @@ class BbLevel:
 
 
 @dataclass(frozen=True, slots=True)
+class MjLevel:
+    level: int
+    # Full level including the whole queue. Server-only.
+    level_json: str
+    # What the client may see at the start.
+    public_json: str
+    # Commuters shown ahead of the front one; >= queue_len means the whole queue.
+    visible: int
+    queue_len: int
+
+
+@dataclass(frozen=True, slots=True)
 class Levels:
     water_sort: dict[int, WsLevel]
     brick_blast: dict[int, BbLevel]
+    metro_jam: dict[int, MjLevel]
 
     def count(self, game: GameId) -> int:
-        return len(self.water_sort) if game == "water-sort" else len(self.brick_blast)
+        if game == "water-sort":
+            return len(self.water_sort)
+        if game == "brick-blast":
+            return len(self.brick_blast)
+        return len(self.metro_jam)
 
 
 def _contiguous(levels: dict[int, Any], name: str) -> None:
@@ -61,31 +83,51 @@ def _contiguous(levels: dict[int, Any], name: str) -> None:
         raise ValueError(f"{name} levels must be numbered 1..N without gaps")
 
 
-def load(path: Path) -> Levels:
+def _read_game(directory: Path, game: GameId) -> list[dict[str, Any]]:
+    path = directory / f"{game}.json"
     data = json.loads(path.read_text("utf-8"))
-    if data.get("version") != SUPPORTED_VERSION:
-        raise ValueError(f"unsupported levels file version {data.get('version')}")
+    if data.get("version") != SUPPORTED_VERSION or data.get("game") != game:
+        raise ValueError(f"{path}: expected {game} levels, version {SUPPORTED_VERSION}")
+    items = data.get("levels")
+    if not isinstance(items, list) or not items:
+        raise ValueError(f"{path}: no levels")
+    return items
 
+
+def load(directory: Path) -> Levels:
     ws: dict[int, WsLevel] = {}
-    for item in data.get("water_sort", []):
+    for item in _read_game(directory, "water-sort"):
         lvl = WsLevel(
             level=int(item["level"]),
             seed=int(item["seed"]),
             colors=int(item["colors"]),
             empty=int(item["empty"]),
             min_moves=int(item["min_moves"]),
+            capacity=int(item.get("capacity", 4)),
+            hidden=bool(item.get("hidden", False)),
         )
         lvl.board()  # validates parameters through the engine
         ws[lvl.level] = lvl
 
     bb: dict[int, BbLevel] = {}
-    for item in data.get("brick_blast", []):
+    for item in _read_game(directory, "brick-blast"):
         script_json = json.dumps(item["script"], separators=(",", ":"))
         arc_engine.bb_validate_script(script_json)
         bb[int(item["level"])] = BbLevel(level=int(item["level"]), script_json=script_json)
 
+    mj: dict[int, MjLevel] = {}
+    for item in _read_game(directory, "metro-jam"):
+        level_json = json.dumps(item["data"], separators=(",", ":"))
+        arc_engine.mj_validate(level_json)
+        mj[int(item["level"])] = MjLevel(
+            level=int(item["level"]),
+            level_json=level_json,
+            public_json=arc_engine.mj_public(level_json),
+            visible=int(item["data"]["visible"]),
+            queue_len=int(item["data"]["queue_len"]),
+        )
+
     _contiguous(ws, "water_sort")
     _contiguous(bb, "brick_blast")
-    if not ws or not bb:
-        raise ValueError("levels file must contain both games")
-    return Levels(water_sort=ws, brick_blast=bb)
+    _contiguous(mj, "metro_jam")
+    return Levels(water_sort=ws, brick_blast=bb, metro_jam=mj)

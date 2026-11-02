@@ -32,11 +32,20 @@ REDIS_URL = os.environ.get("ARC_TEST_REDIS", "redis://localhost:56379/15")
 ORIGIN = "http://testserver"
 
 
-def solve_ws(board: list[list[int]]) -> list[tuple[int, int]]:
+# Water Sort test levels: level -> (capacity, hidden). Level 2 hides colours in taller bottles.
+WS_SHAPES = {1: (4, False), 2: (5, True), 3: (4, False), 4: (4, False), 5: (4, False)}
+
+
+def ws_full_board(level: int) -> list[list[int]]:
+    """The true board of a test level (what only the server knows on hidden levels)."""
+    return arc_engine.ws_generate(1000 + level, 3, 2, WS_SHAPES[level][0])
+
+
+def solve_ws(board: list[list[int]], capacity: int = 4) -> list[tuple[int, int]]:
     """Solves a board by following engine hints (stands in for a human player)."""
     moves: list[tuple[int, int]] = []
     while True:
-        kind, move = arc_engine.ws_hint(board, moves, 200_000)
+        kind, move = arc_engine.ws_hint(board, capacity, moves, 200_000)
         if kind == "solved":
             return moves
         assert kind == "move" and move is not None, kind
@@ -49,27 +58,54 @@ def bb_script(hp: int) -> dict[str, Any]:
     return {"start_balls": 3, "start_rows": [row], "row_queue": []}
 
 
+# Vehicle 1 is blocked by vehicle 0; tapping 0, 1, 2 wins. Only 3 commuters are visible.
+MJ_WIN = [(0, 0), (0, 1), (0, 2)]
+
+
+def mj_level() -> dict[str, Any]:
+    return {
+        "width": 4,
+        "height": 4,
+        "barriers": [],
+        "vehicles": [
+            {"kind": "hatchback", "color": 0, "x": 1, "y": 0, "dir": "n"},
+            {"kind": "hatchback", "color": 1, "x": 1, "y": 1, "dir": "n"},
+            {"kind": "sedan", "color": 0, "x": 3, "y": 3, "dir": "e"},
+        ],
+        "queue": [1, 0, 1, 0, 0, 0, 0, 0],
+        "queue_len": 8,
+        "bays": 2,
+        "visible": 3,
+    }
+
+
 def make_levels(path: Path) -> None:
     ws = []
     for level in range(1, 6):
-        seed = 1000 + level
-        board = arc_engine.ws_generate(seed, 3, 2)
+        capacity, hidden = WS_SHAPES[level]
         ws.append(
             {
                 "level": level,
-                "seed": seed,
+                "seed": 1000 + level,
                 "colors": 3,
                 "empty": 2,
-                "min_moves": len(solve_ws(board)),
+                "capacity": capacity,
+                "hidden": hidden,
+                "min_moves": len(solve_ws(ws_full_board(level), capacity)),
             }
         )
     bb = [{"level": level, "script": bb_script(1)} for level in range(1, 6)]
-    path.write_text(json.dumps({"version": 1, "water_sort": ws, "brick_blast": bb}))
+    mj = [{"level": level, "data": mj_level()} for level in range(1, 6)]
+    path.mkdir(parents=True, exist_ok=True)
+    for game, levels in (("water-sort", ws), ("brick-blast", bb), ("metro-jam", mj)):
+        (path / f"{game}.json").write_text(
+            json.dumps({"version": 2, "game": game, "levels": levels})
+        )
 
 
 @pytest.fixture(scope="session")
 def settings(tmp_path_factory: pytest.TempPathFactory) -> Settings:
-    levels = tmp_path_factory.mktemp("levels") / "levels.json"
+    levels = tmp_path_factory.mktemp("levels")
     make_levels(levels)
     return Settings(
         env="test",
@@ -85,6 +121,7 @@ def settings(tmp_path_factory: pytest.TempPathFactory) -> Settings:
         pow_surge_difficulty=8,
         ws_min_ms_per_move=0,
         bb_min_ms_between_turns=0,
+        mj_min_ms_per_move=0,
     )
 
 
@@ -112,7 +149,9 @@ async def app_client(settings: Settings, _database: None) -> AsyncIterator[Async
     await redis.flushdb()
     await redis.aclose()
     conn = await asyncpg.connect(TEST_DB_URL)
-    await conn.execute("TRUNCATE players, game_progress, level_results, hint_usage CASCADE")
+    await conn.execute(
+        "TRUNCATE players, game_progress, level_results, hint_usage, play_events CASCADE"
+    )
     await conn.close()
 
     app = create_app(settings.model_copy())
@@ -148,7 +187,8 @@ async def play_ws_level(
     start = r.json()
     ticket = start.get("guest_ticket") or ticket
     headers = {"x-guest-ticket": ticket} if ticket else {}
-    moves = solve_ws(start["board"])
+    # A human can't see hidden colours; this test player knows the true board.
+    moves = solve_ws(ws_full_board(level), WS_SHAPES[level][0])
     r = await client.post(
         f"/api/v1/games/water-sort/levels/{level}/complete",
         json={"attempt_id": start["attempt_id"], "moves": moves},

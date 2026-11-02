@@ -15,7 +15,19 @@ export async function createPixi(host: HTMLElement): Promise<Application> {
     preference: "webgl",
   });
   app.canvas.setAttribute("aria-hidden", "true");
+  // The canvas is absolutely positioned so it never stretches its container; Pixi's
+  // resizeTo only follows window resizes, so also follow the container itself
+  // (e.g. a button bar appearing below the game).
+  app.canvas.style.position = "absolute";
+  app.canvas.style.inset = "0";
   host.appendChild(app.canvas);
+  const observer = new ResizeObserver(() => app.queueResize());
+  observer.observe(host);
+  const destroy = app.destroy.bind(app);
+  app.destroy = (...args: Parameters<Application["destroy"]>) => {
+    observer.disconnect();
+    destroy(...args);
+  };
   return app;
 }
 

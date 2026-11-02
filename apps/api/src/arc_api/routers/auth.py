@@ -10,10 +10,11 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from arc_api import analytics, coins, names
 from arc_api.db import GameProgress, LevelResult, Player
 from arc_api.errors import ApiError
 from arc_api.levels import GAME_IDS
-from arc_api.principal import PrincipalDep, parse_ticket
+from arc_api.principal import Principal, PrincipalDep, parse_ticket
 from arc_api.routers.common import StrictModel, client_ip
 from arc_api.routers.meta import registration_counter_key
 from arc_api.security import pow as pow_
@@ -31,6 +32,8 @@ class PowIn(StrictModel):
 class RegisterIn(StrictModel):
     guest_ticket: str = Field(max_length=4096)
     pow: PowIn
+    # Optional display name; can be set or changed later.
+    name: str | None = Field(default=None, max_length=60)
 
 
 class RestoreIn(StrictModel):
@@ -82,6 +85,13 @@ async def register(
         state.signer, state.redis, "register", body.pow.token, body.pow.nonce, s.pow_ttl_seconds
     )
 
+    display_name = None
+    if body.name:
+        try:
+            display_name = names.clean(body.name)
+        except names.BadNameError as exc:
+            raise ApiError(422, "bad_name", str(exc)) from exc
+
     guest = parse_ticket(state, body.guest_ticket)
     if guest is None:
         raise ApiError(400, "invalid_ticket", "Guest progress is invalid or expired.")
@@ -96,13 +106,19 @@ async def register(
 
     try:
         player, key = await _create_player(db, state)
+        player.display_name = display_name
+        guest_coins = await coins.read_guest(state, guest.gid)
+        coins.open_wallet_from_guest(db, player.id, guest_coins)
         for game, stars in guest.progress.items():
             if not stars:
                 continue
             count = state.levels.count(game)  # type: ignore[arg-type]
             db.add(
                 GameProgress(
-                    player_id=player.id, game_id=game, unlocked_level=min(len(stars) + 1, count)
+                    player_id=player.id,
+                    game_id=game,
+                    unlocked_level=min(len(stars) + 1, count),
+                    streak=guest_coins.streaks.get(game, 0),
                 )
             )
             for level, star in enumerate(stars, start=1):
@@ -111,6 +127,7 @@ async def register(
     except BaseException:
         await state.redis.delete(f"guest:registered:{guest.gid}")
         raise
+    await coins.forget_guest(state, guest.gid)
 
     minute_key = registration_counter_key(int(time.time()) // 60)
     pipe = state.redis.pipeline(transaction=True)
@@ -120,6 +137,7 @@ async def register(
 
     token = await state.sessions.create(player.id)
     _set_session_cookie(response, state, token)
+    await analytics.record(db, state, Principal(player_id=player.id), "register")
     return RegisterOut(recovery_key=key)
 
 

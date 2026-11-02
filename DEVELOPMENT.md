@@ -22,7 +22,7 @@ make setup
 
 This creates `apps/api/.env` with fresh **local-only** secrets, starts Postgres
 (`localhost:55432`) and Redis (`localhost:56379`) in Docker, installs dependencies,
-builds the WASM engine, generates levels into `apps/api/levels.json` and applies the
+builds the WASM engine, generates levels into `apps/api/levels/` (one file per game) and applies the
 database migrations. Safe to run again: it never overwrites your `.env`.
 
 ## 3. Day to day
@@ -86,8 +86,70 @@ your branch ──PR──▶ CI (Rust, API, web, e2e) ──"CI passed"──�
 | Symptom | Fix |
 |---|---|
 | `403 forbidden_origin` in the browser | open `localhost`, not `127.0.0.1`; or add your origin to `ARC_ALLOWED_ORIGINS` in `apps/api/.env` |
-| API fails at start: `levels.json` not found | `make levels` |
+| API fails at start: a levels file not found (e.g. `levels/water-sort.json`) | `make levels` (and check `ARC_LEVELS_PATH=levels` in `apps/api/.env`) |
 | `connection refused` on 55432 / 56379 | `make services` (is Docker Desktop running?) |
 | game logic changed but the browser behaves the old way | `make wasm`, then hard-reload (the service worker caches the old build in `make preview`) |
 | web app fails to import `src/wasm/pkg/...` | `make wasm` (that folder is generated, not committed) |
 | e2e Docker run left containers behind | `make e2e-docker-down` |
+
+## Analytics (first-party, SQL only)
+
+Every level start, clear, Brick Blast loss, hint, assist purchase and sign-up adds a row
+to `play_events`. Nothing is sent anywhere else. `who` is a keyed one-way hash of the
+player or guest id: it counts distinct players but can't be turned back into an account.
+`signed_in` tells guests from saved players.
+
+Connect with `psql` using the production `ARC_DATABASE_URL` (or your local dev database) and run:
+
+```sql
+-- Players per game per day (last 14 days)
+SELECT day, game_id, count(DISTINCT who) AS players, count(*) FILTER (WHERE kind = 'start') AS starts
+FROM play_events WHERE day > current_date - 14 AND game_id IS NOT NULL
+GROUP BY day, game_id ORDER BY day DESC, game_id;
+
+-- Daily active players across all games, guests vs saved
+SELECT day, count(DISTINCT who) AS players,
+       count(DISTINCT who) FILTER (WHERE signed_in) AS saved
+FROM play_events WHERE day > current_date - 30 GROUP BY day ORDER BY day DESC;
+
+-- Which levels are too hard: starts vs clears per level (low clear rate = wall)
+SELECT game_id, level,
+       count(*) FILTER (WHERE kind = 'start') AS starts,
+       count(*) FILTER (WHERE kind = 'clear') AS clears,
+       round(100.0 * count(*) FILTER (WHERE kind = 'clear')
+             / nullif(count(*) FILTER (WHERE kind = 'start'), 0), 1) AS clear_pct
+FROM play_events WHERE game_id = 'brick-blast'
+GROUP BY game_id, level ORDER BY level;
+
+-- How far players get: highest level cleared per player, as a distribution
+SELECT game_id, max_level, count(*) AS players FROM (
+  SELECT game_id, who, max(level) AS max_level FROM play_events
+  WHERE kind = 'clear' GROUP BY game_id, who) t
+GROUP BY game_id, max_level ORDER BY game_id, max_level;
+
+-- Coins and assists
+SELECT game_id, detail AS assist, count(*) AS bought, sum(coins) AS coins_spent
+FROM play_events WHERE kind = 'assist' GROUP BY game_id, detail ORDER BY coins_spent DESC;
+
+-- New saved players per day
+SELECT day, count(*) FROM play_events WHERE kind = 'register' GROUP BY day ORDER BY day DESC;
+
+-- Housekeeping: drop events older than a year
+DELETE FROM play_events WHERE day < current_date - 365;
+```
+
+Coin balances and every coin change for saved players are in `wallets` and `coin_ledger`.
+
+## Let friends play your local game (ngrok)
+
+```sh
+make share          # like `make dev`, but accepts requests through any ngrok address
+ngrok http 5173     # in a second terminal; send friends the https://….ngrok-free.app URL
+```
+
+- Sharing mode (`ARC_DEV_TUNNEL=true`) lets `*.ngrok-free.app`, `*.ngrok.app` and
+  `*.ngrok.io` reach the dev server and the API. Other sites stay blocked, and production
+  refuses to start with it set.
+- Friends play as guests on your machine and your database: progress, coins and analytics
+  land in your local data. Stop `make share` and ngrok when you're done.
+- ngrok's free plan shows a one-time "You are about to visit…" page; friends tap **Visit Site**.

@@ -14,15 +14,19 @@ const FALLBACK_BUDGET: usize = 2_000_000;
 const TRAP_SAMPLES: usize = 24;
 const TRAP_BUDGET: usize = 30_000;
 
-/// `(first level, last level, colours)`.
-const TIERS: [(u16, u16, u8); 7] = [
-    (1, 3, 3),
-    (4, 10, 4),
-    (11, 25, 5),
-    (26, 45, 6),
-    (46, 65, 7),
-    (66, 85, 8),
-    (86, 100, 9),
+/// `(first level, last level, colours, bottle capacity, hidden colours)`.
+///
+/// Decision 2026-11-02: levels 1-3 are the warm-up; from level 4 colours are hidden
+/// (only each bottle's top run shows) and bottles get taller, so level 5 starts from
+/// the old level-10 setup and is harder than it was.
+const TIERS: [(u16, u16, u8, u8, bool); 7] = [
+    (1, 3, 3, 4, false),
+    (4, 12, 4, 5, true),
+    (13, 30, 5, 5, true),
+    (31, 50, 6, 5, true),
+    (51, 70, 7, 6, true),
+    (71, 88, 8, 6, true),
+    (89, 100, 9, 6, true),
 ];
 
 #[derive(Clone, Debug, Serialize)]
@@ -31,6 +35,9 @@ pub struct WsLevel {
     pub seed: u64,
     pub colors: u8,
     pub empty: u8,
+    pub capacity: u8,
+    /// Only each bottle's top colour run is visible until uncovered.
+    pub hidden: bool,
     /// Shortest known solution; exact when `min_moves_exact`.
     pub min_moves: u16,
     pub min_moves_exact: bool,
@@ -79,8 +86,8 @@ fn trap_ratio(board: &Board, seed: u64, max_depth: u16) -> f64 {
     }
 }
 
-fn evaluate(seed: u64, colors: u8) -> Option<Candidate> {
-    let board = Board::generate(seed, colors, EMPTY_BOTTLES);
+fn evaluate(seed: u64, colors: u8, capacity: u8) -> Option<Candidate> {
+    let board = Board::generate(seed, colors, EMPTY_BOTTLES, capacity);
     let (moves, exact) = match solve(&board, OPTIMAL_BUDGET, 1) {
         SolveOutcome::Solved { moves, .. } => (moves, true),
         SolveOutcome::Unsolvable { .. } => return None,
@@ -111,7 +118,11 @@ fn evaluate(seed: u64, colors: u8) -> Option<Candidate> {
 
 /// Picks one candidate per level so difficulty rises through the tier,
 /// with an easier "breather" on every 10th level.
-fn assign(tier_levels: &[u16], mut pool: Vec<Candidate>, colors: u8) -> Vec<WsLevel> {
+fn assign(
+    tier_levels: &[u16],
+    mut pool: Vec<Candidate>,
+    (colors, capacity, hidden): (u8, u8, bool),
+) -> Vec<WsLevel> {
     pool.sort_by(|a, b| {
         a.difficulty
             .total_cmp(&b.difficulty)
@@ -121,7 +132,10 @@ fn assign(tier_levels: &[u16], mut pool: Vec<Candidate>, colors: u8) -> Vec<WsLe
     let mut used = vec![false; pool.len()];
     let mut out = Vec::with_capacity(n);
     for (i, &level) in tier_levels.iter().enumerate() {
-        let q = if level.is_multiple_of(10) && level != 100 {
+        let q = if level <= 3 {
+            // Gentle introduction: the easiest boards of the tier.
+            0.03 * i as f64
+        } else if level.is_multiple_of(10) && level != 100 {
             0.1
         } else {
             0.15 + 0.75 * (i as f64 + 0.5) / n as f64
@@ -139,6 +153,8 @@ fn assign(tier_levels: &[u16], mut pool: Vec<Candidate>, colors: u8) -> Vec<WsLe
             seed: c.seed,
             colors,
             empty: EMPTY_BOTTLES,
+            capacity,
+            hidden,
             min_moves: c.min_moves,
             min_moves_exact: c.exact,
             trap_ratio: c.trap_ratio,
@@ -150,7 +166,7 @@ fn assign(tier_levels: &[u16], mut pool: Vec<Candidate>, colors: u8) -> Vec<WsLe
 
 pub fn generate(master: &str, max_level: u16) -> Vec<WsLevel> {
     let mut levels = Vec::new();
-    for (tier_idx, &(first, last, colors)) in TIERS.iter().enumerate() {
+    for (tier_idx, &(first, last, colors, capacity, hidden)) in TIERS.iter().enumerate() {
         if first > max_level {
             break;
         }
@@ -164,7 +180,7 @@ pub fn generate(master: &str, max_level: u16) -> Vec<WsLevel> {
                 .into_par_iter()
                 .filter_map(|i| {
                     let seed = derive_seed(master, &["ws", &tier_idx.to_string(), &i.to_string()]);
-                    evaluate(seed, colors)
+                    evaluate(seed, colors, capacity)
                 })
                 .collect();
             pool.extend(found);
@@ -175,10 +191,11 @@ pub fn generate(master: &str, max_level: u16) -> Vec<WsLevel> {
             );
         }
         eprintln!(
-            "  ws tier {first}-{last} ({colors} colours): {} candidates",
+            "  ws tier {first}-{last} ({colors} colours, {capacity} deep{}): {} candidates",
+            if hidden { ", hidden" } else { "" },
             pool.len()
         );
-        levels.extend(assign(&tier_levels, pool, colors));
+        levels.extend(assign(&tier_levels, pool, (colors, capacity, hidden)));
     }
     levels
 }

@@ -34,7 +34,7 @@ COPY apps/api/migrations /app/migrations
 # WEB_CONCURRENCY = uvicorn worker processes. 1 suits a 1-vCPU droplet: a second worker
 # costs ~70 MB of RAM without adding CPU. Raise it on bigger machines.
 ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-    ARC_ENV=production ARC_LEVELS_PATH=/run/secrets/levels.json WEB_CONCURRENCY=1
+    ARC_ENV=production ARC_LEVELS_PATH=/run/secrets WEB_CONCURRENCY=1
 USER arc
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \

@@ -18,12 +18,21 @@ import { createPixi, prefersReducedMotion, tween } from "../pixi";
 
 /** Engine encodings (see crates/arc-engine-wasm): cells are [tag, kind, hp]. */
 const SHAPES = ["square", "tri_bl", "tri_br", "tri_tl", "tri_tr"] as const;
-const POWER_GLYPH = ["↔", "↕", "✚", "×3", "×5", "+2", "+3", "+5"];
-const POWER_COLOR = [0xf43f5e, 0xf43f5e, 0xf43f5e, 0x38bdf8, 0x38bdf8, 0xfacc15, 0xfacc15, 0xfacc15];
+/** Indexed by the engine's power-up kind (new kinds are appended there too). */
+const POWER_GLYPH = ["↔", "↕", "✚", "×3", "×5", "+2", "+3", "+5", "✦", "2×", "3×"];
+const POWER_COLOR = [
+  0xf43f5e, 0xf43f5e, 0xf43f5e, 0x38bdf8, 0x38bdf8, 0xfacc15, 0xfacc15, 0xfacc15,
+  // scatter, boost x2, boost x3
+  0xa855f7, 0x22c55e, 0xf59e0b,
+];
+/** Gap between on-screen messages, so they never pile up. */
+const ANNOUNCE_GAP_MS = 650;
 const MAX_STEPS_PER_FRAME = 48;
 
 export interface BrickBlastViewOptions {
   onFire: (aim: number) => void;
+  /** Called with a column when the laser assist is picking one. */
+  onColumn?: (col: number) => void;
 }
 
 /** Minimal interface of the WASM `BrickTurn` used for playback. */
@@ -74,6 +83,13 @@ export class BrickBlastView {
   private speed = 1;
   private skipping = false;
   private combo = 0;
+  /** Per-shot tallies for the messages ("Good shot!", "Multi break!"...). */
+  private shot = { blasts: 0, powers: 0, laser: false, scatter: false, lastBall: false, recent: [] as number[] };
+  private tick = 0;
+  private lastAnnounce = 0;
+  private picking = false;
+  private pickCol: number | null = null;
+  private readonly picker = new Graphics();
   private pulse = 0;
   private destroyed = false;
 
@@ -109,6 +125,7 @@ export class BrickBlastView {
       this.launcherGlow,
       this.launcher,
       this.ballCount,
+      this.picker,
     );
     app.stage.addChild(this.board);
     app.stage.eventMode = "static";
@@ -142,8 +159,18 @@ export class BrickBlastView {
     this.launchX = state.launch_x;
     this.renderCells(engine.bbCells(this.stateJson));
     this.renderBalls(new Int32Array(0));
-    this.drawLauncher(state.balls);
+    this.drawLauncher(launchCount(state));
     this.drawGuide();
+    if (state.status === "playing" && dangerRow(engine.bbCells(this.stateJson), this.c.cols, this.c.playRows)) {
+      this.announce("Danger zone!", 0xf87171);
+    }
+  }
+
+  /** Laser assist: the next tap picks a column instead of aiming. */
+  setColumnPicking(on: boolean): void {
+    this.picking = on;
+    this.pickCol = null;
+    this.drawPicker();
   }
 
   setAimEnabled(on: boolean): void {
@@ -172,6 +199,8 @@ export class BrickBlastView {
   play(turn: TurnSim): Promise<void> {
     this.skipping = false;
     this.combo = 0;
+    this.tick = 0;
+    this.shot = { blasts: 0, powers: 0, laser: false, scatter: false, lastBall: false, recent: [] };
     this.hintAim = null;
     this.drawGuide();
     const tps = this.c.ticksPerSecond;
@@ -194,8 +223,10 @@ export class BrickBlastView {
         let changed = false;
         for (let i = 0; i < steps && !turn.isDone(); i++) {
           turn.step();
+          this.tick += 1;
           if (this.skipping) continue;
-          changed = this.handleEvents(turn.takeEvents()) || changed;
+          const lone = turn.waiting() === 0 && turn.balls().length === 4; // one ball: [id, x, y, clone]
+          changed = this.handleEvents(turn.takeEvents(), lone) || changed;
         }
         if (this.skipping) turn.takeEvents();
         if (changed || this.skipping) this.renderCells(turn.cells());
@@ -203,6 +234,7 @@ export class BrickBlastView {
         this.drawLauncher(turn.waiting());
         if (turn.isDone()) {
           this.app.ticker.remove(frame);
+          if (!this.skipping) this.summarise();
           resolve();
         }
       };
@@ -443,7 +475,11 @@ export class BrickBlastView {
       this.launcherGlow.width = this.launcherGlow.height = ballR * 6;
       this.launcherGlow.alpha = 0.6;
     }
-    this.ballCount.text = waiting > 0 ? `×${waiting}` : "";
+    const boost = this.state?.boost ?? 1;
+    const bonus = this.state?.bonus ?? 0;
+    const extra = boost > 1 ? ` · ${boost}×` : bonus > 0 ? ` · +${bonus}` : "";
+    this.ballCount.text = waiting > 0 ? `×${waiting}${this.aimEnabled ? extra : ""}` : "";
+    this.ballCount.style.fill = this.aimEnabled && (boost > 1 || bonus > 0) ? 0x4ade80 : 0xe8ecff;
     this.ballCount.style.fontSize = Math.max(8, this.c.cell * 0.3 * this.scale);
     this.ballCount.scale.set(1 / this.scale);
     this.ballCount.position.set(this.launchX, floorY + ballR * 0.6);
@@ -470,6 +506,11 @@ export class BrickBlastView {
 
   private readonly onDown = (e: FederatedPointerEvent) => {
     sfx.unlock();
+    if (this.picking) {
+      this.pickCol = this.colFrom(e);
+      this.drawPicker();
+      return;
+    }
     if (!this.aimEnabled) return;
     this.aiming = true;
     this.aim = this.aimFrom(e);
@@ -477,6 +518,11 @@ export class BrickBlastView {
   };
 
   private readonly onMove = (e: FederatedPointerEvent) => {
+    if (this.picking && this.pickCol !== null) {
+      this.pickCol = this.colFrom(e);
+      this.drawPicker();
+      return;
+    }
     if (!this.aiming) return;
     const next = this.aimFrom(e);
     if (next !== this.aim) {
@@ -486,6 +532,11 @@ export class BrickBlastView {
   };
 
   private readonly onUp = () => {
+    if (this.picking && this.pickCol !== null) {
+      const col = this.pickCol;
+      this.options.onColumn?.(col);
+      return;
+    }
     if (!this.aiming) return;
     this.aiming = false;
     const aim = this.aim;
@@ -527,8 +578,8 @@ export class BrickBlastView {
 
   // --------------------------------------------------------------- effects
 
-  /** Returns true if any cell changed. */
-  private handleEvents(ev: Int32Array): boolean {
+  /** Returns true if any cell changed. `lone`: only one ball left in play. */
+  private handleEvents(ev: Int32Array, lone = false): boolean {
     let changed = false;
     for (let i = 0; i + 2 < ev.length; i += 3) {
       const kind = (ev[i] ?? 0);
@@ -545,19 +596,38 @@ export class BrickBlastView {
           sfx.blast(this.combo);
           haptic(8);
           this.burst(a);
+          this.countBlast(lone);
           break;
         case 2:
           changed = true;
           sfx.laser();
           this.beam(a, b);
+          if (!this.shot.laser) {
+            this.shot.laser = true;
+            this.shot.powers += 1;
+            this.announce("Electric shock!", 0x7dd3fc);
+          }
           break;
         case 3:
           sfx.pickup();
+          if (!this.shot.scatter) {
+            this.shot.scatter = true;
+            this.shot.powers += 1;
+            this.announce("Scatter!", 0xc084fc);
+          }
           break;
         case 4:
           changed = true;
           sfx.pickup();
+          this.shot.powers += 1;
           this.floatText(a, `+${b}`);
+          break;
+        case 6:
+          changed = true;
+          sfx.pickup();
+          this.shot.powers += 1;
+          this.floatText(a, `${b}× next`);
+          this.announce(`Boost ${b}×! Next shot`, 0x4ade80);
           break;
         case 5:
           this.launchX = a;
@@ -632,6 +702,68 @@ export class BrickBlastView {
     }).then(() => g.destroy());
   }
 
+  /** Tracks breaks in this shot: bursts close together are a multi-break. */
+  private countBlast(lone: boolean): void {
+    const s = this.shot;
+    s.blasts += 1;
+    s.recent = s.recent.filter((t) => this.tick - t < this.c.ticksPerSecond / 2);
+    s.recent.push(this.tick);
+    if (s.recent.length === 6) this.announce("Mega break!", 0xf472b6);
+    else if (s.recent.length === 3) this.announce("Multi break!", 0xfbbf24);
+    if (lone && !s.lastBall) {
+      s.lastBall = true;
+      this.announce("Last ball standing!", 0xe2e8f0);
+    }
+  }
+
+  /** End-of-shot praise. */
+  private summarise(): void {
+    const s = this.shot;
+    if (s.powers >= 2) this.announce("Good use of power!", 0x86efac);
+    else if (s.blasts >= 15) this.announce("Unbelievable!", 0xf0abfc);
+    else if (s.blasts >= 8) this.announce("Great shot!", 0x93c5fd);
+    else if (s.blasts >= 4) this.announce("Good shot!", 0xfde68a);
+  }
+
+  /** A big message over the board that pops in and fades; spaced out so they never stack. */
+  announce(text: string, color: number): void {
+    if (this.destroyed) return;
+    const now = performance.now();
+    const delay = Math.max(0, this.lastAnnounce + ANNOUNCE_GAP_MS - now);
+    this.lastAnnounce = now + delay;
+    window.setTimeout(() => {
+      if (this.destroyed) return;
+      const { boardW, cell, floorY } = this.c;
+      const t = this.makeText(text, cell * 0.62, color, true);
+      t.position.set(boardW / 2, floorY * 0.42);
+      this.fx.addChild(t);
+      const base = t.scale.x; // makeText's 1/scale; the pop is relative to it
+      const still = prefersReducedMotion();
+      void tween(this.app, still ? 900 : 1100, (p) => {
+        const pop = still ? 1 : p < 0.15 ? 0.6 + (p / 0.15) * 0.5 : 1.1 - Math.min(0.1, (p - 0.15) * 0.4);
+        t.scale.set(base * pop);
+        t.alpha = p < 0.7 ? 1 : 1 - (p - 0.7) / 0.3;
+        if (!still) t.y = floorY * 0.42 - p * cell * 0.5;
+      }).then(() => t.destroy());
+    }, delay);
+  }
+
+  private drawPicker(): void {
+    const g = this.picker;
+    g.clear();
+    if (!this.picking) return;
+    const { cols, cell, floorY } = this.c;
+    for (let c = 0; c < cols; c++) {
+      const on = c === this.pickCol;
+      g.rect(c * cell + cell * 0.08, 0, cell * 0.84, floorY).fill({ color: on ? 0x7dd3fc : 0xffffff, alpha: on ? 0.28 : 0.05 });
+    }
+  }
+
+  private colFrom(e: FederatedPointerEvent): number {
+    const x = (e.global.x - this.board.x) / this.scale;
+    return Math.max(0, Math.min(this.c.cols - 1, Math.floor(x / this.c.cell)));
+  }
+
   private floatText(index: number, text: string): void {
     const { x, y } = this.cellCenter(index);
     const t = this.makeText(text, this.c.cell * 0.4, 0xfacc15);
@@ -642,4 +774,16 @@ export class BrickBlastView {
       t.alpha = 1 - p;
     }).then(() => t.destroy());
   }
+}
+
+/** Balls the next shot launches, boosts and paid bonus balls included (matches the engine). */
+export function launchCount(state: BbState): number {
+  return state.balls * (state.boost ?? 1) + (state.bonus ?? 0);
+}
+
+/** True when any block sits in the last row before the ground. */
+function dangerRow(cells: Int32Array, cols: number, playRows: number): boolean {
+  const row = playRows - 1;
+  for (let c = 0; c < cols; c++) if (cells[(row * cols + c) * 3] === 1) return true;
+  return false;
 }

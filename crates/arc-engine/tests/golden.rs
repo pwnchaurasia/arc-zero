@@ -41,12 +41,22 @@ const POWERS: [PowerKind; 8] = [
     PowerKind::PlusBalls3,
     PowerKind::PlusBalls5,
 ];
+/// Power-ups added 2026-11-02. Used only by the newer seeds, so the original vectors
+/// stay byte-for-byte the same (proving old games play exactly as before).
+const NEW_POWERS: [PowerKind; 6] = [
+    PowerKind::Scatter,
+    PowerKind::Scatter,
+    PowerKind::Boost2,
+    PowerKind::Boost3,
+    PowerKind::LaserX,
+    PowerKind::PlusBalls3,
+];
 
 fn pick<T: Copy>(rng: &mut Rng, items: &[T]) -> T {
     items[usize::try_from(rng.below(items.len() as u64)).unwrap()]
 }
 
-fn random_row(rng: &mut Rng) -> Row {
+fn random_row(rng: &mut Rng, powers: &[PowerKind]) -> Row {
     let mut row = EMPTY_ROW;
     for cell in row.iter_mut().take(COLS) {
         match rng.below(10) {
@@ -58,7 +68,7 @@ fn random_row(rng: &mut Rng) -> Row {
             }
             5 => {
                 *cell = Cell::Power {
-                    kind: pick(rng, &POWERS),
+                    kind: pick(rng, powers),
                 }
             }
             _ => {}
@@ -69,14 +79,20 @@ fn random_row(rng: &mut Rng) -> Row {
 
 fn vectors() -> Vec<Vector> {
     let mut out = Vec::new();
-    for seed in 0..6u64 {
+    for seed in 0..12u64 {
         let mut rng = Rng::new(seed);
+        let powers: &[PowerKind] = if seed < 6 { &POWERS } else { &NEW_POWERS };
         let script = LevelScript {
             start_balls: u16::try_from(rng.range(5, 60)).unwrap(),
-            start_rows: (0..4).map(|_| random_row(&mut rng)).collect(),
-            row_queue: (0..6).map(|_| random_row(&mut rng)).collect(),
+            start_rows: (0..4).map(|_| random_row(&mut rng, powers)).collect(),
+            row_queue: (0..6).map(|_| random_row(&mut rng, powers)).collect(),
         };
         let mut state = State::new(&script).unwrap();
+        if seed >= 9 {
+            // A boosted first shot, and bonus balls on some.
+            state.boost = if seed % 2 == 0 { 2 } else { 3 };
+            state.bonus = if seed == 11 { 15 } else { 0 };
+        }
         for _ in 0..4 {
             let aim = u16::try_from(rng.range(i64::from(AIM_MIN), i64::from(AIM_MAX))).unwrap();
             let Ok((next, _)) = play_turn(&state, aim) else {

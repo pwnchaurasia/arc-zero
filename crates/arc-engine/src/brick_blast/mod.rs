@@ -76,7 +76,40 @@ pub enum PowerKind {
     PlusBalls2,
     PlusBalls3,
     PlusBalls5,
+    // Added 2026-11-02. New kinds go last: discriminants are hashed and sent to clients.
+    /// A ball passing through shatters into 3 balls flying off in random directions.
+    Scatter,
+    /// Next shot launches 2x (or 3x) the balls.
+    Boost2,
+    Boost3,
 }
+
+impl PowerKind {
+    /// Ball multiplier for the next shot, for boost power-ups.
+    #[must_use]
+    pub const fn boost(self) -> u8 {
+        match self {
+            Self::Boost2 => 2,
+            Self::Boost3 => 3,
+            _ => 1,
+        }
+    }
+}
+
+/// Paid assists, applied between shots by the server.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Assist {
+    /// 15 extra balls for the next shot only.
+    BonusBalls,
+    /// Destroys every block in one column.
+    Laser,
+    /// Destroys every block in the lowest row that has any.
+    Hammer,
+}
+
+pub const ASSIST_BONUS_BALLS: u16 = 15;
+pub const MAX_BOOST: u8 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "t", rename_all = "snake_case")]
@@ -122,7 +155,48 @@ pub struct State {
     /// Upcoming rows. Only the server holds these; clients receive one row per turn.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub queue: Vec<Row>,
+    /// Ball multiplier for the next shot only (from a boost power-up); 1 = none.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub boost: u8,
+    /// Extra balls for the next shot only (from the paid assist).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub bonus: u16,
 }
+
+fn one() -> u8 {
+    1
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's skip_serializing_if signature
+fn is_one(v: &u8) -> bool {
+    *v == 1
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(v: &u16) -> bool {
+    *v == 0
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AssistError {
+    NotPlaying,
+    AlreadyActive,
+    BadColumn,
+    NothingToClear,
+}
+
+impl fmt::Display for AssistError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::NotPlaying => "the game is over",
+            Self::AlreadyActive => "bonus balls are already waiting for the next shot",
+            Self::BadColumn => "no such column",
+            Self::NothingToClear => "there is nothing to clear there",
+        })
+    }
+}
+
+impl std::error::Error for AssistError {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StateError {
@@ -220,6 +294,8 @@ impl State {
             rows_remaining,
             closest,
             queue: script.row_queue.clone(),
+            boost: 1,
+            bonus: 0,
         })
     }
 
@@ -228,6 +304,9 @@ impl State {
             return Err(StateError::GridShape);
         }
         if !(1..=MAX_BALLS).contains(&self.balls) {
+            return Err(StateError::Balls(self.balls));
+        }
+        if !(1..=MAX_BOOST).contains(&self.boost) || self.bonus > ASSIST_BONUS_BALLS * 4 {
             return Err(StateError::Balls(self.balls));
         }
         if !(BALL_R..=BOARD_W - BALL_R).contains(&self.launch_x) {
@@ -248,6 +327,62 @@ impl State {
             queue: Vec::new(),
             ..self.clone()
         }
+    }
+
+    /// Balls the next shot launches: boosts and paid bonus balls apply to it only.
+    #[must_use]
+    pub fn launch_count(&self) -> u16 {
+        self.balls
+            .saturating_mul(u16::from(self.boost))
+            .saturating_add(self.bonus)
+    }
+
+    /// Applies a paid assist between shots. A board emptied with no rows left is a win.
+    pub fn apply_assist(&mut self, assist: Assist, col: u8) -> Result<(), AssistError> {
+        if self.status != Status::Playing {
+            return Err(AssistError::NotPlaying);
+        }
+        match assist {
+            Assist::BonusBalls => {
+                if self.bonus > 0 {
+                    return Err(AssistError::AlreadyActive);
+                }
+                self.bonus = ASSIST_BONUS_BALLS;
+            }
+            Assist::Laser => {
+                let col = usize::from(col);
+                if col >= COLS {
+                    return Err(AssistError::BadColumn);
+                }
+                let mut hit = false;
+                for row in self.grid.iter_mut().take(PLAY_ROWS) {
+                    if matches!(row[col], Cell::Block { .. }) {
+                        row[col] = Cell::Empty;
+                        hit = true;
+                    }
+                }
+                if !hit {
+                    return Err(AssistError::NothingToClear);
+                }
+            }
+            Assist::Hammer => {
+                let lowest = self
+                    .grid
+                    .iter()
+                    .take(PLAY_ROWS)
+                    .rposition(|r| r.iter().any(|c| matches!(c, Cell::Block { .. })))
+                    .ok_or(AssistError::NothingToClear)?;
+                for cell in &mut self.grid[lowest] {
+                    if matches!(cell, Cell::Block { .. }) {
+                        *cell = Cell::Empty;
+                    }
+                }
+            }
+        }
+        if self.block_count() == 0 && self.rows_remaining == 0 {
+            self.status = Status::Won;
+        }
+        Ok(())
     }
 
     #[must_use]
@@ -314,6 +449,11 @@ impl State {
         h.write_u8(self.status as u8);
         h.write_u16(self.rows_remaining);
         h.write_u8(self.closest);
+        // Only when set, so fingerprints of ordinary states are unchanged.
+        if self.boost != 1 || self.bonus != 0 {
+            h.write_u8(self.boost);
+            h.write_u16(self.bonus);
+        }
         h.hex()
     }
 }

@@ -4,7 +4,9 @@ import type { Board } from "../../api/types";
 import { water } from "../colors";
 import { createPixi, ease, lerp, prefersReducedMotion, tween } from "../pixi";
 
-const CAPACITY = 4;
+/** A layer the player hasn't uncovered yet (masked boards from the server). */
+export const HIDDEN = 255;
+const HIDDEN_COLOR = 0x2b3352;
 const UNIT_RATIO = 0.78; // unit height / bottle width
 const NECK_RATIO = 0.4;
 const GLASS = 0xcbd5ff;
@@ -26,6 +28,8 @@ interface BottleSprite {
 export interface WaterSortViewOptions {
   onTap: (index: number) => void;
   symbols: boolean;
+  /** Units a bottle holds on this level (4 to 6). */
+  capacity: number;
 }
 
 /**
@@ -75,6 +79,31 @@ export class WaterSortView {
   setSymbols(on: boolean): void {
     this.options = { ...this.options, symbols: on };
     this.bottles.forEach((_, i) => this.drawLiquid(i));
+  }
+
+  /**
+   * Shows colours the server just uncovered, without disturbing anything else.
+   * Bottles whose hidden layers changed get a quick flash.
+   */
+  reveal(board: Board): void {
+    const changed = new Set<number>();
+    board.forEach((units, i) => {
+      const before = this.board[i] ?? [];
+      if (units.some((c, k) => before[k] === HIDDEN && c !== HIDDEN)) changed.add(i);
+    });
+    if (board.length !== this.board.length) {
+      this.setBoard(board);
+      return;
+    }
+    this.board = board.map((b) => [...b]);
+    for (const i of changed) {
+      this.drawLiquid(i);
+      const b = this.bottles[i];
+      if (!b) continue;
+      void tween(this.app, 260, (t) => {
+        b.liquid.alpha = 0.55 + 0.45 * t;
+      });
+    }
   }
 
   /** Replaces the whole board without animation (start, undo, restart). */
@@ -148,7 +177,7 @@ export class WaterSortView {
     const { width: W, height: H } = this.app.screen;
     const rows = n <= 6 ? 1 : 2;
     const perRow = Math.ceil(n / rows);
-    const heightRatio = CAPACITY * UNIT_RATIO + NECK_RATIO;
+    const heightRatio = this.options.capacity * UNIT_RATIO + NECK_RATIO;
     const gap = 0.55;
     const byWidth = (W * 0.94) / (perRow + (perRow - 1) * gap);
     const byHeight = (H * 0.82) / (rows * heightRatio + (rows - 1) * 0.9);
@@ -243,6 +272,16 @@ export class WaterSortView {
     b.symbols.removeChildren().forEach((c) => c.destroy());
     units.forEach((colorId, k) => {
       const y = h - (k + 1) * unit - 4;
+      if (colorId === HIDDEN) {
+        // Unknown until uncovered: a dark layer with a question mark.
+        b.liquid.rect(0, y, w, unit + 0.5).fill(HIDDEN_COLOR);
+        b.liquid.rect(0, y, w, 1).fill({ color: 0x000000, alpha: 0.35 });
+        const q = new Text({ text: "?", style: { fontSize: unit * 0.55, fill: 0x8b95b8, fontWeight: "800" } });
+        q.anchor.set(0.5);
+        q.position.set(w / 2, y + unit / 2);
+        b.symbols.addChild(q);
+        return;
+      }
       const { color, symbol } = water(colorId);
       b.liquid.rect(0, y, w, unit + 0.5).fill(color);
       b.liquid.rect(0, y, w, Math.max(2, unit * 0.12)).fill({ color: 0xffffff, alpha: 0.18 });

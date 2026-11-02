@@ -1,9 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
 import type { GameId } from "./api/types";
 import { Home } from "./screens/Home";
+import { IosInstallModal } from "./screens/IosInstallModal";
 import { LevelSelect } from "./screens/LevelSelect";
 import { CheckpointModal, RestoreModal, SettingsModal } from "./screens/modals";
+import { NavContext } from "./state/nav";
 
 const WaterSortScreen = lazy(() =>
   import("./screens/WaterSortScreen").then((m) => ({ default: m.WaterSortScreen })),
@@ -11,6 +13,10 @@ const WaterSortScreen = lazy(() =>
 const BrickBlastScreen = lazy(() =>
   import("./screens/BrickBlastScreen").then((m) => ({ default: m.BrickBlastScreen })),
 );
+const MetroJamScreen = lazy(() =>
+  import("./screens/MetroJamScreen").then((m) => ({ default: m.MetroJamScreen })),
+);
+const CoinsScreen = lazy(() => import("./screens/CoinsScreen").then((m) => ({ default: m.CoinsScreen })));
 
 function Loading() {
   return <div className="grid h-full place-items-center text-muted">Loading…</div>;
@@ -18,6 +24,7 @@ function Loading() {
 
 type Route =
   | { name: "home" }
+  | { name: "coins" }
   | { name: "levels"; game: GameId }
   | { name: "play"; game: GameId; level: number };
 
@@ -51,7 +58,7 @@ function useRoute() {
 
 export function App() {
   const { route, go, replace, back } = useRoute();
-  const [modal, setModal] = useState<"settings" | "restore" | "checkpoint" | null>(null);
+  const [modal, setModal] = useState<"settings" | "restore" | "checkpoint" | "ios-install" | null>(null);
   const close = useCallback(() => setModal(null), []);
   const openCheckpoint = useCallback(() => setModal("checkpoint"), []);
 
@@ -61,13 +68,20 @@ export function App() {
     [replace],
   );
 
+  // The header's Coins link works from every screen; opening it twice doesn't stack pages.
+  const nav = useMemo(
+    () => ({ openCoins: () => (history.state as Route | null)?.name !== "coins" && go({ name: "coins" }) }),
+    [go],
+  );
+
   return (
-    <>
+    <NavContext value={nav}>
       {route.name === "home" && (
         <Home
           onOpen={(game) => go({ name: "levels", game })}
           onSettings={() => setModal("settings")}
           onCheckpoint={openCheckpoint}
+          onIosInstall={() => setModal("ios-install")}
         />
       )}
       {route.name === "levels" && (
@@ -79,6 +93,16 @@ export function App() {
         />
       )}
       <Suspense fallback={<Loading />}>
+      {route.name === "coins" && <CoinsScreen onBack={back} />}
+      {route.name === "play" && route.game === "metro-jam" && (
+        <MetroJamScreen
+          key={`mj-${route.level}`}
+          level={route.level}
+          onBack={back}
+          onLevel={(level) => replaceLevel("metro-jam", level)}
+          onCheckpoint={openCheckpoint}
+        />
+      )}
       {route.name === "play" && route.game === "water-sort" && (
         <WaterSortScreen
           key={`ws-${route.level}`}
@@ -106,6 +130,7 @@ export function App() {
       />
       <RestoreModal open={modal === "restore"} onClose={close} />
       <CheckpointModal open={modal === "checkpoint"} onClose={close} />
-    </>
+      <IosInstallModal open={modal === "ios-install"} onClose={close} />
+    </NavContext>
   );
 }

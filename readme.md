@@ -85,7 +85,8 @@ git push -u origin release/26.10.01
 **Import a ruleset** → choose that file → Create. It:
 - requires a pull request (no direct pushes to `main`),
 - requires the `CI passed` check, which succeeds only if every CI job succeeded,
-- requires the branch to be up to date with `main`, so what was tested is exactly what lands,
+- does **not** force "Update branch" before merging: GitHub still blocks merges that
+  conflict, and re-running CI after every merge to `main` cost more than it caught,
 - blocks force-pushes and deleting `main`,
 - has **no bypass list**: nobody, including repository admins, can merge without green CI.
 

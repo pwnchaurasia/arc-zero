@@ -5,9 +5,10 @@
 //! file is server-only: it must never be committed or served to clients.
 //!
 //! Usage:
-//!   ARC_LEVEL_SEED=<secret> arc-levelgen --out levels.json [--game all|water-sort|brick-blast] [--levels 100]
+//!   ARC_LEVEL_SEED=<secret> arc-levelgen --out levels.json [--game all|water-sort|brick-blast|metro-jam] [--levels 100]
 
 mod brick;
+mod metro;
 mod water;
 
 use std::io::Write;
@@ -38,6 +39,8 @@ struct LevelsFile {
     water_sort: Vec<water::WsLevel>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     brick_blast: Vec<brick::BbLevel>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    metro_jam: Vec<metro::MjLevel>,
 }
 
 struct Args {
@@ -61,13 +64,16 @@ fn parse_args() -> Result<Args, String> {
             }
             "-h" | "--help" => {
                 return Err("usage: ARC_LEVEL_SEED=<secret> arc-levelgen --out <file> \
-                            [--game all|water-sort|brick-blast] [--levels 1..=100]"
+                            [--game all|water-sort|brick-blast|metro-jam] [--levels 1..=100]"
                     .to_owned())
             }
             other => return Err(format!("unknown argument {other}")),
         }
     }
-    if !matches!(game.as_str(), "all" | "water-sort" | "brick-blast") {
+    if !matches!(
+        game.as_str(),
+        "all" | "water-sort" | "brick-blast" | "metro-jam"
+    ) {
         return Err(format!("unknown game {game}"));
     }
     if !(1..=100).contains(&levels) {
@@ -101,6 +107,7 @@ fn main() -> ExitCode {
         version: LEVELS_FILE_VERSION,
         water_sort: Vec::new(),
         brick_blast: Vec::new(),
+        metro_jam: Vec::new(),
     };
     if matches!(args.game.as_str(), "all" | "water-sort") {
         file.water_sort = water::generate(&master, args.levels);
@@ -115,6 +122,14 @@ fn main() -> ExitCode {
         eprintln!(
             "brick blast: {} levels ({:.1?})",
             file.brick_blast.len(),
+            started.elapsed()
+        );
+    }
+    if matches!(args.game.as_str(), "all" | "metro-jam") {
+        file.metro_jam = metro::generate(&master, args.levels);
+        eprintln!(
+            "metro jam: {} levels ({:.1?})",
+            file.metro_jam.len(),
             started.elapsed()
         );
     }

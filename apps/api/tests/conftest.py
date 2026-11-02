@@ -49,6 +49,27 @@ def bb_script(hp: int) -> dict[str, Any]:
     return {"start_balls": 3, "start_rows": [row], "row_queue": []}
 
 
+# Vehicle 1 is blocked by vehicle 0; tapping 0, 1, 2 wins. Only 3 commuters are visible.
+MJ_WIN = [(0, 0), (0, 1), (0, 2)]
+
+
+def mj_level() -> dict[str, Any]:
+    return {
+        "width": 4,
+        "height": 4,
+        "barriers": [],
+        "vehicles": [
+            {"kind": "hatchback", "color": 0, "x": 1, "y": 0, "dir": "n"},
+            {"kind": "hatchback", "color": 1, "x": 1, "y": 1, "dir": "n"},
+            {"kind": "sedan", "color": 0, "x": 3, "y": 3, "dir": "e"},
+        ],
+        "queue": [1, 0, 1, 0, 0, 0, 0, 0],
+        "queue_len": 8,
+        "bays": 2,
+        "visible": 3,
+    }
+
+
 def make_levels(path: Path) -> None:
     ws = []
     for level in range(1, 6):
@@ -64,7 +85,10 @@ def make_levels(path: Path) -> None:
             }
         )
     bb = [{"level": level, "script": bb_script(1)} for level in range(1, 6)]
-    path.write_text(json.dumps({"version": 1, "water_sort": ws, "brick_blast": bb}))
+    mj = [{"level": level, "data": mj_level()} for level in range(1, 6)]
+    path.write_text(
+        json.dumps({"version": 1, "water_sort": ws, "brick_blast": bb, "metro_jam": mj})
+    )
 
 
 @pytest.fixture(scope="session")
@@ -85,6 +109,7 @@ def settings(tmp_path_factory: pytest.TempPathFactory) -> Settings:
         pow_surge_difficulty=8,
         ws_min_ms_per_move=0,
         bb_min_ms_between_turns=0,
+        mj_min_ms_per_move=0,
     )
 
 

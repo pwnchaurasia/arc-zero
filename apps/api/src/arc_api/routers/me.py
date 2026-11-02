@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from sqlalchemy import select
 
-from arc_api import hints
+from arc_api import coins, hints
 from arc_api.db import LevelResult
 from arc_api.levels import GAME_IDS
 from arc_api.principal import PrincipalDep, issue_ticket
@@ -28,6 +28,7 @@ class MeOut(StrictModel):
     guest_max_level: int
     registration_required: bool
     games: dict[str, GameOut]
+    coins: int
     # Guests get (or refresh) their ticket here, so the client has one stable
     # identity before any game request. Stateless: no database row is created.
     guest_ticket: str | None = None
@@ -65,5 +66,6 @@ async def me(who: PrincipalDep, state: StateDep, db: DbDep) -> MeOut:
         registration_required=who.player_id is None
         and any(len(stars[g]) >= gate for g in GAME_IDS),
         games=games,
+        coins=await coins.balance(db, state, who),
         guest_ticket=issue_ticket(state, who.guest) if who.guest else None,
     )

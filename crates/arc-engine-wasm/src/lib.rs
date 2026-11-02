@@ -4,6 +4,7 @@
 //! Hot paths return flat `Int32Array`s instead of JSON to avoid per-frame allocation churn.
 
 use arc_engine::brick_blast::{self as bb, Cell, Event};
+use arc_engine::metro_jam as mj;
 use arc_engine::water_sort as ws;
 use sha2::{Digest, Sha256};
 use wasm_bindgen::prelude::*;
@@ -220,6 +221,135 @@ pub fn bb_constants() -> String {
         "aimMin": bb::AIM_MIN,
         "aimMax": bb::AIM_MAX,
         "maxHp": bb::MAX_HP,
+    })
+    .to_string()
+}
+
+// ----------------------------------------------------------------- MetroJam
+
+/// A MetroJam game in the browser. Undo rebuilds it from the move list.
+#[wasm_bindgen]
+pub struct MetroJam {
+    game: mj::Game,
+}
+
+#[wasm_bindgen]
+impl MetroJam {
+    #[wasm_bindgen(constructor)]
+    pub fn new(level_json: &str) -> Result<MetroJam, JsError> {
+        let level: mj::Level = serde_json::from_str(level_json).map_err(js_err)?;
+        Ok(Self {
+            game: mj::Game::new(&level).map_err(js_err)?,
+        })
+    }
+
+    /// Applies `(op, vehicle)`: 0 tap, 1 airlift, 2 shuffle, 3 extra bay.
+    pub fn apply(&mut self, op: u8, vehicle: u8) -> Result<(), JsError> {
+        self.game.apply((op, vehicle)).map_err(js_err)
+    }
+
+    /// -1 if the vehicle can drive out; otherwise the blocking vehicle,
+    /// -2 for a barrier, -3 if it already left or does not exist.
+    #[must_use]
+    pub fn blocker(&self, vehicle: u8) -> i32 {
+        match self.game.blocker(vehicle) {
+            None => -1,
+            Some(mj::MoveError::Blocked { by: Some(v) }) => i32::from(v),
+            Some(mj::MoveError::Blocked { by: None }) => -2,
+            Some(_) => -3,
+        }
+    }
+
+    #[must_use]
+    pub fn tappable(&self) -> Vec<u8> {
+        self.game.tappable()
+    }
+
+    #[wasm_bindgen(js_name = onGrid)]
+    #[must_use]
+    pub fn on_grid(&self, vehicle: u8) -> bool {
+        self.game.on_grid(vehicle)
+    }
+
+    /// Flat `[vehicle, riders]` per bay; `[-1, 0]` for an empty bay.
+    #[must_use]
+    pub fn bays(&self) -> Vec<i32> {
+        self.game
+            .bays()
+            .iter()
+            .flat_map(|b| b.map_or([-1, 0], |b| [i32::from(b.vehicle), i32::from(b.riders)]))
+            .collect()
+    }
+
+    /// Known commuters still waiting, front first.
+    #[must_use]
+    pub fn waiting(&self) -> Vec<u8> {
+        self.game.waiting().to_vec()
+    }
+
+    #[must_use]
+    pub fn boarded(&self) -> usize {
+        self.game.boarded()
+    }
+
+    #[wasm_bindgen(js_name = isWon)]
+    #[must_use]
+    pub fn is_won(&self) -> bool {
+        self.game.is_won()
+    }
+
+    #[wasm_bindgen(js_name = isStuck)]
+    #[must_use]
+    pub fn is_stuck(&self) -> bool {
+        self.game.is_stuck()
+    }
+
+    #[wasm_bindgen(js_name = needsQueue)]
+    #[must_use]
+    pub fn needs_queue(&self) -> bool {
+        self.game.needs_queue()
+    }
+
+    /// Flat `[kind, a, b]` per event since the last call.
+    /// kind: 0 park(vehicle, bay) 1 lift(vehicle, bay) 2 board(bay, vehicle)
+    /// 3 depart(bay, vehicle) 4 bay added(bay) 5 shuffled
+    #[wasm_bindgen(js_name = takeEvents)]
+    pub fn take_events(&mut self) -> Vec<i32> {
+        let mut out = Vec::new();
+        for e in self.game.take_events() {
+            out.extend(match e {
+                mj::Event::Park { vehicle, bay } => [0, i32::from(vehicle), i32::from(bay)],
+                mj::Event::Lift { vehicle, bay } => [1, i32::from(vehicle), i32::from(bay)],
+                mj::Event::Board { bay, vehicle } => [2, i32::from(bay), i32::from(vehicle)],
+                mj::Event::Depart { bay, vehicle } => [3, i32::from(bay), i32::from(vehicle)],
+                mj::Event::BayAdded { bay } => [4, i32::from(bay), 0],
+                mj::Event::Shuffled => [5, 0, 0],
+            });
+        }
+        out
+    }
+}
+
+/// Seats, riders and footprint per vehicle kind, so the renderer never hard-codes them.
+#[wasm_bindgen(js_name = mjConstants)]
+#[must_use]
+pub fn mj_constants() -> String {
+    let kinds: Vec<_> = mj::Kind::ALL
+        .iter()
+        .map(|k| {
+            serde_json::json!({
+                "kind": k,
+                "seats": k.seats(),
+                "riders": k.riders(),
+                "length": k.length(),
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "kinds": kinds,
+        "maxMoves": mj::MAX_MOVES,
+        "maxExtraBays": mj::MAX_EXTRA_BAYS,
+        "shuffleWindow": mj::SHUFFLE_WINDOW,
     })
     .to_string()
 }

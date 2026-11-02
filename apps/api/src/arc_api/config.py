@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     engine_threads: int = Field(default=4, ge=1)
     ws_min_ms_per_move: int = Field(default=150, ge=0)
     bb_min_ms_between_turns: int = Field(default=250, ge=0)
+    mj_min_ms_per_move: int = Field(default=200, ge=0)
     ws_hint_budget: int = Field(default=80_000, ge=1_000)
     bb_hint_candidates: int = Field(default=41, ge=5, le=161)
 

@@ -10,6 +10,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from arc_api import coins
 from arc_api.db import GameProgress, LevelResult, Player
 from arc_api.errors import ApiError
 from arc_api.levels import GAME_IDS
@@ -96,13 +97,18 @@ async def register(
 
     try:
         player, key = await _create_player(db, state)
+        guest_coins = await coins.read_guest(state, guest.gid)
+        coins.open_wallet_from_guest(db, player.id, guest_coins)
         for game, stars in guest.progress.items():
             if not stars:
                 continue
             count = state.levels.count(game)  # type: ignore[arg-type]
             db.add(
                 GameProgress(
-                    player_id=player.id, game_id=game, unlocked_level=min(len(stars) + 1, count)
+                    player_id=player.id,
+                    game_id=game,
+                    unlocked_level=min(len(stars) + 1, count),
+                    streak=guest_coins.streaks.get(game, 0),
                 )
             )
             for level, star in enumerate(stars, start=1):
@@ -111,6 +117,7 @@ async def register(
     except BaseException:
         await state.redis.delete(f"guest:registered:{guest.gid}")
         raise
+    await coins.forget_guest(state, guest.gid)
 
     minute_key = registration_counter_key(int(time.time()) // 60)
     pipe = state.redis.pipeline(transaction=True)

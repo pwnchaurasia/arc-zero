@@ -11,6 +11,7 @@
 
 pub mod brick_blast;
 pub mod hash;
+pub mod metro_jam;
 pub mod rng;
 pub mod water_sort;
 

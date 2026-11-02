@@ -3,6 +3,7 @@
 //! CPU-heavy calls release the GIL so FastAPI can run them in a thread pool.
 
 use engine::brick_blast::{self as bb, bot};
+use engine::metro_jam as mj;
 use engine::water_sort as ws;
 use pyo3::create_exception;
 use pyo3::exceptions::PyValueError;
@@ -150,6 +151,56 @@ fn bb_best_aim(py: Python<'_>, state_json: String, candidates: u16) -> PyResult<
     .map_err(|e: String| err(e))
 }
 
+// ----------------------------------------------------------------- MetroJam
+
+fn parse_level(json: &str) -> Result<mj::Level, String> {
+    let level: mj::Level = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    level.validate(true).map_err(|e| e.to_string())?;
+    Ok(level)
+}
+
+/// Validates a full server-side level.
+#[pyfunction]
+fn mj_validate(level_json: &str) -> PyResult<()> {
+    parse_level(level_json).map(|_| ()).map_err(err)
+}
+
+/// The level JSON a client may see at the start (far end of the queue cut off).
+#[pyfunction]
+fn mj_public(level_json: &str) -> PyResult<String> {
+    to_json(&parse_level(level_json).map_err(err)?.public()).map_err(err)
+}
+
+/// Result of replaying a MetroJam move list on the full level.
+#[pyclass(frozen, get_all, module = "arc_engine")]
+struct MjReplay {
+    won: bool,
+    stuck: bool,
+    boarded: usize,
+    /// `[airlifts, shuffles, extra bays]` used by the move list.
+    assists: [u16; 3],
+    /// The original queue up to what the player may now see.
+    revealed: Vec<u16>,
+}
+
+/// Replays `moves`. Raises `EngineError` on the first illegal move.
+#[pyfunction]
+fn mj_replay(py: Python<'_>, level_json: String, moves: Vec<(u8, u8)>) -> PyResult<MjReplay> {
+    py.allow_threads(move || {
+        let level = parse_level(&level_json)?;
+        let game = mj::replay(&level, &moves).map_err(|e| e.to_string())?;
+        let end = (game.boarded() + usize::from(level.visible)).min(level.queue.len());
+        Ok(MjReplay {
+            won: game.is_won(),
+            stuck: game.is_stuck(),
+            boarded: game.boarded(),
+            assists: mj::assists_used(&moves),
+            revealed: level.queue[..end].iter().map(|c| u16::from(*c)).collect(),
+        })
+    })
+    .map_err(|e: String| err(e))
+}
+
 #[pymodule]
 fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("EngineError", m.py().get_type::<EngineError>())?;
@@ -157,7 +208,12 @@ fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("BB_AIM_MIN", bb::AIM_MIN)?;
     m.add("BB_AIM_MAX", bb::AIM_MAX)?;
     m.add("BB_TICKS_PER_SECOND", bb::TICKS_PER_SECOND)?;
+    m.add("MJ_MAX_MOVES", mj::MAX_MOVES)?;
     m.add_class::<TurnResult>()?;
+    m.add_class::<MjReplay>()?;
+    m.add_function(wrap_pyfunction!(mj_validate, m)?)?;
+    m.add_function(wrap_pyfunction!(mj_public, m)?)?;
+    m.add_function(wrap_pyfunction!(mj_replay, m)?)?;
     m.add_function(wrap_pyfunction!(ws_generate, m)?)?;
     m.add_function(wrap_pyfunction!(ws_replay, m)?)?;
     m.add_function(wrap_pyfunction!(ws_hint, m)?)?;

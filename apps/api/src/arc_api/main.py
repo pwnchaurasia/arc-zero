@@ -14,7 +14,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from arc_api import errors, levels
 from arc_api.config import Settings, get_settings
 from arc_api.db import make_engine, make_sessionmaker
-from arc_api.routers import auth, brick_blast, me, meta, water_sort
+from arc_api.routers import auth, brick_blast, me, meta, metro_jam, wallet, water_sort
 from arc_api.security.middleware import RequestGuardMiddleware, SecurityHeadersMiddleware
 from arc_api.security.ratelimit import RateLimiter
 from arc_api.security.sessions import Sessions
@@ -56,9 +56,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             engine_slots=CapacityLimiter(settings.engine_threads),
         )
         log.info(
-            "started: %d water sort levels, %d brick blast levels",
+            "started: %d water sort, %d brick blast, %d metro jam levels",
             len(catalogue.water_sort),
             len(catalogue.brick_blast),
+            len(catalogue.metro_jam),
         )
         try:
             yield
@@ -78,7 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     errors.install(app)
 
     api = APIRouter(prefix="/api/v1")
-    for module in (meta, auth, me, water_sort, brick_blast):
+    for module in (meta, auth, me, wallet, water_sort, brick_blast, metro_jam):
         api.include_router(module.router)
     app.include_router(api)
 

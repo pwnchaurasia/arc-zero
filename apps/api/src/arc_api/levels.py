@@ -13,8 +13,8 @@ from typing import Any, Final, Literal
 
 import arc_engine
 
-GameId = Literal["water-sort", "brick-blast"]
-GAME_IDS: Final[tuple[GameId, ...]] = ("water-sort", "brick-blast")
+GameId = Literal["water-sort", "brick-blast", "metro-jam"]
+GAME_IDS: Final[tuple[GameId, ...]] = ("water-sort", "brick-blast", "metro-jam")
 SUPPORTED_VERSION = 1
 
 
@@ -48,12 +48,29 @@ class BbLevel:
 
 
 @dataclass(frozen=True, slots=True)
+class MjLevel:
+    level: int
+    # Full level including the whole queue. Server-only.
+    level_json: str
+    # What the client may see at the start.
+    public_json: str
+    # Commuters shown ahead of the front one; >= queue_len means the whole queue.
+    visible: int
+    queue_len: int
+
+
+@dataclass(frozen=True, slots=True)
 class Levels:
     water_sort: dict[int, WsLevel]
     brick_blast: dict[int, BbLevel]
+    metro_jam: dict[int, MjLevel]
 
     def count(self, game: GameId) -> int:
-        return len(self.water_sort) if game == "water-sort" else len(self.brick_blast)
+        if game == "water-sort":
+            return len(self.water_sort)
+        if game == "brick-blast":
+            return len(self.brick_blast)
+        return len(self.metro_jam)
 
 
 def _contiguous(levels: dict[int, Any], name: str) -> None:
@@ -84,8 +101,21 @@ def load(path: Path) -> Levels:
         arc_engine.bb_validate_script(script_json)
         bb[int(item["level"])] = BbLevel(level=int(item["level"]), script_json=script_json)
 
+    mj: dict[int, MjLevel] = {}
+    for item in data.get("metro_jam", []):
+        level_json = json.dumps(item["data"], separators=(",", ":"))
+        arc_engine.mj_validate(level_json)
+        mj[int(item["level"])] = MjLevel(
+            level=int(item["level"]),
+            level_json=level_json,
+            public_json=arc_engine.mj_public(level_json),
+            visible=int(item["data"]["visible"]),
+            queue_len=int(item["data"]["queue_len"]),
+        )
+
     _contiguous(ws, "water_sort")
     _contiguous(bb, "brick_blast")
-    if not ws or not bb:
-        raise ValueError("levels file must contain both games")
-    return Levels(water_sort=ws, brick_blast=bb)
+    _contiguous(mj, "metro_jam")
+    if not ws or not bb or not mj:
+        raise ValueError("levels file must contain every game")
+    return Levels(water_sort=ws, brick_blast=bb, metro_jam=mj)

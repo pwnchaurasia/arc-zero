@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from datetime import date, datetime
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     Date,
     DateTime,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.asyncio import (
@@ -25,6 +27,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.schema import Index
 
 
 class Base(DeclarativeBase):
@@ -54,6 +57,8 @@ class GameProgress(Base):
     )
     game_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     unlocked_level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # First clears in a row without assists; resets after each streak bonus.
+    streak: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
 
 
 class LevelResult(Base):
@@ -82,6 +87,50 @@ class HintUsage(Base):
     game_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     day_utc: Mapped[date] = mapped_column(Date, primary_key=True)
     used: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+
+
+class Wallet(Base):
+    """One coin balance per player, shared by every game."""
+
+    __tablename__ = "wallets"
+    __table_args__ = (CheckConstraint("balance >= 0", name="balance_non_negative"),)
+
+    player_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), primary_key=True
+    )
+    balance: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class CoinLedger(Base):
+    """Every coin change, so a balance can always be explained."""
+
+    __tablename__ = "coin_ledger"
+    __table_args__ = (
+        # A level pays out at most once per player: replays can't farm coins.
+        Index(
+            "coin_ledger_one_clear",
+            "player_id",
+            "game_id",
+            "level",
+            unique=True,
+            postgresql_where=text("reason = 'clear'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    player_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    delta: Mapped[int] = mapped_column(Integer, nullable=False)
+    balance_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    # welcome | guest_play | clear | streak | assist
+    reason: Mapped[str] = mapped_column(String(16), nullable=False)
+    game_id: Mapped[str | None] = mapped_column(String(32))
+    level: Mapped[int | None] = mapped_column(Integer)
+    detail: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 def make_engine(url: str, pool_size: int, max_overflow: int) -> AsyncEngine:

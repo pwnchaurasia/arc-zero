@@ -8,7 +8,7 @@ E2E := docker compose -f infra/docker-compose.e2e.yml
 DEV_LEVEL_SEED := dev-only-level-seed-not-secret-0123456789abcdef
 
 .DEFAULT_GOAL := help
-.PHONY: help doctor setup env services services-down levels wasm engine migrate dev dev-unlocked share api web preview \
+.PHONY: help doctor setup env services services-down levels wasm engine migrate dev dev-unlocked share share-unlocked api web preview \
 	test test-rust test-api test-web lint fmt check e2e e2e-docker e2e-docker-down ci clean
 
 help: ## List commands
@@ -63,6 +63,10 @@ dev-unlocked: ## Like 'make dev', but every level is open (local playtesting onl
 share: services ## Like 'make dev', but friends can play through ngrok: then run 'ngrok http 5173'
 	@echo "Sharing mode: any ngrok address may reach this local game. Now run: ngrok http 5173"
 	@ARC_DEV_TUNNEL=true $(MAKE) --no-print-directory dev
+
+share-unlocked: services ## 'make share' with every level open (friends can try any level)
+	@echo "Sharing mode with all levels open. Now run: ngrok http 5173"
+	@ARC_DEV_TUNNEL=true ARC_DEV_UNLOCK_ALL=true $(MAKE) --no-print-directory dev
 
 api: ## Run the API with auto-reload on :8000
 	cd apps/api && uv run uvicorn --factory arc_api.main:app --reload --no-access-log

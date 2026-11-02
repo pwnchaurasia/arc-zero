@@ -138,3 +138,77 @@ async def test_me_gives_guest_one_stable_identity(app_client: AsyncClient) -> No
         headers={"x-guest-ticket": again},
     )
     assert r.status_code == 200, r.text
+
+
+async def test_playtest_mode_opens_every_level_but_still_verifies_wins(
+    app_client: AsyncClient,
+) -> None:
+    app_client.app.state.arc.settings.dev_unlock_all = True  # type: ignore[attr-defined]
+    me = (await app_client.get("/api/v1/me")).json()
+    assert me["all_levels_open"] is True
+    headers = {"x-guest-ticket": me["guest_ticket"]}
+
+    # A brand-new guest can start any level, past the unlock order and the level-3 gate.
+    start = await app_client.post("/api/v1/games/water-sort/levels/5/start", headers=headers)
+    assert start.status_code == 200, start.text
+    r = await app_client.post("/api/v1/games/brick-blast/levels/4/start", headers=headers)
+    assert r.status_code == 200, r.text
+
+    # Wins are still verified by replay: a fake completion is rejected.
+    r = await app_client.post(
+        "/api/v1/games/water-sort/levels/5/complete",
+        json={"attempt_id": start.json()["attempt_id"], "moves": []},
+        headers=headers,
+    )
+    assert r.json()["error"]["code"] == "not_solved"
+
+
+async def test_playtest_mode_is_off_by_default(app_client: AsyncClient) -> None:
+    me = (await app_client.get("/api/v1/me")).json()
+    assert me["all_levels_open"] is False
+    r = await app_client.post(
+        "/api/v1/games/water-sort/levels/5/start",
+        headers={"x-guest-ticket": me["guest_ticket"]},
+    )
+    assert r.status_code == 403
+
+
+async def test_signed_in_player_can_replace_a_lost_recovery_key(app_client: AsyncClient) -> None:
+    url = "/api/v1/auth/recovery-key"
+    # Guests have no key to replace.
+    r = await app_client.post(url)
+    assert r.status_code == 401
+    assert r.json()["error"]["code"] == "not_signed_in"
+
+    ticket = await guest_through_gate(app_client)
+    r = await app_client.post(
+        "/api/v1/auth/register",
+        json={"guest_ticket": ticket, "pow": await pow_for(app_client, "register")},
+    )
+    old_key = r.json()["recovery_key"]
+
+    r = await app_client.post(url)
+    assert r.status_code == 200, r.text
+    new_key = r.json()["recovery_key"]
+    assert new_key != old_key
+    assert len(new_key.split("-")) == 6
+
+    # On a fresh device: the old key no longer works, the new one restores progress.
+    app_client.cookies.clear()
+    r = await app_client.post(
+        "/api/v1/auth/restore",
+        json={"recovery_key": old_key, "pow": await pow_for(app_client, "restore")},
+    )
+    assert r.status_code == 401
+    r = await app_client.post(
+        "/api/v1/auth/restore",
+        json={"recovery_key": new_key, "pow": await pow_for(app_client, "restore")},
+    )
+    assert r.status_code == 204, r.text
+    me = (await app_client.get("/api/v1/me")).json()
+    assert me["signed_in"] is True
+    assert me["games"]["water-sort"]["unlocked_level"] == 4
+
+    # Limited to 3 new keys per day (the one above was the first).
+    codes = [(await app_client.post(url)).status_code for _ in range(3)]
+    assert codes == [200, 200, 429]

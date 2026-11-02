@@ -33,6 +33,8 @@ async def ensure_playable(
 ) -> None:
     if not 1 <= level <= state.levels.count(game):
         raise ApiError(404, "level_not_found", "No such level.")
+    if state.settings.dev_unlock_all:
+        return  # local playtesting (refused in production by the settings check)
     if who.player_id is None and level > state.settings.guest_max_level:
         raise ApiError(403, "registration_required", "Save your progress to keep playing.")
     if level > await unlocked_level(db, state, who, game):

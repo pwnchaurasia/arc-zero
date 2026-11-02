@@ -37,8 +37,9 @@ services:
     command: ["cargo", "run", "--locked", "--release", "-p", "arc-levelgen", "--", "--out", "/levels/levels.json"]
     volumes:
       - ..:/src:ro
-      - cargo-target:/target
-      - cargo-registry:/usr/local/cargo/registry
+      # Bind mounts (not named volumes) so `down -v` keeps the Rust build cache between runs.
+      - ../target/e2e-docker:/target
+      - ../target/e2e-cargo-registry:/usr/local/cargo/registry
       - levels:/levels
 
   migrate:
@@ -79,5 +80,3 @@ services:
 
 volumes:
   levels: {}
-  cargo-target: {}
-  cargo-registry: {}

@@ -163,5 +163,8 @@ export interface CoinRules {
   rewards: { first_level: number; last_level: number; coins: number }[];
   streak_length: number;
   streak_bonus: number;
-  prices: Record<MjAssist, number>;
+  /** Assist prices per game (game id → assist → coins). */
+  prices: Record<string, Record<string, number>>;
+  /** Price of a hint after the 3 free ones each day (Water Sort, Brick Blast). */
+  hint_price: number;
 }

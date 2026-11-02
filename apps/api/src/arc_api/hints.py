@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from arc_api import coins
 from arc_api.db import HintUsage
 from arc_api.errors import ApiError
 from arc_api.levels import GameId
@@ -84,3 +85,22 @@ async def consume(db: AsyncSession, state: AppState, who: Principal, game: GameI
         await state.redis.decr(key)
         raise exhausted
     return limit - int(used)
+
+
+async def take(
+    db: AsyncSession, state: AppState, who: Principal, game: GameId, level: int, pay: int | None
+) -> tuple[int, int | None, int]:
+    """Uses a free hint if any are left today, otherwise charges HINT_PRICE coins when the
+    player confirmed that price. Returns (free hints left, coins left or None, coins charged).
+    """
+    if await remaining(db, state, who, game) > 0:
+        return await consume(db, state, who, game), None, 0
+    if pay != coins.HINT_PRICE:
+        raise ApiError(
+            429,
+            "no_hints_left",
+            f"No free hints left today. A hint costs {coins.HINT_PRICE} coins.",
+            extra={"price": coins.HINT_PRICE},
+        )
+    left = await coins.spend(db, state, who, coins.HINT_PRICE, game, level, "hint")
+    return 0, left, coins.HINT_PRICE

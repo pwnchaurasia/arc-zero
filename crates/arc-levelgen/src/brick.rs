@@ -52,23 +52,23 @@ fn to_u16(v: f64) -> u16 {
     v.round().clamp(0.0, f64::from(u16::MAX)) as u16
 }
 
-/// Power-ups available from each level (introduced 9 levels earlier than the first
-/// tuning, when the whole curve moved up: old level 10 became level 1).
+/// Power-ups available at an (equivalent) level. Decision 2026-11-02: +2 balls and the
+/// old x3/x5 splits are gone; scatter and next-shot boosts (x2, rarer x3) are in.
 fn power_pool(level: u16) -> Vec<(PowerKind, u32)> {
     let mut pool = vec![
-        (PowerKind::PlusBalls2, 4),
-        (PowerKind::PlusBalls3, 3),
+        (PowerKind::PlusBalls3, 4),
+        (PowerKind::PlusBalls5, 2),
         (PowerKind::LaserH, 2),
         (PowerKind::LaserV, 2),
     ];
     if level >= 7 {
-        pool.extend([(PowerKind::BallUp3, 2), (PowerKind::PlusBalls5, 1)]);
+        pool.extend([(PowerKind::Scatter, 2), (PowerKind::Boost2, 1)]);
     }
     if level >= 27 {
         pool.push((PowerKind::LaserX, 1));
     }
-    if level >= 77 {
-        pool.push((PowerKind::BallUp5, 1));
+    if level >= 40 {
+        pool.push((PowerKind::Boost3, 1));
     }
     pool
 }

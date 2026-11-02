@@ -141,6 +141,30 @@ fn bb_play_turn(py: Python<'_>, state_json: String, aim: u16) -> PyResult<TurnRe
     .map_err(|e: String| err(e))
 }
 
+/// Applies a paid assist between shots: "bonus_balls", "laser" (with `col`) or "hammer".
+/// Returns the new full state, its public view, hash and status.
+#[pyfunction]
+fn bb_apply_assist(state_json: &str, assist: &str, col: u8) -> PyResult<TurnResult> {
+    let mut state = parse_state(state_json).map_err(err)?;
+    let assist: bb::Assist =
+        serde_json::from_value(serde_json::Value::String(assist.to_owned())).map_err(err)?;
+    state.apply_assist(assist, col).map_err(err)?;
+    let status = to_json(&state.status)
+        .map_err(err)?
+        .trim_matches('"')
+        .to_owned();
+    Ok(TurnResult {
+        public_state: to_json(&state.public()).map_err(err)?,
+        hash: state.hash_hex(),
+        stars: state.stars(),
+        turn: state.turn,
+        state: to_json(&state).map_err(err)?,
+        status,
+        new_row: None,
+        ticks: 0,
+    })
+}
+
 /// Best aim by one-turn lookahead over `candidates` evenly spaced aims (for hints).
 #[pyfunction]
 fn bb_best_aim(py: Python<'_>, state_json: String, candidates: u16) -> PyResult<Option<u16>> {
@@ -222,5 +246,6 @@ fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bb_public_state, m)?)?;
     m.add_function(wrap_pyfunction!(bb_play_turn, m)?)?;
     m.add_function(wrap_pyfunction!(bb_best_aim, m)?)?;
+    m.add_function(wrap_pyfunction!(bb_apply_assist, m)?)?;
     Ok(())
 }

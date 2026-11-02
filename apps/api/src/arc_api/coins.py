@@ -28,7 +28,14 @@ STREAK_LENGTH: Final = 3
 STREAK_BONUS: Final = 25
 # (last level of the band, coins for a first clear). Easy intro levels pay little.
 REWARD_BANDS: Final = ((3, 5), (30, 25), (70, 40), (100, 60))
-PRICES: Final[dict[str, int]] = {"extra_bay": 60, "airlift": 80, "shuffle": 40}
+# Assist prices per game. Every spend is confirmed by the player first.
+PRICES: Final[dict[str, dict[str, int]]] = {
+    "metro-jam": {"extra_bay": 60, "airlift": 80, "shuffle": 40},
+    "brick-blast": {"bonus_balls": 60, "laser": 70, "hammer": 80},
+    "water-sort": {"extra_bottle": 60},
+}
+# A hint after the free daily ones (Water Sort, Brick Blast).
+HINT_PRICE: Final = 20
 
 _SPEND = """
 redis.call('hsetnx', KEYS[1], 'bal', ARGV[2])

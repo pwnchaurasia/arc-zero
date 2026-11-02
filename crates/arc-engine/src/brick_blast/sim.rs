@@ -39,12 +39,32 @@ impl Ball {
 /// Things the renderer reacts to (sound, particles, beams).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Event {
-    Hit { cell: u8, hp: u16 },
-    Blast { cell: u8 },
-    Laser { cell: u8, kind: PowerKind },
-    Split { cell: u8 },
-    Collect { cell: u8, amount: u16 },
-    Land { x: i32 },
+    Hit {
+        cell: u8,
+        hp: u16,
+    },
+    Blast {
+        cell: u8,
+    },
+    Laser {
+        cell: u8,
+        kind: PowerKind,
+    },
+    Split {
+        cell: u8,
+    },
+    /// A boost power-up collected: the next shot launches `factor` times the balls.
+    Boost {
+        cell: u8,
+        factor: u8,
+    },
+    Collect {
+        cell: u8,
+        amount: u16,
+    },
+    Land {
+        x: i32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -193,6 +213,10 @@ pub struct Turn {
     events: Vec<Event>,
     tick: u32,
     launched: u16,
+    /// Balls this shot launches (boost and paid bonus balls included).
+    to_launch: u16,
+    /// Boost collected this shot, applied to the next one.
+    next_boost: u8,
     next_id: u32,
     launch_v: (i32, i32),
     first_land: Option<i32>,
@@ -222,6 +246,8 @@ impl Turn {
             events: Vec::new(),
             tick: 0,
             launched: 0,
+            to_launch: state.launch_count(),
+            next_boost: 1,
             next_id: 0,
             launch_v: aim_velocity(aim),
             first_land: None,
@@ -255,10 +281,10 @@ impl Turn {
         &self.state.grid
     }
 
-    /// Original balls not yet launched.
+    /// Balls not yet launched this shot.
     #[must_use]
     pub fn waiting(&self) -> u16 {
-        self.state.balls - self.launched
+        self.to_launch - self.launched
     }
 
     pub fn take_events(&mut self) -> Vec<Event> {
@@ -277,7 +303,7 @@ impl Turn {
         if self.done {
             return true;
         }
-        if self.launched < self.state.balls && self.tick.is_multiple_of(LAUNCH_INTERVAL) {
+        if self.launched < self.to_launch && self.tick.is_multiple_of(LAUNCH_INTERVAL) {
             self.balls.push(Ball {
                 id: self.next_id,
                 x: self.state.launch_x,
@@ -316,7 +342,7 @@ impl Turn {
         }
         self.balls.retain(|b| b.alive);
         self.tick += 1;
-        let all_back = self.launched == self.state.balls && self.balls.is_empty();
+        let all_back = self.launched == self.to_launch && self.balls.is_empty();
         if self.won || all_back || self.tick >= MAX_TICKS_PER_TURN {
             self.done = true;
         }
@@ -401,6 +427,19 @@ impl Turn {
         }
     }
 
+    /// A deterministic "random" upward aim for scatter: browser and server agree.
+    fn scatter_aim(&self, ball: u32, cell: u8, k: u8) -> u16 {
+        let mut h = crate::hash::Fnv64::default();
+        h.write_u16(self.state.turn);
+        h.write_u32(self.tick);
+        h.write_u32(ball);
+        h.write_u8(cell);
+        h.write_u8(k);
+        let v = u64::from_str_radix(&h.hex(), 16).unwrap_or(0);
+        // 20 to 160 degrees: anywhere upward, never skimming the floor.
+        200 + u16::try_from(v % 1401).unwrap_or(0)
+    }
+
     fn trigger(&mut self, ball: &mut Ball, row: usize, col: usize) {
         let Cell::Power { kind } = self.state.grid[row][col] else {
             return;
@@ -449,6 +488,40 @@ impl Turn {
                     self.next_id += 1;
                 }
             }
+            PowerKind::Scatter => {
+                if ball.is_clone() || ball.split & bit != 0 {
+                    return;
+                }
+                ball.split |= bit;
+                self.events.push(Event::Split { cell });
+                // The ball itself flies off a new way, and two more join it. Extras live
+                // until they land but never add to the ball count.
+                (ball.vx, ball.vy) = aim_velocity(self.scatter_aim(ball.id, cell, 0));
+                for k in 1..=2 {
+                    if self.balls.len() + self.spawned.len() >= MAX_ACTIVE_BALLS {
+                        break;
+                    }
+                    let (vx, vy) = aim_velocity(self.scatter_aim(ball.id, cell, k));
+                    self.spawned.push(Ball {
+                        id: self.next_id,
+                        vx,
+                        vy,
+                        clone_expires: u32::MAX,
+                        split: ball.split,
+                        ..*ball
+                    });
+                    self.next_id += 1;
+                }
+            }
+            PowerKind::Boost2 | PowerKind::Boost3 => {
+                if first_touch {
+                    self.next_boost = self.next_boost.max(kind.boost());
+                    self.events.push(Event::Boost {
+                        cell,
+                        factor: kind.boost(),
+                    });
+                }
+            }
             PowerKind::PlusBalls2 | PowerKind::PlusBalls3 | PowerKind::PlusBalls5 => {
                 if first_touch {
                     let amount = match kind {
@@ -481,6 +554,9 @@ impl Turn {
             s.grid[idx / COLS][idx % COLS] = Cell::Empty;
         }
         s.balls = s.balls.saturating_add(self.collected).min(MAX_BALLS);
+        // Boosts and bonus balls last one shot; a boost collected now powers the next.
+        s.boost = self.next_boost;
+        s.bonus = 0;
         if let Some(x) = self.first_land {
             s.launch_x = x;
         }
@@ -570,6 +646,7 @@ pub fn aim_path(state: &State, aim: u16, max_bounces: usize) -> Vec<(i32, i32)> 
 mod tests {
     use super::super::{LevelScript, Shape};
     use super::*;
+    use crate::brick_blast::{Assist, AssistError, ASSIST_BONUS_BALLS};
 
     fn block(hp: u16) -> Cell {
         Cell::Block {
@@ -585,6 +662,110 @@ mod tests {
             row_queue: queue,
         })
         .unwrap()
+    }
+
+    fn power(kind: PowerKind) -> Cell {
+        Cell::Power { kind }
+    }
+
+    /// A block at the top and a power-up in the middle of the straight-up path.
+    fn with_power(kind: PowerKind, balls: u16) -> State {
+        let mut top = EMPTY_ROW;
+        top[4] = block(150);
+        let mut mid = EMPTY_ROW;
+        mid[4] = power(kind);
+        let mut rows = vec![top, EMPTY_ROW, EMPTY_ROW, EMPTY_ROW, EMPTY_ROW, mid];
+        rows.truncate(PLAY_ROWS);
+        state_with(rows, vec![], balls)
+    }
+
+    #[test]
+    fn boost_multiplies_the_next_shot_only() {
+        let s = with_power(PowerKind::Boost2, 4);
+        assert_eq!(s.launch_count(), 4);
+        let (after, _) = play_turn(&s, 900).unwrap();
+        assert_eq!(after.boost, 2);
+        assert_eq!(after.balls, 4, "boosted balls are not kept");
+        assert_eq!(after.launch_count(), 8);
+        let (again, summary) = play_turn(&after, 900).unwrap();
+        assert!(summary.hits >= 8, "the boosted shot launched 8 balls");
+        assert_eq!(again.boost, 1);
+        assert_eq!(again.launch_count(), 4);
+    }
+
+    #[test]
+    fn scatter_adds_balls_that_land_and_vanish() {
+        let s = with_power(PowerKind::Scatter, 3);
+        let mut turn = Turn::new(&s, 900).unwrap();
+        let mut most = 0;
+        let mut split = false;
+        while !turn.step() {
+            most = most.max(turn.balls().len());
+            split |= turn
+                .take_events()
+                .iter()
+                .any(|e| matches!(e, Event::Split { .. }));
+        }
+        assert!(split);
+        assert!(
+            most > 3,
+            "scatter should add balls mid-shot, saw at most {most}"
+        );
+        let (after, _) = turn.finish().unwrap();
+        assert_eq!(after.balls, 3, "scattered balls never add to the count");
+        // Deterministic: the same shot scatters the same way every time.
+        assert_eq!(play_turn(&s, 900).unwrap().0, play_turn(&s, 900).unwrap().0);
+    }
+
+    #[test]
+    fn assists_change_the_board_between_shots() {
+        let mut a = EMPTY_ROW;
+        a[0] = block(90);
+        a[5] = block(90);
+        let mut b = EMPTY_ROW;
+        b[5] = block(90);
+        b[7] = block(90);
+        let s = state_with(vec![a, b], vec![EMPTY_ROW], 5);
+
+        let mut hammer = s.clone();
+        hammer.apply_assist(Assist::Hammer, 0).unwrap();
+        assert!(hammer.grid[1].iter().all(|c| *c == Cell::Empty));
+        assert_eq!(hammer.block_count(), 2);
+
+        let mut laser = s.clone();
+        laser.apply_assist(Assist::Laser, 5).unwrap();
+        assert_eq!(laser.block_count(), 2);
+        assert_eq!(
+            laser.apply_assist(Assist::Laser, 5),
+            Err(AssistError::NothingToClear)
+        );
+        assert_eq!(
+            laser.apply_assist(Assist::Laser, 9),
+            Err(AssistError::BadColumn)
+        );
+
+        let mut bonus = s.clone();
+        bonus.apply_assist(Assist::BonusBalls, 0).unwrap();
+        assert_eq!(bonus.launch_count(), 5 + ASSIST_BONUS_BALLS);
+        assert_eq!(
+            bonus.apply_assist(Assist::BonusBalls, 0),
+            Err(AssistError::AlreadyActive)
+        );
+        let (after, _) = play_turn(&bonus, 900).unwrap();
+        assert_eq!(after.launch_count(), 5);
+    }
+
+    #[test]
+    fn clearing_the_last_blocks_with_an_assist_wins() {
+        let mut a = EMPTY_ROW;
+        a[3] = block(120);
+        let mut s = state_with(vec![a], vec![], 5);
+        s.apply_assist(Assist::Laser, 3).unwrap();
+        assert_eq!(s.status, Status::Won);
+        assert_eq!(
+            s.apply_assist(Assist::Hammer, 0),
+            Err(AssistError::NotPlaying)
+        );
     }
 
     #[test]

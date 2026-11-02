@@ -149,7 +149,7 @@ impl BrickTurn {
 
     /// Flat `[kind, a, b]` per event since the last call.
     /// kind: 0 hit(cell, hp) 1 blast(cell) 2 laser(cell, power) 3 split(cell)
-    /// 4 collect(cell, amount) 5 land(x)
+    /// 4 collect(cell, amount) 5 land(x) 6 boost(cell, factor)
     #[wasm_bindgen(js_name = takeEvents)]
     pub fn take_events(&mut self) -> Vec<i32> {
         let mut out = Vec::new();
@@ -161,6 +161,7 @@ impl BrickTurn {
                 Event::Split { cell } => [3, i32::from(cell), 0],
                 Event::Collect { cell, amount } => [4, i32::from(cell), i32::from(amount)],
                 Event::Land { x } => [5, x, 0],
+                Event::Boost { cell, factor } => [6, i32::from(cell), i32::from(factor)],
             });
         }
         out

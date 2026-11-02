@@ -161,4 +161,6 @@ async def test_coin_rules_endpoint(app_client: AsyncClient) -> None:
     rules = (await app_client.get("/api/v1/coins")).json()
     assert rules["balance"] == 100
     assert rules["rewards"][0] == {"first_level": 1, "last_level": 3, "coins": 5}
-    assert rules["prices"] == {"extra_bay": 60, "airlift": 80, "shuffle": 40}
+    assert rules["prices"]["metro-jam"] == {"extra_bay": 60, "airlift": 80, "shuffle": 40}
+    assert rules["prices"]["brick-blast"] == {"bonus_balls": 60, "laser": 70, "hammer": 80}
+    assert rules["hint_price"] == 20

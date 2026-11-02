@@ -143,7 +143,7 @@ async def start(
         attempt_id=attempt_id,
         level=level,
         data=json.loads(lvl.public_json),
-        prices=coins.PRICES,
+        prices=coins.PRICES[GAME],
         reward=coins.clear_reward(level),
         coins=await coins.balance(db, state, who),
         guest_ticket=issue_ticket(state, who.guest) if who.guest else None,
@@ -167,7 +167,7 @@ async def buy_assist(
     level: LevelPath, body: BuyIn, request: Request, who: PrincipalDep, state: StateDep, db: DbDep
 ) -> BuyOut:
     await limit(state, request, who, "mj-buy", 20)
-    price = coins.PRICES[body.kind]
+    price = coins.PRICES[GAME][body.kind]
     if body.price != price:
         raise ApiError(
             409, "price_changed", f"The price is now {price} coins.", extra={"price": price}

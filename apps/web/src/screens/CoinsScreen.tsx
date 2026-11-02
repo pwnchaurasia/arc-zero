@@ -1,14 +1,24 @@
 import { useEffect, useState } from "react";
 
 import { ApiError, api } from "../api/client";
-import type { CoinRules, MjAssist } from "../api/types";
+import type { CoinRules } from "../api/types";
 import { CoinIcon } from "../ui/icons";
 import { Button, TopBar } from "../ui/kit";
 
-const ASSIST_NAMES: Record<MjAssist, string> = {
+const GAME_NAMES: Record<string, string> = {
+  "metro-jam": "MetroJam",
+  "brick-blast": "Brick Blast",
+  "water-sort": "Water Sort",
+};
+
+const ASSIST_NAMES: Record<string, string> = {
   extra_bay: "Extra bay",
   airlift: "Airlift",
   shuffle: "Shuffle",
+  bonus_balls: "+15 balls (this shot)",
+  laser: "Laser: clear a column",
+  hammer: "Hammer: clear the lowest row",
+  extra_bottle: "Extra empty bottle",
 };
 
 /** The coin rules, straight from the server so this page can't drift from what it enforces. */
@@ -102,17 +112,22 @@ export function CoinsScreen({ onBack }: { onBack: () => void }) {
             </section>
 
             <section className="rounded-3xl border border-line bg-panel p-5">
-              <h2 className="mb-3 text-lg font-bold">Assists (MetroJam)</h2>
-              <ul className="grid gap-2 text-sm">
-                {(Object.keys(rules.prices) as MjAssist[]).map((k) => (
-                  <li key={k} className="flex justify-between border-t border-line pt-2 first:border-0 first:pt-0">
-                    <span>{ASSIST_NAMES[k]}</span>
-                    <span className="font-bold text-gold">{rules.prices[k]} coins</span>
-                  </li>
-                ))}
-              </ul>
+              <h2 className="mb-3 text-lg font-bold">Spending coins</h2>
+              {Object.entries(rules.prices).map(([game, prices]) => (
+                <div key={game} className="mb-4 last:mb-0">
+                  <h3 className="mb-1 text-sm font-semibold text-muted">{GAME_NAMES[game] ?? game}</h3>
+                  <ul className="grid gap-2 text-sm">
+                    {Object.entries(prices).map(([k, price]) => (
+                      <li key={k} className="flex justify-between border-t border-line pt-2 first:border-0 first:pt-0">
+                        <span>{ASSIST_NAMES[k] ?? k}</span>
+                        <span className="font-bold text-gold">{price} coins</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
               <p className="mt-3 text-xs text-muted">
-                Water Sort and Brick Blast keep their 3 free hints a day for now; coins come to them later.
+                Water Sort and Brick Blast: 3 free hints a day, then {rules.hint_price} coins a hint.
               </p>
             </section>
           </>

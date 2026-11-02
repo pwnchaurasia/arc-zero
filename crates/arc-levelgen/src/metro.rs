@@ -67,7 +67,12 @@ fn params(level: u16) -> Params {
             colors: 4,
             bays: 4,
             fill_pct: 48 + 4 * u64::from(level),
-            kinds: vec![(Kind::Microcar, 2), (Kind::Hatchback, 4), (Kind::Sedan, 3), (Kind::Mpv, 2)],
+            kinds: vec![
+                (Kind::Microcar, 2),
+                (Kind::Hatchback, 4),
+                (Kind::Sedan, 3),
+                (Kind::Mpv, 2),
+            ],
             barriers: 0,
             visible: Some(10),
             stick_pct: 45,

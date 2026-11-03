@@ -8,7 +8,8 @@
 
 use arc_engine::dead_bridge::bot::play;
 use arc_engine::dead_bridge::{
-    AssistKind, CageSpec, CrateSpec, Gun, Reward, Script, Spawn, Status, ZKind, BRIDGE_W, TPS,
+    AssistKind, CageSpec, CrateSpec, Gun, Reward, Script, Spawn, Status, ZKind, BRIDGE_W, MAX_SEED,
+    TPS,
 };
 use arc_engine::rng::Rng;
 use rayon::prelude::*;
@@ -278,7 +279,7 @@ fn build(level: u16, seed: u64, strength: f64, boss: f64) -> Script {
         tick += every;
     }
     Script {
-        seed: rng.next_u64(),
+        seed: rng.next_u64() & MAX_SEED,
         base_hp: p.base_hp,
         waves,
         spawns,

@@ -147,7 +147,7 @@ jobs:
           ssh prod "mkdir -p '$DEPLOY_DIR/secrets.new'"
           scp -q "$RUNNER_TEMP"/secrets/api.env "$RUNNER_TEMP"/secrets/redis_password \
               "$RUNNER_TEMP"/secrets/water-sort.json "$RUNNER_TEMP"/secrets/brick-blast.json \
-              "$RUNNER_TEMP"/secrets/metro-jam.json prod:"$DEPLOY_DIR/secrets.new/"
+              "$RUNNER_TEMP"/secrets/metro-jam.json "$RUNNER_TEMP"/secrets/dead-bridge.json prod:"$DEPLOY_DIR/secrets.new/"
           scp -q infra/docker-compose.release.yml prod:"$DEPLOY_DIR/docker-compose.yml"
           scp -q infra/deploy/activate.sh prod:"$DEPLOY_DIR/activate.sh"
           rm -rf "$RUNNER_TEMP/secrets"

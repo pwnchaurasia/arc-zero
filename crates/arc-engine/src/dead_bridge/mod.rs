@@ -38,6 +38,8 @@ pub const MAX_ALIVE: usize = 500;
 pub const MAX_SPAWNS: usize = 4_000;
 pub const MAX_LOG_BYTES: usize = 24_000;
 pub const MAX_CHARGES: u8 = 9;
+/// Seeds must survive a JSON round trip through the browser, whose numbers are doubles.
+pub const MAX_SEED: u64 = (1 << 53) - 1;
 /// How long a weapon or unit from a cage lasts.
 pub const WEAPON_TICKS: u32 = 25 * TPS;
 pub const TURRET_TICKS: u32 = 25 * TPS;
@@ -215,6 +217,9 @@ impl Script {
         let bad = |m: &str| Err(ScriptError(m.to_owned()));
         if self.base_hp == 0 || self.base_hp > 500 {
             return bad("base health");
+        }
+        if self.seed > MAX_SEED {
+            return bad("seed");
         }
         if self.spawns.is_empty() || self.spawns.len() > MAX_SPAWNS {
             return bad("spawn count");
@@ -1400,6 +1405,15 @@ mod tests {
             sim.step();
         }
         sim
+    }
+
+    #[test]
+    fn seeds_fit_in_a_browser_number() {
+        let mut script = tiny();
+        script.seed = MAX_SEED;
+        assert!(Sim::new(&script).is_ok());
+        script.seed = MAX_SEED + 1;
+        assert!(Sim::new(&script).is_err());
     }
 
     #[test]

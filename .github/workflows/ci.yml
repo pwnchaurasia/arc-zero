@@ -95,10 +95,16 @@ jobs:
       - run: pnpm build
 
   e2e:
-    name: End-to-end (production build, strict CSP)
+    name: End-to-end ${{ matrix.shard }}/2 (production build, strict CSP)
     runs-on: ubuntu-latest
     timeout-minutes: 40
     needs: [api, web]
+    # The tests are split across two runners; each runs its half one test at a time, so
+    # the software-rendered canvases never compete for one runner's CPU.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     services:
       postgres:
         image: postgres:17-alpine
@@ -153,7 +159,7 @@ jobs:
         timeout-minutes: 10
         env:
           E2E_BASE_URL: http://127.0.0.1:4173
-        run: pnpm e2e
+        run: pnpm e2e --shard=${{ matrix.shard }}/2
       - name: Server logs
         if: failure()
         run: |
@@ -161,7 +167,7 @@ jobs:
           echo "::group::preview.log"; cat "$RUNNER_TEMP/preview.log" || true; echo "::endgroup::"
       - if: failure()
         uses: actions/upload-artifact@v4
-        with: { name: playwright-traces, path: apps/web/test-results }
+        with: { name: "playwright-traces-${{ matrix.shard }}", path: apps/web/test-results }
 
   # The single check that `main` requires (see .github/rulesets/main.json). It passes
   # only if every job above succeeded, so adding or renaming a job can never silently

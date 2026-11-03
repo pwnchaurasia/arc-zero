@@ -12,6 +12,9 @@ export default defineConfig({
   // at 1x pixel density keeps the page responsive on a slow runner (two workers at the
   // Pixel 7's 2.6x density starved the main thread and timed out).
   workers: process.env.CI ? 1 : undefined,
+  // Every test is independent (its own guest), so tests in one file can run apart too;
+  // CI splits them across machines with --shard.
+  fullyParallel: true,
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:4173",
     ...devices["Pixel 7"],

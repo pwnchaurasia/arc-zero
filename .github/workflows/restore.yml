@@ -1,0 +1,149 @@
+name: Restore database from backup
+
+# Replaces the production database with the newest backup (or one you name).
+#
+# Runs only by hand, and only after you approve it: the job uses the `restore`
+# environment, which requires a reviewer. That environment holds the age PRIVATE key
+# (the nightly backup only ever has the public one), plus its own copies of the
+# database and storage settings. See readme "Backups".
+#
+# Before replacing anything it takes a fresh, encrypted copy of the current database
+# (uploaded under pre-restore/), so a restore can itself be undone. The restore runs in
+# one transaction: it either fully succeeds or leaves the database as it was.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "restore production" to replace the production database'
+        required: true
+        type: string
+      backup:
+        description: "Backup file name to restore (leave empty for the newest)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never at the same time as a nightly backup.
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: restore
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_KEY }}
+      AWS_DEFAULT_REGION: us-east-1 # required by the CLI; Spaces and R2 ignore it
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      ENDPOINT: ${{ vars.BACKUP_S3_ENDPOINT || 'https://blr1.digitaloceanspaces.com' }}
+      BUCKET: ${{ vars.BACKUP_S3_BUCKET }}
+      PG_IMAGE: ${{ vars.BACKUP_PG_IMAGE || 'postgres:17-alpine' }}
+    steps:
+      - name: Check the request and settings
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          BACKUP: ${{ inputs.backup }}
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          AGE_KEY: ${{ secrets.RESTORE_AGE_PRIVATE_KEY }}
+          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+        run: |
+          fail=0
+          if [ "$CONFIRM" != "restore production" ]; then
+            echo "::error::Type exactly: restore production"; fail=1
+          fi
+          case "$BACKUP" in
+            ""|arc-zero-*.dump.age) ;;
+            *) echo "::error::Backup must be a file name like arc-zero-2026-11-02T2130Z.dump.age"; fail=1 ;;
+          esac
+          need() { if [ -z "$2" ]; then echo "::error::Missing $1 in Settings -> Environments -> restore"; fail=1; fi; }
+          need "secret RESTORE_AGE_PRIVATE_KEY" "$AGE_KEY"
+          need "secret BACKUP_DATABASE_URL" "$DATABASE_URL"
+          need "secret BACKUP_S3_ACCESS_KEY" "$AWS_ACCESS_KEY_ID"
+          need "secret BACKUP_S3_SECRET_KEY" "$AWS_SECRET_ACCESS_KEY"
+          need "variable BACKUP_S3_BUCKET" "$BUCKET"
+          need "variable BACKUP_AGE_RECIPIENT" "$AGE_RECIPIENT"
+          case "$DATABASE_URL" in
+            ""|postgresql://*sslmode=require*|postgresql://*sslmode=verify-ca*|postgresql://*sslmode=verify-full*) ;;
+            *) echo "::error::BACKUP_DATABASE_URL must look like postgresql://user:pass@host:port/db?sslmode=require"; fail=1 ;;
+          esac
+          if [ -n "$AGE_KEY" ] && ! printf '%s\n' "$AGE_KEY" | grep -q '^AGE-SECRET-KEY-1'; then
+            echo "::error::RESTORE_AGE_PRIVATE_KEY must be the age private key (the line starting AGE-SECRET-KEY-1)"; fail=1
+          fi
+          exit $fail
+
+      - name: Install age
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq age
+
+      - name: Check the key matches the backups
+        env:
+          AGE_KEY: ${{ secrets.RESTORE_AGE_PRIVATE_KEY }}
+          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          # Only the key line, even if the whole key file (with comments) was pasted.
+          printf '%s\n' "$AGE_KEY" | grep '^AGE-SECRET-KEY-1' > "$RUNNER_TEMP/restore.key"
+          if [ "$(age-keygen -y "$RUNNER_TEMP/restore.key")" != "$AGE_RECIPIENT" ]; then
+            echo "::error::RESTORE_AGE_PRIVATE_KEY does not belong to BACKUP_AGE_RECIPIENT, so it can't open the backups."
+            exit 1
+          fi
+
+      - name: Find the backup
+        env:
+          BACKUP: ${{ inputs.backup }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BACKUP" ]; then
+            # Names are timestamps, so the newest sorts last.
+            BACKUP=$(aws s3 ls "s3://$BUCKET/arc-zero/" --endpoint-url "$ENDPOINT" \
+              | awk '{print $4}' | grep -E '^arc-zero-.*\.dump\.age$' | sort | tail -1)
+          fi
+          if [ -z "$BACKUP" ]; then
+            echo "::error::No backups found in s3://$BUCKET/arc-zero/"; exit 1
+          fi
+          aws s3 cp "s3://$BUCKET/arc-zero/$BACKUP" "$RUNNER_TEMP/backup.dump.age" \
+            --endpoint-url "$ENDPOINT" --no-progress
+          age --decrypt -i "$RUNNER_TEMP/restore.key" -o "$RUNNER_TEMP/backup.dump" "$RUNNER_TEMP/backup.dump.age"
+          rm -f "$RUNNER_TEMP/backup.dump.age"
+          # A readable archive, or stop before touching the database.
+          docker run --rm -v "$RUNNER_TEMP:/work:ro" "$PG_IMAGE" pg_restore --list /work/backup.dump > /dev/null
+          echo "BACKUP=$BACKUP" >> "$GITHUB_ENV"
+          echo "### Restoring \`$BACKUP\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save a copy of the current database first
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+        run: |
+          set -euo pipefail
+          file="arc-zero-pre-restore-$(date -u +%Y-%m-%dT%H%MZ).dump.age"
+          docker run --rm -e DATABASE_URL "$PG_IMAGE" \
+              sh -c 'exec pg_dump --format=custom --no-owner --no-privileges --schema=public "$DATABASE_URL"' \
+            | age --encrypt --recipient "$AGE_RECIPIENT" > "$RUNNER_TEMP/$file"
+          aws s3 cp "$RUNNER_TEMP/$file" "s3://$BUCKET/pre-restore/$file" --endpoint-url "$ENDPOINT" --no-progress
+          echo "Safety copy of the replaced data: \`pre-restore/$file\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Restore
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          # --clean drops each object before recreating it; one transaction means a
+          # failure halfway leaves the database exactly as it was.
+          docker run --rm -e DATABASE_URL -v "$RUNNER_TEMP:/work:ro" "$PG_IMAGE" \
+            pg_restore --clean --if-exists --no-owner --no-privileges --schema=public \
+              --single-transaction --exit-on-error --dbname "$DATABASE_URL" /work/backup.dump
+          counts=$(docker run --rm -e DATABASE_URL "$PG_IMAGE" psql "$DATABASE_URL" -At -F ' ' -c \
+            "SELECT 'players', count(*) FROM players UNION ALL SELECT 'level results', count(*) FROM level_results")
+          { echo "Restored. Rows now:"; echo '```'; echo "$counts"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove decrypted data from the runner
+        if: always()
+        run: rm -f "$RUNNER_TEMP/restore.key" "$RUNNER_TEMP/backup.dump" "$RUNNER_TEMP"/*.dump.age

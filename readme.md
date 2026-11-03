@@ -191,11 +191,33 @@ Setup, once:
 
 If the hosted database only accepts allow-listed IPs, GitHub's runners need access too.
 
-**Restore** (test this every few months, or a backup is only a hope):
+**Restore from GitHub** (`.github/workflows/restore.yml`): replaces the production database
+with the newest backup, or a file you name. Test it every few months: a backup you've never
+restored is only a hope.
+
+One-time setup, in Settings → Environments → **New environment** `restore`:
+1. **Required reviewers:** add yourself. Every run then waits for your approval.
+2. **Deployment branches:** `main` only.
+3. Secrets: `RESTORE_AGE_PRIVATE_KEY` (the `AGE-SECRET-KEY-1…` line from your key file),
+   plus copies of `BACKUP_DATABASE_URL`, `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY`.
+   The access key needs **read and write** (it reads the backup and saves a safety copy).
+4. Variables: copies of `BACKUP_S3_BUCKET`, `BACKUP_AGE_RECIPIENT`, and `BACKUP_S3_ENDPOINT` /
+   `BACKUP_PG_IMAGE` if you set them for the backup.
+
+(It's a separate environment so nightly backups and deploys never wait for approval.)
+
+To restore: Actions → **Restore database from backup** → Run workflow → type
+`restore production` → approve the run. It checks the key matches the backups, downloads and
+decrypts the backup, **saves an encrypted copy of the current database to `pre-restore/`**,
+then restores in one transaction (all or nothing). The run summary names both files and the
+row counts after.
+
+**Restore by hand** (if GitHub is unavailable):
 ```bash
-aws s3 cp s3://pwn-backups/arc-zero/<file>.dump.age . --endpoint-url https://blr1.digitaloceanspaces.com
+aws s3 cp s3://<bucket>/arc-zero/<file>.dump.age . --endpoint-url <endpoint>
 age --decrypt -i arc-backup.key <file>.dump.age > arc.dump
-pg_restore --no-owner --clean --if-exists -d "postgresql://…?sslmode=require" arc.dump
+pg_restore --no-owner --no-privileges --clean --if-exists --schema=public --single-transaction \
+  -d "postgresql://…?sslmode=require" arc.dump
 ```
 
 ### Rotating the signing key

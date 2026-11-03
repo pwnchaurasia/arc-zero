@@ -29,6 +29,10 @@ the newest is at the top.
   Minigun, Flamethrower (sets zombies burning), Rocket launcher, Laser rifle, left and
   right turrets, a Tank and a Combat mech; plus instant Repair and a 10-second Barricade.
   A bar under the score shows the time each one has left.
+- New guns switch on at once. Turrets, the tank, the mech and the barricade wait in a
+  ready slot: tap **Deploy** (or press Space) when the horde gets close; the clock starts
+  then. The slot holds one unit; a new one sends the waiting one in, and a unit left
+  waiting goes in on its own after 15 seconds.
 - Break glowing crates for assists before they fade (8 seconds).
 - Seven assists: Airstrike, Freeze, Drone swarm, Orbital lance, Napalm, Rocket barrage and
   a rare Nuke. Earn them from cages and crates or buy them with coins mid-level (the game

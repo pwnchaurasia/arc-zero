@@ -4,7 +4,7 @@ import { ApiError, api } from "../api/client";
 import type { DbAssist, DbComplete, DbStart } from "../api/types";
 import { dbConstants, engine, loadEngine } from "../engine/wasm";
 import { haptic, sfx } from "../feel/audio";
-import { ASSISTS, DeadBridgeView, GUNS, HUD } from "../games/dead-bridge/DeadBridgeView";
+import { ASSISTS, DeadBridgeView, GUNS, HUD, rewardName } from "../games/dead-bridge/DeadBridgeView";
 import { useSession } from "../state/session";
 import { CoinChip } from "../ui/CoinChip";
 import { Button, IconButton, TopBar } from "../ui/kit";
@@ -19,6 +19,7 @@ const OP_AIM = 0;
 const OP_USE = 1;
 const OP_BUY = 2;
 const OP_WAIT = 3;
+const OP_DEPLOY = 4;
 /** Aim changes are recorded at most this often (ticks), so a long level's log stays small. */
 const AIM_EVERY = 2;
 
@@ -34,6 +35,9 @@ interface Hud {
   gun: number;
   /** Ticks left: gun, left turret, right turret, tank, mech, barricade. */
   timers: number[];
+  /** The unit waiting in the ready slot (cage reward code, -1 none) and its ticks left. */
+  ready: number;
+  readyLeft: number;
 }
 
 /** Records the player's inputs exactly as the server will replay them. */
@@ -71,6 +75,8 @@ function readHud(sim: Sim): Hud {
     charges: Array.from(sim.charges()),
     gun: h[HUD.gun] ?? 0,
     timers: Array.from(h.slice(HUD.timers, HUD.timers + 6)),
+    ready: h[HUD.ready] ?? -1,
+    readyLeft: h[HUD.readyLeft] ?? 0,
   };
 }
 
@@ -96,6 +102,7 @@ export function DeadBridgeScreen({
     recordedLane: number;
     aimAt: number;
     pendingUse: number[];
+    pendingDeploy: boolean;
     over: boolean;
     spent: number;
   } | null>(null);
@@ -167,6 +174,10 @@ export function DeadBridgeScreen({
       for (const k of g.pendingUse.splice(0)) {
         if (g.sim.useAssist(k)) g.rec.push(at, OP_USE, k);
       }
+      if (g.pendingDeploy) {
+        g.pendingDeploy = false;
+        if (g.sim.deploy()) g.rec.push(at, OP_DEPLOY, 0);
+      }
       g.sim.step();
       view.current?.handleEvents(g.sim.takeEvents());
       const status = g.sim.status();
@@ -186,6 +197,7 @@ export function DeadBridgeScreen({
         recordedLane: 128,
         aimAt: -AIM_EVERY,
         pendingUse: [],
+        pendingDeploy: false,
         over: false,
         spent: 0,
       };
@@ -245,6 +257,11 @@ export function DeadBridgeScreen({
     });
   };
 
+  const deploy = () => {
+    const g = game.current;
+    if (g && !g.over) g.pendingDeploy = true;
+  };
+
   const confirmSpend = async () => {
     const g = game.current;
     const p = pending;
@@ -269,7 +286,7 @@ export function DeadBridgeScreen({
     }
   };
 
-  // Laptop controls: arrows / A-D steer, 1-7 fire assists, P pauses.
+  // Laptop controls: arrows / A-D steer, 1-7 fire assists, Space / E deploys, P pauses.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const g = game.current;
@@ -277,6 +294,7 @@ export function DeadBridgeScreen({
       if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") g.lane = Math.max(0, g.lane - 14);
       else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") g.lane = Math.min(255, g.lane + 14);
       else if (e.key >= "1" && e.key <= String(ASSISTS.length)) fireAssist(Number(e.key) - 1);
+      else if (e.key === " " || e.key === "e" || e.key === "E") deploy();
       else if (e.key === "p" || e.key === "P" || e.key === "Escape") setPaused((v) => !v);
       else return;
       e.preventDefault();
@@ -367,7 +385,7 @@ export function DeadBridgeScreen({
               <h2 className="text-2xl font-black">Hold the bridge!</h2>
               <ul className="my-4 grid gap-2 text-left text-sm text-muted">
                 <li>👆 Drag (or move the mouse) to steer your gunner. Firing is automatic.</li>
-                <li>🟨 Shoot the gold cages for new guns, turrets, a tank or a mech. They last about 25 seconds.</li>
+                <li>🟨 Shoot the gold cages. New guns switch on at once; turrets, the tank and the mech wait for you: tap Deploy when the horde gets close (they go in on their own after 15 seconds).</li>
                 <li>📦 Break the glowing crates for assists before they fade, then tap them below.</li>
                 <li>🧟 Don't let the horde reach the sandbags.</li>
               </ul>
@@ -376,6 +394,16 @@ export function DeadBridgeScreen({
               </Button>
             </div>
           </div>
+        )}
+        {hud && hud.ready >= 0 && !result && !lost && (
+          <button
+            type="button"
+            onClick={deploy}
+            className="pop-in absolute bottom-3 right-3 z-[5] flex min-h-14 min-w-28 flex-col items-center justify-center rounded-2xl border-2 border-emerald-300 bg-emerald-500/85 px-3 py-1.5 font-black text-ink shadow-[0_0_24px_#34d39988] transition active:scale-95 motion-safe:animate-pulse"
+          >
+            <span className="text-sm leading-tight">Deploy {rewardName(hud.ready).toLowerCase()}</span>
+            <span className="text-[10px] font-bold opacity-80">auto in {Math.ceil(hud.readyLeft / dbConstants().tps)}s</span>
+          </button>
         )}
         {paused && !intro && !result && !lost && (
           <div className="absolute inset-0 z-10 grid place-items-center bg-ink/60">

@@ -46,6 +46,8 @@ pub const MECH_TICKS: u32 = 20 * TPS;
 pub const BARRICADE_TICKS: u32 = 10 * TPS;
 /// Power crates fade if not shot within this time.
 pub const CRATE_TICKS: u32 = 8 * TPS;
+/// A unit waiting in the ready slot deploys on its own after this long.
+pub const READY_TICKS: u32 = 15 * TPS;
 
 const GUNNER_STEP: i32 = 420;
 const BULLET_R: i32 = 90;
@@ -374,6 +376,14 @@ pub enum Event {
     Expired {
         what: u8,
     },
+    /// A unit from a cage is waiting in the ready slot.
+    Ready {
+        reward: Reward,
+    },
+    /// The ready unit went into action (by the player, or on its own).
+    Deployed {
+        reward: Reward,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -399,6 +409,9 @@ pub struct Sim {
     mech_until: u32,
     mech_x: i32,
     barricade_until: u32,
+    /// A unit (turret, tank, mech, barricade) waiting for the player to deploy it, and
+    /// the tick it deploys on its own.
+    ready: Option<(Reward, u32)>,
     base_hp: i32,
     charges: [u8; 7],
     bought: [u8; 7],
@@ -422,6 +435,7 @@ pub enum InputError {
     NoCharge,
     TooManyCharges,
     NotPlaying,
+    NothingReady,
 }
 
 impl fmt::Display for InputError {
@@ -430,6 +444,7 @@ impl fmt::Display for InputError {
             Self::NoCharge => "no charge left for that assist",
             Self::TooManyCharges => "too many charges",
             Self::NotPlaying => "the level is over",
+            Self::NothingReady => "no unit is ready",
         })
     }
 }
@@ -465,6 +480,7 @@ impl Sim {
             mech_until: 0,
             mech_x: BRIDGE_W / 2,
             barricade_until: 0,
+            ready: None,
             base_hp: i32::from(script.base_hp),
             charges: [0; 7],
             bought: [0; 7],
@@ -540,6 +556,10 @@ impl Sim {
         ]
     }
     #[must_use]
+    pub fn ready(&self) -> Option<(Reward, u32)> {
+        self.ready.map(|(r, at)| (r, at.saturating_sub(self.tick)))
+    }
+    #[must_use]
     pub fn base_hp(&self) -> i32 {
         self.base_hp
     }
@@ -602,6 +622,17 @@ impl Sim {
     pub fn set_aim(&mut self, lane: u8) {
         let margin = 400;
         self.aim_x = margin + i32::from(lane) * (BRIDGE_W - 2 * margin) / (LANES - 1);
+    }
+
+    /// Sends the unit in the ready slot into action.
+    pub fn deploy(&mut self) -> Result<(), InputError> {
+        if self.status != Status::Playing {
+            return Err(InputError::NotPlaying);
+        }
+        let (reward, _) = self.ready.take().ok_or(InputError::NothingReady)?;
+        self.activate(reward);
+        self.events.push(Event::Deployed { reward });
+        Ok(())
     }
 
     /// A charge bought with coins (recorded, and checked against payments by the server).
@@ -912,7 +943,29 @@ impl Sim {
         }
     }
 
+    /// Units wait in the ready slot; everything else takes effect at once. The slot holds
+    /// one unit, so a new one sends the waiting one into action.
     fn open_cage(&mut self, reward: Reward) {
+        if matches!(
+            reward,
+            Reward::TurretLeft
+                | Reward::TurretRight
+                | Reward::Tank
+                | Reward::Mech
+                | Reward::Barricade
+        ) {
+            if let Some((old, _)) = self.ready.take() {
+                self.activate(old);
+                self.events.push(Event::Deployed { reward: old });
+            }
+            self.ready = Some((reward, self.tick + READY_TICKS));
+            self.events.push(Event::Ready { reward });
+        } else {
+            self.activate(reward);
+        }
+    }
+
+    fn activate(&mut self, reward: Reward) {
         let t = self.tick;
         match reward {
             Reward::TurretLeft => self.turret_until[0] = t + TURRET_TICKS,
@@ -946,6 +999,14 @@ impl Sim {
             return;
         }
         let t = self.tick;
+
+        if let Some((reward, at)) = self.ready {
+            if t >= at {
+                self.ready = None;
+                self.activate(reward);
+                self.events.push(Event::Deployed { reward });
+            }
+        }
 
         // Waves, spawns, cages, crates.
         while self.next_wave < self.script.waves.len() && self.script.waves[self.next_wave] <= t {
@@ -1218,6 +1279,7 @@ pub const OP_AIM: u8 = 0;
 pub const OP_USE: u8 = 1;
 pub const OP_BUY: u8 = 2;
 pub const OP_WAIT: u8 = 3;
+pub const OP_DEPLOY: u8 = 4;
 
 impl InputLog {
     /// Appends a record at absolute tick `at` (records must be in tick order).
@@ -1285,6 +1347,7 @@ pub fn replay(script: &Script, log: &InputLog) -> Result<Sim, ReplayError> {
                     }
                 }
                 OP_WAIT => Ok(()),
+                OP_DEPLOY => sim.deploy(),
                 _ => Err(InputError::NoCharge),
             }
         };
@@ -1467,12 +1530,82 @@ mod tests {
         let mut sim = Sim::new(&s).unwrap();
         while sim.status() == Status::Playing && sim.tick() < 300 {
             sim.step();
+            if sim.ready().is_some() {
+                sim.deploy().unwrap();
+            }
         }
         assert_eq!(
             sim.base_hp(),
             10,
             "runners arriving behind the barricade do no damage"
         );
+    }
+
+    #[test]
+    fn units_wait_in_the_ready_slot() {
+        let mut s = tiny();
+        s.cages = vec![
+            CageSpec {
+                tick: 0,
+                x: 5_000,
+                stop_y: 1_000,
+                hp: 10,
+                reward: Reward::Tank,
+            },
+            CageSpec {
+                tick: 200,
+                x: 5_000,
+                stop_y: 1_000,
+                hp: 10,
+                reward: Reward::Mech,
+            },
+        ];
+        s.spawns.push(Spawn {
+            tick: 3_000,
+            kind: ZKind::Walker,
+            x: 5_000,
+            hp: 10,
+        });
+        let mut sim = Sim::new(&s).unwrap();
+        assert_eq!(sim.deploy(), Err(InputError::NothingReady));
+        while sim.ready().is_none() {
+            sim.step();
+        }
+        assert_eq!(sim.ready().map(|r| r.0), Some(Reward::Tank));
+        assert_eq!(sim.timers()[3], 0, "the tank waits until deployed");
+        // A second unit sends the waiting tank in and takes its place.
+        while sim.ready().map(|r| r.0) != Some(Reward::Mech) {
+            sim.step();
+        }
+        assert!(sim.timers()[3] > 0, "the tank went in on its own");
+        assert_eq!(sim.timers()[4], 0);
+        // Left alone, the mech deploys itself after READY_TICKS.
+        for _ in 0..=READY_TICKS {
+            sim.step();
+        }
+        assert!(sim.ready().is_none());
+        assert!(sim.timers()[4] > 0);
+
+        // Deploying is an input, and it replays.
+        let mut sim = Sim::new(&s).unwrap();
+        let mut log = InputLog::default();
+        let mut last = 0;
+        while sim.ready().is_none() {
+            sim.step();
+        }
+        let at = sim.tick();
+        sim.deploy().unwrap();
+        log.push(&mut last, at, OP_DEPLOY, 0);
+        while sim.status() == Status::Playing {
+            sim.step();
+        }
+        let again = replay(&s, &log).unwrap();
+        assert_eq!((again.status(), again.kills()), (sim.status(), sim.kills()));
+        // Deploying with nothing ready is a bad log.
+        let mut bad = InputLog::default();
+        let mut last = 0;
+        bad.push(&mut last, 1, OP_DEPLOY, 0);
+        assert!(replay(&s, &bad).is_err());
     }
 
     #[test]

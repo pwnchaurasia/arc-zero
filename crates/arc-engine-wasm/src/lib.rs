@@ -4,6 +4,7 @@
 //! Hot paths return flat `Int32Array`s instead of JSON to avoid per-frame allocation churn.
 
 use arc_engine::brick_blast::{self as bb, Cell, Event};
+use arc_engine::dead_bridge as db;
 use arc_engine::metro_jam as mj;
 use arc_engine::water_sort as ws;
 use sha2::{Digest, Sha256};
@@ -370,6 +371,203 @@ pub fn mj_constants() -> String {
         "maxMoves": mj::MAX_MOVES,
         "maxExtraBays": mj::MAX_EXTRA_BAYS,
         "shuffleWindow": mj::SHUFFLE_WINDOW,
+    })
+    .to_string()
+}
+
+// ------------------------------------------------------- Dead Bridge Assault
+
+fn reward_code(r: db::Reward) -> i32 {
+    match r {
+        db::Reward::TurretLeft => 0,
+        db::Reward::TurretRight => 1,
+        db::Reward::Tank => 2,
+        db::Reward::Weapon => 3,
+        db::Reward::Repair => 4,
+        db::Reward::Assist(k) => 10 + i32::from(k.code()),
+    }
+}
+
+/// A level being played in the browser. The browser steps it at 30 Hz and records the
+/// inputs; the server replays the same inputs to verify the result.
+#[wasm_bindgen]
+pub struct DeadBridge {
+    sim: db::Sim,
+}
+
+#[wasm_bindgen]
+impl DeadBridge {
+    #[wasm_bindgen(constructor)]
+    pub fn new(script_json: &str) -> Result<DeadBridge, JsError> {
+        let script: db::Script = serde_json::from_str(script_json).map_err(js_err)?;
+        Ok(Self {
+            sim: db::Sim::new(&script).map_err(js_err)?,
+        })
+    }
+
+    pub fn step(&mut self) {
+        self.sim.step();
+    }
+
+    #[wasm_bindgen(js_name = setAim)]
+    pub fn set_aim(&mut self, lane: u8) {
+        self.sim.set_aim(lane);
+    }
+
+    /// Fires an assist (kind 0-4). False if there is no charge.
+    #[wasm_bindgen(js_name = useAssist)]
+    pub fn use_assist(&mut self, kind: u8) -> bool {
+        db::AssistKind::from_code(kind).is_some_and(|k| self.sim.use_assist(k).is_ok())
+    }
+
+    /// Adds a charge bought with coins (the server checks the payment on replay).
+    #[wasm_bindgen(js_name = buyAssist)]
+    pub fn buy_assist(&mut self, kind: u8) -> bool {
+        db::AssistKind::from_code(kind).is_some_and(|k| self.sim.buy_assist(k).is_ok())
+    }
+
+    #[must_use]
+    pub fn tick(&self) -> u32 {
+        self.sim.tick()
+    }
+
+    /// 0 playing, 1 won, 2 lost.
+    #[must_use]
+    pub fn status(&self) -> u8 {
+        self.sim.status() as u8
+    }
+
+    #[must_use]
+    pub fn stars(&self) -> u8 {
+        self.sim.stars()
+    }
+
+    /// Flat `[id, kind, x, y, hp, maxHp]` per zombie; kind 0 walker 1 runner 2 brute 3 boss.
+    #[must_use]
+    pub fn zombies(&self) -> Vec<i32> {
+        let mut out = Vec::with_capacity(self.sim.zombies().len() * 6);
+        for z in self.sim.zombies() {
+            out.extend([
+                i32::try_from(z.id).unwrap_or(i32::MAX),
+                z.kind as i32,
+                z.x,
+                z.y,
+                z.hp,
+                z.max_hp,
+            ]);
+        }
+        out
+    }
+
+    /// Flat `[x, y, by]` per bullet; by 0 gun, 1 turret, 2 tank.
+    #[must_use]
+    pub fn bullets(&self) -> Vec<i32> {
+        self.sim
+            .bullets()
+            .iter()
+            .flat_map(|b| [b.x, b.y, b.by as i32])
+            .collect()
+    }
+
+    /// Flat `[index, x, y, hp, maxHp, reward]` per cage. Reward: 0 left turret,
+    /// 1 right turret, 2 tank, 3 better gun, 4 repair, 10+k assist k.
+    #[must_use]
+    pub fn cages(&self) -> Vec<i32> {
+        self.sim
+            .cages()
+            .iter()
+            .flat_map(|c| {
+                [
+                    i32::from(c.index),
+                    c.x,
+                    c.y,
+                    c.hp,
+                    c.max_hp,
+                    reward_code(c.reward),
+                ]
+            })
+            .collect()
+    }
+
+    /// Flat `[x, y, hp, kind]` per power crate.
+    #[must_use]
+    pub fn crates(&self) -> Vec<i32> {
+        self.sim
+            .crates()
+            .iter()
+            .flat_map(|c| [c.x, c.y, c.hp, i32::from(c.kind.code())])
+            .collect()
+    }
+
+    /// `[gunnerX, weapon, leftTurret, rightTurret, tank, baseHp, maxHp, wave, waves,
+    /// spawned, spawns, kills, frozen, drones, napalm]`.
+    #[must_use]
+    pub fn hud(&self) -> Vec<i32> {
+        let t = self.sim.turrets();
+        let (frozen, drones, napalm) = self.sim.effects();
+        let (spawned, spawns) = self.sim.progress();
+        let n = |v: usize| i32::try_from(v).unwrap_or(i32::MAX);
+        vec![
+            self.sim.gunner_x(),
+            i32::from(self.sim.weapon()),
+            i32::from(t[0]),
+            i32::from(t[1]),
+            i32::from(self.sim.tank()),
+            self.sim.base_hp(),
+            i32::from(self.sim.script().base_hp),
+            n(self.sim.wave()),
+            n(self.sim.script().waves.len()),
+            n(spawned),
+            n(spawns),
+            i32::try_from(self.sim.kills()).unwrap_or(i32::MAX),
+            i32::from(frozen),
+            i32::from(drones),
+            i32::from(napalm),
+        ]
+    }
+
+    /// Assist charges, one per kind.
+    #[must_use]
+    pub fn charges(&self) -> Vec<u8> {
+        self.sim.charges().to_vec()
+    }
+
+    /// Flat `[kind, a, b, c]` per event since the last call.
+    /// 0 wave(n) 1 boss 2 hit(x,y,dmg) 3 kill(x,y,zkind) 4 breach(x,_,dmg)
+    /// 5 cage opened(x,y,reward) 6 crate opened(x,y,kind) 7 assist(kind) 8 boom(x,y,r) 9 zap(x,y)
+    #[wasm_bindgen(js_name = takeEvents)]
+    pub fn take_events(&mut self) -> Vec<i32> {
+        let mut out = Vec::new();
+        for e in self.sim.take_events() {
+            out.extend(match e {
+                db::Event::Wave { n } => [0, i32::from(n), 0, 0],
+                db::Event::Boss => [1, 0, 0, 0],
+                db::Event::Hit { x, y, dmg } => [2, x, y, dmg],
+                db::Event::Kill { x, y, kind } => [3, x, y, kind as i32],
+                db::Event::Breach { x, dmg } => [4, x, 0, dmg],
+                db::Event::CageOpened { x, y, reward } => [5, x, y, reward_code(reward)],
+                db::Event::CrateOpened { x, y, kind } => [6, x, y, i32::from(kind.code())],
+                db::Event::Assist { kind } => [7, i32::from(kind.code()), 0, 0],
+                db::Event::Boom { x, y, r } => [8, x, y, r],
+                db::Event::Zap { x, y } => [9, x, y, 0],
+            });
+        }
+        out
+    }
+}
+
+/// World geometry and timing, so the renderer never hard-codes them.
+#[wasm_bindgen(js_name = dbConstants)]
+#[must_use]
+pub fn db_constants() -> String {
+    serde_json::json!({
+        "tps": db::TPS,
+        "bridgeW": db::BRIDGE_W,
+        "lineY": db::LINE_Y,
+        "gunnerY": db::GUNNER_Y,
+        "lanes": db::LANES,
+        "maxCharges": db::MAX_CHARGES,
+        "radius": [db::ZKind::Walker.stats().1, db::ZKind::Runner.stats().1, db::ZKind::Brute.stats().1, db::ZKind::Boss.stats().1],
     })
     .to_string()
 }

@@ -8,9 +8,14 @@ export default defineConfig({
   testDir: "e2e",
   timeout: 60_000,
   retries: process.env.CI ? 1 : 0,
+  // CI runners have no GPU, so the game canvases render in software. One test at a time
+  // at 1x pixel density keeps the page responsive on a slow runner (two workers at the
+  // Pixel 7's 2.6x density starved the main thread and timed out).
+  workers: process.env.CI ? 1 : undefined,
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:4173",
     ...devices["Pixel 7"],
+    ...(process.env.CI ? { deviceScaleFactor: 1 } : {}),
     hasTouch: false,
     channel: process.env.E2E_CHANNEL ?? undefined,
     trace: "retain-on-failure",

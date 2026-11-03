@@ -45,6 +45,7 @@ the newest is at the top.
   can't be faked, and the level can't be played faster than real time.
 
 ### Brick Blast
+- From level 5, every level starts with 10 more balls. Layouts are unchanged.
 - New power-ups: **Scatter** (a ball shatters into three, flying off in random directions;
   the extras last until they land) and **Boost ×2 / ×3** (your next shot launches two or
   three times the balls). +2 balls is gone; +3 and +5 stay.

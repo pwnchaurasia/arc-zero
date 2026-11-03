@@ -3,6 +3,16 @@
 All notable changes to Arc Zero. Releases are deployed from `release/YY.MM.XX` branches;
 the newest is at the top.
 
+## Unreleased
+
+### Brick Blast
+- While you aim, the block the ball will hit first blinks. When the shot grazes the corner
+  between two blocks, it shows the one the ball really takes (the engine works it out
+  with the same rule as the real shot).
+- Aiming on Android: lifting your finger no longer nudges the shot. On release the game
+  fires the aim from just before the lift (about 0.1 s earlier); a bigger last-moment
+  change is still treated as a deliberate adjustment.
+
 ## Unreleased (planned as 26.11.01)
 
 ### New game: MetroJam

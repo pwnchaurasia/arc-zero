@@ -608,6 +608,18 @@ pub fn play_turn(state: &State, aim: u16) -> Result<(State, TurnSummary), TurnEr
 /// bounce point, up to `max_bounces`. Deals no damage.
 #[must_use]
 pub fn aim_path(state: &State, aim: u16, max_bounces: usize) -> Vec<(i32, i32)> {
+    aim_trace(state, aim, max_bounces).0
+}
+
+/// A grid position, `(row, col)`.
+pub type GridPos = (usize, usize);
+
+/// The aim guide's path plus the block the first ball will hit first, as
+/// `(row, col)`. Uses the same contact rule as a real shot, so when the ball
+/// grazes the corner between two blocks this is the one it really takes.
+/// `None` when it lands without touching a block.
+#[must_use]
+pub fn aim_trace(state: &State, aim: u16, max_bounces: usize) -> (Vec<(i32, i32)>, Option<GridPos>) {
     let (vx, vy) = aim_velocity(aim);
     let mut ball = Ball {
         id: 0,
@@ -621,32 +633,41 @@ pub fn aim_path(state: &State, aim: u16, max_bounces: usize) -> Vec<(i32, i32)> 
         split: 0,
     };
     let mut points = vec![(ball.x, ball.y)];
+    let mut first_hit = None;
     for _ in 0..(MAX_TICKS_PER_TURN * SUBSTEPS) {
+        let tracing = points.len() <= max_bounces;
         ball.x += ball.vx;
         ball.y += ball.vy;
         let mut bounced = bounce_walls(&mut ball);
         if on_floor(&ball) {
-            points.push((ball.x, FLOOR_Y - BALL_R));
+            if tracing {
+                points.push((ball.x, FLOOR_Y - BALL_R));
+            }
             break;
         }
         if let Some(contact) = find_contact(&state.grid, ball.x, ball.y) {
-            bounced |= resolve(&mut ball, &contact);
-        }
-        if bounced {
-            points.push((ball.x, ball.y));
-            if points.len() > max_bounces {
-                break;
+            // A real shot damages a block exactly when it bounces off it.
+            if resolve(&mut ball, &contact) {
+                bounced = true;
+                first_hit = first_hit.or(Some((contact.row, contact.col)));
             }
         }
+        if bounced && tracing {
+            points.push((ball.x, ball.y));
+        }
+        // Keep going past the guide's last bounce only to find the first block.
+        if points.len() > max_bounces && first_hit.is_some() {
+            break;
+        }
     }
-    points
+    (points, first_hit)
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::{LevelScript, Shape};
     use super::*;
-    use crate::brick_blast::{Assist, AssistError, ASSIST_BONUS_BALLS};
+    use crate::brick_blast::{Assist, AssistError, ASSIST_BONUS_BALLS, MAX_HP};
 
     fn block(hp: u16) -> Cell {
         Cell::Block {
@@ -677,6 +698,32 @@ mod tests {
         let mut rows = vec![top, EMPTY_ROW, EMPTY_ROW, EMPTY_ROW, EMPTY_ROW, mid];
         rows.truncate(PLAY_ROWS);
         state_with(rows, vec![], balls)
+    }
+
+    #[test]
+    fn aim_trace_names_the_block_a_real_shot_hits_first() {
+        // Two blocks side by side; aims from steep left to steep right graze
+        // both and the corner between them.
+        let mut row = EMPTY_ROW;
+        row[3] = block(MAX_HP);
+        row[4] = block(MAX_HP);
+        let state = state_with(vec![row], vec![], 1);
+        let mut seen = std::collections::BTreeSet::new();
+        for aim in (AIM_MIN..=AIM_MAX).step_by(7) {
+            let (path, hit) = aim_trace(&state, aim, 2);
+            assert_eq!(path, aim_path(&state, aim, 2));
+            let mut turn = Turn::new(&state, aim).unwrap();
+            turn.run_to_end();
+            let first = turn.take_events().into_iter().find_map(|e| match e {
+                Event::Hit { cell, .. } | Event::Blast { cell } => Some(cell),
+                _ => None,
+            });
+            assert_eq!(hit.map(|(r, c)| cell_index(r, c)), first, "aim {aim}");
+            if let Some(h) = hit {
+                seen.insert(h);
+            }
+        }
+        assert_eq!(seen.len(), 2, "both blocks are reachable: {seen:?}");
     }
 
     #[test]

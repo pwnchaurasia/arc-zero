@@ -201,6 +201,17 @@ pub fn bb_aim_path(state_json: &str, aim: u16, bounces: usize) -> Result<Vec<i32
         .collect())
 }
 
+/// `[row, col]` of the block a shot at `aim` hits first, or empty if it hits none.
+#[wasm_bindgen(js_name = bbAimHit)]
+pub fn bb_aim_hit(state_json: &str, aim: u16) -> Result<Vec<i32>, JsError> {
+    let state = parse_state(state_json)?;
+    Ok(bb::aim_trace(&state, aim, 0)
+        .1
+        .map_or_else(Vec::new, |(r, c)| {
+            vec![i32::try_from(r).unwrap_or(0), i32::try_from(c).unwrap_or(0)]
+        }))
+}
+
 /// Flat `[tag, kind, hp]` per cell for a state (used when no turn is running).
 #[wasm_bindgen(js_name = bbCells)]
 pub fn bb_cells(state_json: &str) -> Result<Vec<i32>, JsError> {

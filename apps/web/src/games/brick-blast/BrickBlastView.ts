@@ -29,6 +29,11 @@ const POWER_COLOR = [
 const ANNOUNCE_GAP_MS = 650;
 const MAX_STEPS_PER_FRAME = 48;
 
+/** On release, fire the aim from this long before the lift (finger-lift jitter). */
+const LIFT_SETTLE_MS = 100;
+/** Larger last-moment changes than this (tenths of a degree) are deliberate: keep them. */
+const LIFT_JITTER_TENTHS = 40;
+
 export interface BrickBlastViewOptions {
   onFire: (aim: number) => void;
   /** Called with a column when the laser assist is picking one. */
@@ -59,6 +64,8 @@ export class BrickBlastView {
   private readonly ambient = new Container();
   private readonly cellLayer = new Container();
   private readonly guide = new Graphics();
+  /** Outline of the block the aimed shot hits first; blinks while aiming. */
+  private readonly hitMark = new Graphics();
   private readonly fx = new Container();
   private readonly ballGlowLayer = new Container();
   private readonly ballLayer = new Container();
@@ -80,6 +87,8 @@ export class BrickBlastView {
   private aiming = false;
   private aim: number | null = null;
   private hintAim: number | null = null;
+  /** Recent aims while dragging, `[time, aim]`, newest last (see `settledAim`). */
+  private aimTrail: [number, number][] = [];
   private speed = 1;
   private skipping = false;
   private combo = 0;
@@ -118,6 +127,7 @@ export class BrickBlastView {
       this.frame,
       this.ambient,
       this.cellLayer,
+      this.hitMark,
       this.guide,
       this.fx,
       this.ballGlowLayer,
@@ -410,6 +420,7 @@ export class BrickBlastView {
     const dt = this.app.ticker.deltaMS / 1000;
     this.pulse += dt;
     const still = prefersReducedMotion();
+    this.hitMark.alpha = still ? 0.9 : 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(this.pulse * 12));
     const s = still ? 1 : 1 + Math.sin(this.pulse * 4) * 0.06;
     for (const v of this.cells) {
       if (v.node?.label !== "power") continue;
@@ -514,6 +525,7 @@ export class BrickBlastView {
     if (!this.aimEnabled) return;
     this.aiming = true;
     this.aim = this.aimFrom(e);
+    this.aimTrail = this.aim === null ? [] : [[performance.now(), this.aim]];
     this.drawGuide();
   };
 
@@ -527,9 +539,29 @@ export class BrickBlastView {
     const next = this.aimFrom(e);
     if (next !== this.aim) {
       this.aim = next;
+      if (next !== null) {
+        this.aimTrail.push([performance.now(), next]);
+        if (this.aimTrail.length > 24) this.aimTrail.shift();
+      }
       this.drawGuide();
     }
   };
+
+  /**
+   * The aim to fire on release. Lifting a finger rolls the touch point a few
+   * pixels (very noticeable on Android), which near the ball turns the aim by a
+   * few degrees. So use the aim from just before the lift, unless the last
+   * moment's change was big enough to be a deliberate adjustment.
+   */
+  private settledAim(): number | null {
+    const now = this.aim;
+    if (now === null) return null;
+    const cutoff = performance.now() - LIFT_SETTLE_MS;
+    let before: number | null = null;
+    for (const [t, aim] of this.aimTrail) if (t <= cutoff) before = aim;
+    if (before === null || Math.abs(before - now) > LIFT_JITTER_TENTHS) return now;
+    return before;
+  }
 
   private readonly onUp = () => {
     if (this.picking && this.pickCol !== null) {
@@ -539,8 +571,9 @@ export class BrickBlastView {
     }
     if (!this.aiming) return;
     this.aiming = false;
-    const aim = this.aim;
+    const aim = this.settledAim();
     this.aim = null;
+    this.aimTrail = [];
     this.drawGuide();
     if (aim !== null && this.aimEnabled) {
       haptic(10);
@@ -574,6 +607,31 @@ export class BrickBlastView {
     };
     if (this.hintAim !== null && this.aimEnabled) draw(this.hintAim, 0xfacc15, 0.55);
     if (this.aim !== null && this.aiming) draw(this.aim, 0xffffff, 0.8);
+    this.drawHitMark(this.aiming ? this.aim : null);
+  }
+
+  /** Outlines the block the shot at `aim` hits first (the engine's own contact rule). */
+  private drawHitMark(aim: number | null): void {
+    const g = this.hitMark.clear();
+    if (aim === null || !this.state || !this.stateJson) return;
+    const [row, col] = Array.from(engine.bbAimHit(this.stateJson, aim));
+    if (row === undefined || col === undefined) return;
+    const cell = this.state.grid[row]?.[col];
+    if (cell?.t !== "block") return;
+    const { cell: size, blockInset } = this.c;
+    const x0 = col * size;
+    const y0 = row * size;
+    const a = blockInset;
+    const b = size - blockInset;
+    const pts: Record<string, number[]> = {
+      square: [a, a, b, a, b, b, a, b],
+      tri_bl: [a, b, a, a, b, b],
+      tri_br: [b, b, a, b, b, a],
+      tri_tl: [a, a, b, a, a, b],
+      tri_tr: [b, a, b, b, a, a],
+    };
+    const poly = (pts[cell.shape] ?? pts.square ?? []).map((v, i) => v + (i % 2 ? y0 : x0));
+    g.poly(poly).fill({ color: 0xffffff, alpha: 0.28 }).stroke({ width: size * 0.07, color: 0xffffff });
   }
 
   // --------------------------------------------------------------- effects

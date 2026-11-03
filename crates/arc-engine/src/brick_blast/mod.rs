@@ -15,7 +15,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::hash::Fnv64;
-pub use sim::{aim_path, play_turn, Ball, Event, Turn, TurnError, TurnSummary};
+pub use sim::{aim_path, aim_trace, play_turn, Ball, Event, Turn, TurnError, TurnSummary};
 
 pub const COLS: usize = 9;
 /// Rows that may hold blocks: 0 (top) ..= 10.

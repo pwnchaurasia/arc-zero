@@ -22,6 +22,24 @@ the newest is at the top.
 - Every move is replayed on the server; wins that don't replay are rejected.
 - Playable without a mouse or touch: each car is also a keyboard and screen-reader button.
 
+### New game: Dead Bridge Assault
+- Hold the bridge: your gunner fires on its own; drag (or move the mouse, or use the arrow
+  keys) to steer the stream while the horde pours down in three waves and a boss.
+- Shoot open gold cages for weapons and units that last 20–25 seconds: Shotgun,
+  Minigun, Flamethrower (sets zombies burning), Rocket launcher, Laser rifle, left and
+  right turrets, a Tank and a Combat mech; plus instant Repair and a 10-second Barricade.
+  A bar under the score shows the time each one has left.
+- Break glowing crates for assists before they fade (8 seconds).
+- Seven assists: Airstrike, Freeze, Drone swarm, Orbital lance, Napalm, Rocket barrage and
+  a rare Nuke. Earn them from cages and crates or buy them with coins mid-level (the game
+  pauses while you decide).
+- 100 levels. Levels 1–3 are a warm-up of about 90 seconds. From level 4 the horde is
+  much bigger (160–240 zombies), levels run from about 2½ minutes to 4½, and the boss is
+  slow and tough enough to walk well into view. Each level is tuned against a sharp
+  computer player and climbs to its limit by level 100.
+- The server replays your exact inputs to verify every win: health, kills and assists
+  can't be faked, and the level can't be played faster than real time.
+
 ### Brick Blast
 - New power-ups: **Scatter** (a ball shatters into three, flying off in random directions;
   the extras last until they land) and **Boost ×2 / ×3** (your next shot launches two or

@@ -10,6 +10,7 @@
 //! - All randomness comes from [`rng::Rng`] seeded by the caller.
 
 pub mod brick_blast;
+pub mod dead_bridge;
 pub mod hash;
 pub mod metro_jam;
 pub mod rng;

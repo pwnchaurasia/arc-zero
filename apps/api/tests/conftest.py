@@ -79,6 +79,18 @@ def mj_level() -> dict[str, Any]:
     }
 
 
+def db_script() -> dict[str, Any]:
+    """Six walkers straight down the middle, a cage and a crate: the centred gun wins."""
+    return {
+        "seed": 7,
+        "base_hp": 10,
+        "waves": [0],
+        "spawns": [{"tick": i * 20, "kind": "walker", "x": 5000, "hp": 40} for i in range(6)],
+        "cages": [{"tick": 0, "x": 1500, "stop_y": 6000, "hp": 60, "reward": "turret_left"}],
+        "crates": [{"tick": 10, "x": 5000, "kind": "freeze", "hp": 20}],
+    }
+
+
 def make_levels(path: Path) -> None:
     ws = []
     for level in range(1, 6):
@@ -97,7 +109,13 @@ def make_levels(path: Path) -> None:
     bb = [{"level": level, "script": bb_script(1)} for level in range(1, 6)]
     mj = [{"level": level, "data": mj_level()} for level in range(1, 6)]
     path.mkdir(parents=True, exist_ok=True)
-    for game, levels in (("water-sort", ws), ("brick-blast", bb), ("metro-jam", mj)):
+    db = [{"level": level, "script": db_script()} for level in range(1, 6)]
+    for game, levels in (
+        ("water-sort", ws),
+        ("brick-blast", bb),
+        ("metro-jam", mj),
+        ("dead-bridge", db),
+    ):
         (path / f"{game}.json").write_text(
             json.dumps({"version": 2, "game": game, "levels": levels})
         )
@@ -122,6 +140,7 @@ def settings(tmp_path_factory: pytest.TempPathFactory) -> Settings:
         ws_min_ms_per_move=0,
         bb_min_ms_between_turns=0,
         mj_min_ms_per_move=0,
+        db_min_real_time_pct=0,
     )
 
 

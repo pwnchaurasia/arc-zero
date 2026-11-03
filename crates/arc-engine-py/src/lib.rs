@@ -3,6 +3,7 @@
 //! CPU-heavy calls release the GIL so FastAPI can run them in a thread pool.
 
 use engine::brick_blast::{self as bb, bot};
+use engine::dead_bridge as db;
 use engine::metro_jam as mj;
 use engine::water_sort as ws;
 use pyo3::create_exception;
@@ -270,6 +271,50 @@ fn mj_replay(py: Python<'_>, level_json: String, moves: Vec<(u8, u8)>) -> PyResu
     .map_err(|e: String| err(e))
 }
 
+// ------------------------------------------------------- Dead Bridge Assault
+
+/// Validates a level script.
+#[pyfunction]
+fn db_validate(script_json: &str) -> PyResult<()> {
+    let script: db::Script = serde_json::from_str(script_json).map_err(err)?;
+    script.validate().map_err(err)
+}
+
+/// Result of replaying a level from the player's inputs.
+#[pyclass(frozen, get_all, module = "arc_engine")]
+struct DbReplay {
+    /// "won" or "lost".
+    status: &'static str,
+    stars: u8,
+    base_hp: i32,
+    ticks: u32,
+    kills: u32,
+    /// Assist charges bought with coins, per kind (must have been paid for).
+    bought: [u8; 7],
+}
+
+/// Replays a whole level from its input log. Raises `EngineError` on a bad log or input.
+#[pyfunction]
+fn db_replay(py: Python<'_>, script_json: String, log: Vec<u8>) -> PyResult<DbReplay> {
+    py.allow_threads(move || {
+        let script: db::Script = serde_json::from_str(&script_json).map_err(|e| e.to_string())?;
+        let sim = db::replay(&script, &db::InputLog(log)).map_err(|e| e.to_string())?;
+        Ok(DbReplay {
+            status: if sim.status() == db::Status::Won {
+                "won"
+            } else {
+                "lost"
+            },
+            stars: sim.stars(),
+            base_hp: sim.base_hp(),
+            ticks: sim.tick(),
+            kills: sim.kills(),
+            bought: sim.bought(),
+        })
+    })
+    .map_err(|e: String| err(e))
+}
+
 #[pymodule]
 fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("EngineError", m.py().get_type::<EngineError>())?;
@@ -280,6 +325,11 @@ fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("MJ_MAX_MOVES", mj::MAX_MOVES)?;
     m.add_class::<TurnResult>()?;
     m.add_class::<MjReplay>()?;
+    m.add_class::<DbReplay>()?;
+    m.add_function(wrap_pyfunction!(db_validate, m)?)?;
+    m.add_function(wrap_pyfunction!(db_replay, m)?)?;
+    m.add("DB_TPS", db::TPS)?;
+    m.add("DB_MAX_LOG_BYTES", db::MAX_LOG_BYTES)?;
     m.add_function(wrap_pyfunction!(mj_validate, m)?)?;
     m.add_function(wrap_pyfunction!(mj_public, m)?)?;
     m.add_function(wrap_pyfunction!(mj_replay, m)?)?;

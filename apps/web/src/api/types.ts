@@ -1,4 +1,4 @@
-export type GameId = "water-sort" | "brick-blast" | "metro-jam";
+export type GameId = "water-sort" | "brick-blast" | "metro-jam" | "dead-bridge";
 
 export interface GameProgress {
   unlocked_level: number;
@@ -197,4 +197,28 @@ export interface CoinRules {
   prices: Record<string, Record<string, number>>;
   /** Price of a hint after the 3 free ones each day (Water Sort, Brick Blast). */
   hint_price: number;
+}
+
+export type DbAssist = "airstrike" | "freeze" | "drones" | "lance" | "napalm" | "barrage" | "nuke";
+
+export interface DbStart {
+  attempt_id: string;
+  level: number;
+  /** The whole level script (public: the browser simulates what the server replays). */
+  script: unknown;
+  prices: Record<DbAssist, number>;
+  reward: number;
+  coins: number;
+}
+
+export interface DbComplete extends LevelWin {
+  level: number;
+  best_stars: number;
+  base_hp: number;
+  kills: number;
+  seconds: number;
+  first_clear: boolean;
+  coins_earned: number;
+  streak_bonus: number;
+  coins: number;
 }

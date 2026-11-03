@@ -22,6 +22,18 @@ the newest is at the top.
 - Every move is replayed on the server; wins that don't replay are rejected.
 - Playable without a mouse or touch: each car is also a keyboard and screen-reader button.
 
+### New game: Dead Bridge Assault
+- Hold the bridge: your gunner fires on its own; drag (or move the mouse, or use the arrow
+  keys) to steer the stream while the horde pours down in three waves and a boss.
+- Shoot open gold cages for turrets, a tank and bigger guns (rifle → twin → minigun →
+  twin miniguns) or a repair; break glowing crates for assists.
+- Five assists: Airstrike, Freeze, Drone swarm, Orbital lance, Napalm. Earn them from
+  crates or buy them with coins mid-level (the game pauses while you decide).
+- 100 levels of 60–90 seconds; levels 1–3 are a warm-up, then each level is tuned
+  against a sharp computer player and climbs to its limit by level 100.
+- The server replays your exact inputs to verify every win: health, kills and assists
+  can't be faked, and the level can't be played faster than real time.
+
 ### Brick Blast
 - New power-ups: **Scatter** (a ball shatters into three, flying off in random directions;
   the extras last until they land) and **Boost ×2 / ×3** (your next shot launches two or

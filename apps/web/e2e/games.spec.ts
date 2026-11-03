@@ -132,3 +132,28 @@ test("the Coins page explains the rules from the server", async ({ page }) => {
   await expect(page.getByText("Replaying a level you've already cleared earns nothing.")).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("Dead Bridge Assault runs, steers, pauses, and shows the horde", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/");
+  await page.getByText("Dead Bridge Assault", { exact: true }).click();
+  const startResp = page.waitForResponse((r) => r.url().includes("/dead-bridge/levels/1/start"));
+  await page.getByRole("button", { name: "Level 1", exact: true }).click();
+  expect((await startResp).status()).toBe(200);
+  await page.getByRole("button", { name: "Start" }).click();
+  const box = await page.locator(".game-surface").boundingBox();
+  if (!box) throw new Error("no game surface");
+  // Steer left and right for a few seconds, as a player would.
+  for (const fx of [0.5, 0.3, 0.7, 0.5]) {
+    await page.mouse.move(box.x + box.width * fx, box.y + box.height * 0.8);
+    await page.waitForTimeout(900);
+  }
+  await expect(page.getByText(/Wave \d\/3/)).toBeVisible();
+  await page.getByRole("button", { name: "Pause" }).click();
+  await expect(page.getByRole("button", { name: "Resume" }).first()).toBeVisible();
+  // Assists need a charge or coins: the first tap on an empty one asks to pay.
+  await page.getByRole("button", { name: /Airstrike/ }).click();
+  await expect(page.getByText("Use Airstrike?")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  expect(errors).toEqual([]);
+});

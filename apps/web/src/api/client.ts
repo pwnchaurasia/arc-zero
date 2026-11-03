@@ -5,6 +5,9 @@ import type {
   BbTurn,
   Board,
   CoinRules,
+  DbAssist,
+  DbComplete,
+  DbStart,
   GameId,
   Me,
   MjAssist,
@@ -174,6 +177,21 @@ export const api = {
       request<MjComplete>("POST", `${game("metro-jam")}/levels/${level}/complete`, {
         attempt_id: attemptId,
         moves,
+      }),
+  },
+
+  db: {
+    start: (level: number) => request<DbStart>("POST", `${game("dead-bridge")}/levels/${level}/start`),
+    buy: (level: number, attemptId: string, kind: DbAssist, price: number) =>
+      request<MjBuy>("POST", `${game("dead-bridge")}/levels/${level}/assists`, {
+        attempt_id: attemptId,
+        kind,
+        price,
+      }),
+    complete: (level: number, attemptId: string, log: string) =>
+      request<DbComplete>("POST", `${game("dead-bridge")}/levels/${level}/complete`, {
+        attempt_id: attemptId,
+        log,
       }),
   },
 

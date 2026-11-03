@@ -16,6 +16,9 @@ const BrickBlastScreen = lazy(() =>
 const MetroJamScreen = lazy(() =>
   import("./screens/MetroJamScreen").then((m) => ({ default: m.MetroJamScreen })),
 );
+const DeadBridgeScreen = lazy(() =>
+  import("./screens/DeadBridgeScreen").then((m) => ({ default: m.DeadBridgeScreen })),
+);
 const CoinsScreen = lazy(() => import("./screens/CoinsScreen").then((m) => ({ default: m.CoinsScreen })));
 
 function Loading() {
@@ -94,6 +97,15 @@ export function App() {
       )}
       <Suspense fallback={<Loading />}>
       {route.name === "coins" && <CoinsScreen onBack={back} />}
+      {route.name === "play" && route.game === "dead-bridge" && (
+        <DeadBridgeScreen
+          key={`db-${route.level}`}
+          level={route.level}
+          onBack={back}
+          onLevel={(level) => replaceLevel("dead-bridge", level)}
+          onCheckpoint={openCheckpoint}
+        />
+      )}
       {route.name === "play" && route.game === "metro-jam" && (
         <MetroJamScreen
           key={`mj-${route.level}`}

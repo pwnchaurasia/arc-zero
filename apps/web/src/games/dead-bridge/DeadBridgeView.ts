@@ -438,8 +438,9 @@ export class DeadBridgeView {
           g.circle(px, py, 2.6 * s).fill(0xffd27a);
           break;
         case 5: {
-          // flame: flickering blobs that grow as they travel
-          const f = this.still ? 1 : 0.75 + 0.25 * Math.sin(this.clock * 40 + x);
+          // flame: flickering blobs that widen as they travel
+          const spread = 1 + Math.max(0, this.c.gunnerY - y) / 9_000;
+          const f = spread * (this.still ? 1 : 0.75 + 0.25 * Math.sin(this.clock * 40 + x));
           g.circle(px, py, 9 * s * f).fill({ color: 0xff6b1a, alpha: 0.45 });
           g.circle(px, py, 4.5 * s * f).fill({ color: 0xffd166, alpha: 0.8 });
           break;

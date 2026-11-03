@@ -808,8 +808,9 @@ impl Sim {
             Gun::Flamethrower => {
                 for _ in 0..3 {
                     let vx = jitter(&mut self.rng, 230);
-                    let mut b = Self::straight(gx, gy, vx, -560, 5, Shot::Flame);
-                    b.life = 13;
+                    // Reaches about two-thirds of the way up the bridge.
+                    let mut b = Self::straight(gx, gy, vx, -620, 5, Shot::Flame);
+                    b.life = 19;
                     self.bullets.push(b);
                 }
                 self.gun_cd = 0;

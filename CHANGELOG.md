@@ -89,7 +89,7 @@ the newest is at the top.
 
 ### For developers
 - Levels are now one file per game (`levels/<game>.json`); `make levels GAME=brick-blast`
-  regenerates just one game. In production they are three Docker secrets.
+  regenerates just one game. In production each is a Docker secret.
 - First-party analytics in the `play_events` table (counts only; a keyed hash instead of
   player ids). Example queries in DEVELOPMENT.md.
 

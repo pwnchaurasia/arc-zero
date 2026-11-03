@@ -416,6 +416,11 @@ impl DeadBridge {
         self.sim.set_aim(lane);
     }
 
+    /// Sends the unit in the ready slot into action. False if nothing is ready.
+    pub fn deploy(&mut self) -> bool {
+        self.sim.deploy().is_ok()
+    }
+
     /// Fires an assist (kind 0-6). False if there is no charge.
     #[wasm_bindgen(js_name = useAssist)]
     pub fn use_assist(&mut self, kind: u8) -> bool {
@@ -513,7 +518,8 @@ impl DeadBridge {
 
     /// `[gunnerX, gun, baseHp, maxHp, wave, waves, spawned, spawns, kills, frozen,
     /// drones, napalm, mechX, then ticks left on: gun, left turret, right turret, tank,
-    /// mech, barricade]`. Gun: 0 rifle 1 shotgun 2 minigun 3 flamethrower 4 rocket 5 laser.
+    /// mech, barricade, then the ready slot: reward code (-1 empty) and ticks until it
+    /// deploys on its own]`. Gun: 0 rifle 1 shotgun 2 minigun 3 flamethrower 4 rocket 5 laser.
     #[must_use]
     pub fn hud(&self) -> Vec<i32> {
         let (frozen, drones, napalm) = self.sim.effects();
@@ -540,6 +546,10 @@ impl DeadBridge {
                 .iter()
                 .map(|t| i32::try_from(*t).unwrap_or(i32::MAX)),
         );
+        let (ready, left) = self.sim.ready().map_or((-1, 0), |(r, left)| {
+            (reward_code(r), i32::try_from(left).unwrap_or(i32::MAX))
+        });
+        out.extend([ready, left]);
         out
     }
 
@@ -554,6 +564,7 @@ impl DeadBridge {
     /// 5 cage opened(x,y,reward) 6 crate opened(x,y,kind) 7 assist(kind) 8 boom(x,y,r)
     /// 9 zap(x,y) 10 blocked(x) 11 crate lost(x,y) 12 beam(x,half)
     /// 13 expired(what: 0 turret, 2 tank, 3 mech, 4 gun, 6 barricade)
+    /// 14 unit ready(reward) 15 unit deployed(reward)
     #[wasm_bindgen(js_name = takeEvents)]
     pub fn take_events(&mut self) -> Vec<i32> {
         let mut out = Vec::new();
@@ -573,6 +584,8 @@ impl DeadBridge {
                 db::Event::CrateLost { x, y } => [11, x, y, 0],
                 db::Event::Beam { x, half } => [12, x, half, 0],
                 db::Event::Expired { what } => [13, i32::from(what), 0, 0],
+                db::Event::Ready { reward } => [14, reward_code(reward), 0, 0],
+                db::Event::Deployed { reward } => [15, reward_code(reward), 0, 0],
             });
         }
         out
@@ -594,6 +607,7 @@ pub fn db_constants() -> String {
         // Full length of each timer in `hud()`, for the bars.
         "timerTicks": [db::WEAPON_TICKS, db::TURRET_TICKS, db::TURRET_TICKS, db::TANK_TICKS, db::MECH_TICKS, db::BARRICADE_TICKS],
         "crateTicks": db::CRATE_TICKS,
+        "readyTicks": db::READY_TICKS,
         "radius": [db::ZKind::Walker.stats().1, db::ZKind::Runner.stats().1, db::ZKind::Brute.stats().1, db::ZKind::Boss.stats().1],
     })
     .to_string()

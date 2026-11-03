@@ -27,6 +27,8 @@ export interface DbConstants {
   /** Full length of each upgrade timer in `hud()` (gun, turrets, tank, mech, barricade). */
   timerTicks: number[];
   crateTicks: number;
+  /** How long a unit waits in the ready slot before it deploys on its own. */
+  readyTicks: number;
   radius: number[];
 }
 
@@ -76,7 +78,13 @@ export const HUD = {
   mechX: 12,
   /** Ticks left: gun, left turret, right turret, tank, mech, barricade. */
   timers: 13,
+  /** The ready slot: a cage reward code (-1 empty), and ticks until it deploys itself. */
+  ready: 19,
+  readyLeft: 20,
 } as const;
+
+/** Cage rewards that wait in the ready slot instead of acting at once. */
+export const isUnit = (code: number) => code >= 0 && code <= 5 && code !== 4;
 
 const EXPIRED: Record<number, string> = {
   0: "Turret out of ammo",
@@ -143,7 +151,7 @@ export class DeadBridgeView {
   private paused = false;
   private pointerDown = false;
   private lastAnnounce = 0;
-  private hud: Int32Array = new Int32Array(19);
+  private hud: Int32Array = new Int32Array(21);
   private destroyed = false;
   private readonly still = prefersReducedMotion();
 
@@ -438,8 +446,9 @@ export class DeadBridgeView {
           g.circle(px, py, 2.6 * s).fill(0xffd27a);
           break;
         case 5: {
-          // flame: flickering blobs that grow as they travel
-          const f = this.still ? 1 : 0.75 + 0.25 * Math.sin(this.clock * 40 + x);
+          // flame: flickering blobs that widen as they travel
+          const spread = 1 + Math.max(0, this.c.gunnerY - y) / 9_000;
+          const f = spread * (this.still ? 1 : 0.75 + 0.25 * Math.sin(this.clock * 40 + x));
           g.circle(px, py, 9 * s * f).fill({ color: 0xff6b1a, alpha: 0.45 });
           g.circle(px, py, 4.5 * s * f).fill({ color: 0xffd166, alpha: 0.8 });
           break;
@@ -692,7 +701,8 @@ export class DeadBridgeView {
           break;
         case 5:
           this.burst(a, b, 0xffd166, 22);
-          this.announce(c >= 20 ? `${rewardName(c)}!` : c >= 10 ? `+1 ${rewardName(c)}` : `${rewardName(c)}!`, 0xffe08a);
+          // Units announce themselves when they reach the ready slot (event 14).
+          if (!isUnit(c)) this.announce(c >= 10 && c < 20 ? `+1 ${rewardName(c)}` : `${rewardName(c)}!`, 0xffe08a);
           sfx.complete();
           haptic(20);
           break;
@@ -722,6 +732,14 @@ export class DeadBridgeView {
           break;
         case 12:
           this.beam(a, b);
+          break;
+        case 14:
+          this.announce(`${rewardName(a)} ready!`, 0x86efac);
+          break;
+        case 15:
+          this.announce(`${rewardName(a)} deployed!`, 0xffe08a);
+          sfx.complete();
+          haptic(20);
           break;
         case 13:
           if (EXPIRED[a]) this.floatText(this.hud[HUD.gunnerX] ?? this.c.bridgeW / 2, this.c.lineY - 1_500, EXPIRED[a], 0xcbd5e1);

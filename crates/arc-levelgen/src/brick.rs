@@ -30,6 +30,9 @@ const CURVE_AT_100: f64 = 1.6;
 /// Levels 1-3 are a gentle introduction (design decision 2026-11-02).
 const INTRO_LEVELS: u16 = 3;
 const INTRO_BALLS: f64 = 40.0;
+/// Extra starting balls from level 5 on (decision 2026-11-03), layouts unchanged.
+const BONUS_BALLS_FROM: u16 = 5;
+const BONUS_BALLS: u16 = 10;
 const MAX_ATTEMPTS: u32 = 16;
 /// Balls added after every two layouts the bot could not finish.
 const BALLS_PER_RETRY: u16 = 8;
@@ -250,6 +253,18 @@ fn build_level(master: &str, level: u16) -> BbLevel {
             );
             continue;
         }
+        // The layout is chosen exactly as before; from level 5 the player then starts with
+        // extra balls, and the bot must still win with them.
+        let (script, run) = if level >= BONUS_BALLS_FROM {
+            let mut bonus = script;
+            bonus.start_balls = bonus.start_balls.saturating_add(BONUS_BALLS).min(MAX_BALLS);
+            match play_level(&bonus, BOT_AIMS) {
+                Ok(again) if again.won => (bonus, again),
+                _ => continue,
+            }
+        } else {
+            (script, run)
+        };
         let total_hp = script.total_hp();
         let difficulty = f64::from(run.turns)
             + 4.0 * f64::from(11u8.saturating_sub(run.closest))

@@ -5,7 +5,9 @@
 //! is quiet, and fires assists when the horde gets close. `slack` makes it react late
 //! (in ticks), like a less careful player.
 
-use super::{AssistKind, InputLog, Sim, Status, ZKind, BRIDGE_W, LANES, LINE_Y, OP_AIM, OP_USE};
+use super::{
+    AssistKind, InputLog, Sim, Status, ZKind, BRIDGE_W, LANES, LINE_Y, OP_AIM, OP_DEPLOY, OP_USE,
+};
 
 #[derive(Clone, Debug)]
 pub struct BotRun {
@@ -72,6 +74,13 @@ pub fn play(script: &super::Script, slack: u32) -> BotRun {
                     sim.set_aim(l);
                     log.push(&mut last, t, OP_AIM, l);
                 }
+            }
+            // Units go in when the horde gets close, gets big, or the boss is coming.
+            if sim.ready().is_some()
+                && (near(60) || boss.is_some() || sim.zombies().len() >= 12)
+                && sim.deploy().is_ok()
+            {
+                log.push(&mut last, t, OP_DEPLOY, 0);
             }
             // Assists when the horde is close, or the boss is on the bridge.
             let close = front.is_some_and(|z| z.y > LINE_Y * 80 / 100);

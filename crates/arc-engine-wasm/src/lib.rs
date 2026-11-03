@@ -6,6 +6,7 @@
 use arc_engine::brick_blast::{self as bb, Cell, Event};
 use arc_engine::dead_bridge as db;
 use arc_engine::metro_jam as mj;
+use arc_engine::traceout as to;
 use arc_engine::water_sort as ws;
 use sha2::{Digest, Sha256};
 use wasm_bindgen::prelude::*;
@@ -611,6 +612,77 @@ pub fn db_constants() -> String {
         "radius": [db::ZKind::Walker.stats().1, db::ZKind::Runner.stats().1, db::ZKind::Brute.stats().1, db::ZKind::Boss.stats().1],
     })
     .to_string()
+}
+
+// ------------------------------------------------------------------ TraceOut
+
+/// A TraceOut level in the browser; the server replays the same taps.
+#[wasm_bindgen]
+pub struct TraceOut {
+    game: to::Game,
+}
+
+#[wasm_bindgen]
+impl TraceOut {
+    #[wasm_bindgen(constructor)]
+    pub fn new(level_json: &str) -> Result<TraceOut, JsError> {
+        let level: to::Level = serde_json::from_str(level_json).map_err(js_err)?;
+        level.validate().map_err(js_err)?;
+        Ok(Self {
+            game: to::Game::new(&level).map_err(js_err)?,
+        })
+    }
+
+    /// Taps a line: -1 if it left, otherwise the line it bounced off (a droplet lost).
+    pub fn tap(&mut self, line: usize) -> Result<i32, JsError> {
+        match self.game.tap(line).map_err(js_err)? {
+            to::Outcome::Exited => Ok(-1),
+            to::Outcome::Blocked { by } => Ok(i32::try_from(by).unwrap_or(-1)),
+        }
+    }
+
+    /// Refills the droplets (the server checks it was paid for).
+    pub fn revive(&mut self) -> Result<(), JsError> {
+        self.game.revive().map_err(js_err)
+    }
+
+    /// The line in the way of `line`'s exit, or -1 if it can leave.
+    #[must_use]
+    pub fn blocker(&self, line: usize) -> i32 {
+        self.game
+            .blocker(line)
+            .map_or(-1, |b| i32::try_from(b).unwrap_or(-1))
+    }
+
+    #[must_use]
+    pub fn present(&self, line: usize) -> bool {
+        self.game.present(line)
+    }
+
+    #[must_use]
+    pub fn lives(&self) -> u8 {
+        self.game.lives()
+    }
+
+    #[must_use]
+    pub fn mistakes(&self) -> u16 {
+        self.game.mistakes()
+    }
+
+    #[must_use]
+    pub fn remaining(&self) -> usize {
+        self.game.remaining()
+    }
+
+    /// 0 playing, 1 won, 2 out of droplets.
+    #[must_use]
+    pub fn status(&self) -> u8 {
+        match self.game.status() {
+            to::Status::Playing => 0,
+            to::Status::Won => 1,
+            to::Status::Out => 2,
+        }
+    }
 }
 
 // ------------------------------------------------------------ Proof of work

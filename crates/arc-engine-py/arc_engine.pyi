@@ -66,3 +66,18 @@ class DbReplay:
 
 def db_validate(script_json: str) -> None: ...
 def db_replay(script_json: str, log: bytes) -> DbReplay: ...
+
+# TraceOut
+TO_MAX_MOVES: Final[int]
+TO_MAX_CONTINUES: Final[int]
+
+class ToReplay:
+    status: Literal["playing", "won", "out"]
+    stars: int
+    mistakes: int
+    continues: int
+    remaining: int
+    free: int | None
+
+def to_validate(level_json: str) -> None: ...
+def to_replay(level_json: str, moves: list[tuple[int, int]]) -> ToReplay: ...

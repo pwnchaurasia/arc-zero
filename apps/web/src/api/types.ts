@@ -1,4 +1,4 @@
-export type GameId = "water-sort" | "brick-blast" | "metro-jam" | "dead-bridge";
+export type GameId = "water-sort" | "brick-blast" | "metro-jam" | "dead-bridge" | "traceout";
 
 export interface GameProgress {
   unlocked_level: number;
@@ -217,6 +217,37 @@ export interface DbComplete extends LevelWin {
   base_hp: number;
   kills: number;
   seconds: number;
+  first_clear: boolean;
+  coins_earned: number;
+  streak_bonus: number;
+  coins: number;
+}
+
+export interface ToLevelData {
+  width: number;
+  height: number;
+  /** Each line's cells `[x, y]`, tail first; the arrow points out of the last cell. */
+  lines: { cells: [number, number][] }[];
+  /** The picture the lines form on silhouette levels. */
+  theme?: string;
+}
+
+/** `[op, line]`: op 0 tap, 1 continue (refill droplets, paid). */
+export type ToMove = [number, number];
+
+export interface ToStart {
+  attempt_id: string;
+  level: number;
+  data: ToLevelData;
+  prices: { continue: number; hint: number };
+  reward: number;
+  coins: number;
+}
+
+export interface ToComplete extends LevelWin {
+  level: number;
+  mistakes: number;
+  best_stars: number;
   first_clear: boolean;
   coins_earned: number;
   streak_bonus: number;

@@ -15,6 +15,9 @@ import type {
   MjComplete,
   MjMove,
   MjStart,
+  ToComplete,
+  ToMove,
+  ToStart,
   PowChallenge,
   WsComplete,
   WsHint,
@@ -192,6 +195,27 @@ export const api = {
       request<DbComplete>("POST", `${game("dead-bridge")}/levels/${level}/complete`, {
         attempt_id: attemptId,
         log,
+      }),
+  },
+
+  to: {
+    start: (level: number) => request<ToStart>("POST", `${game("traceout")}/levels/${level}/start`),
+    buyContinue: (level: number, attemptId: string, price: number) =>
+      request<MjBuy>("POST", `${game("traceout")}/levels/${level}/assists`, {
+        attempt_id: attemptId,
+        kind: "continue",
+        price,
+      }),
+    hint: (level: number, attemptId: string, moves: ToMove[], price: number) =>
+      request<{ line: number; coins: number; spent: number }>("POST", `${game("traceout")}/levels/${level}/hint`, {
+        attempt_id: attemptId,
+        moves,
+        price,
+      }),
+    complete: (level: number, attemptId: string, moves: ToMove[]) =>
+      request<ToComplete>("POST", `${game("traceout")}/levels/${level}/complete`, {
+        attempt_id: attemptId,
+        moves,
       }),
   },
 

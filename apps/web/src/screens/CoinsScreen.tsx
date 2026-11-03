@@ -10,6 +10,7 @@ const GAME_NAMES: Record<string, string> = {
   "brick-blast": "Brick Blast",
   "water-sort": "Water Sort",
   "dead-bridge": "Dead Bridge Assault",
+  traceout: "TraceOut",
 };
 
 const ASSIST_NAMES: Record<string, string> = {
@@ -25,6 +26,8 @@ const ASSIST_NAMES: Record<string, string> = {
   drones: "Drone swarm",
   lance: "Orbital lance",
   napalm: "Napalm",
+  continue: "Continue: refill 3 droplets",
+  hint: "Hint: show a line that can leave",
 };
 
 /** The coin rules, straight from the server so this page can't drift from what it enforces. */

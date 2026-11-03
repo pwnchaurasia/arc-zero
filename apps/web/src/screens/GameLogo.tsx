@@ -20,6 +20,7 @@ export function GameLogo({ game, image }: { game: GameId; image?: string }) {
       />
     );
   }
+  if (game === "traceout") return <TraceOutArt />;
   return game === "water-sort" ? <WaterSortArt /> : <BrickBlastArt />;
 }
 
@@ -28,6 +29,41 @@ const svgProps = {
   className: "aspect-square w-full",
   "aria-hidden": true,
 } as const;
+
+/** Brown lines with arrowheads on paper, one sliding out of the frame. */
+function TraceOutArt() {
+  const lines = [
+    "M22 70 V44 H40",
+    "M30 82 H62 V62",
+    "M52 28 V48 H74",
+    "M78 80 V58",
+    "M20 30 H34",
+  ];
+  const heads: [number, number, number][] = [
+    [40, 44, 0],
+    [62, 62, -90],
+    [74, 48, 0],
+    [78, 58, -90],
+    [34, 30, 0],
+  ];
+  return (
+    <svg {...svgProps}>
+      <rect width="100" height="100" fill="#0f1630" />
+      <rect x="10" y="12" width="80" height="80" rx="8" fill="#fcf8f2" />
+      {lines.map((d) => (
+        <path key={d} d={d} fill="none" stroke="#3d2616" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />
+      ))}
+      {heads.map(([x, y, r]) => (
+        <path key={`${x}-${y}`} d="M0 -4 L6 0 L0 4 Z" fill="#3d2616" transform={`translate(${x} ${y}) rotate(${r})`} />
+      ))}
+      {/* A line on its way out, past the paper's edge. */}
+      <path d="M70 22 H96" stroke="#3d2616" strokeWidth="4.5" strokeLinecap="round" opacity="0.55" />
+      <circle cx="16" cy="88" r="2.2" fill="#38bdf8" />
+      <circle cx="23" cy="88" r="2.2" fill="#38bdf8" />
+      <circle cx="30" cy="88" r="2.2" fill="#38bdf8" />
+    </svg>
+  );
+}
 
 /** Three glass bottles with coloured layers; blue is being poured into the last one. */
 function WaterSortArt() {

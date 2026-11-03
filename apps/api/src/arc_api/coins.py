@@ -33,6 +33,7 @@ PRICES: Final[dict[str, dict[str, int]]] = {
     "metro-jam": {"extra_bay": 60, "airlift": 80, "shuffle": 40},
     "brick-blast": {"bonus_balls": 60, "laser": 70, "hammer": 80},
     "water-sort": {"extra_bottle": 60},
+    "traceout": {"continue": 20, "hint": 30},
     "dead-bridge": {
         "airstrike": 60,
         "freeze": 50,

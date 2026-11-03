@@ -5,7 +5,7 @@
 //! file is server-only: it must never be committed or served to clients.
 //!
 //! Usage:
-//!   ARC_LEVEL_SEED=<secret> arc-levelgen --out-dir levels [--game all|water-sort|brick-blast|metro-jam|dead-bridge] [--levels 100]
+//!   ARC_LEVEL_SEED=<secret> arc-levelgen --out-dir levels [--game all|water-sort|brick-blast|metro-jam|dead-bridge|traceout] [--levels 100]
 //!
 //! Each game gets its own file (`levels/<game>.json`), so regenerating one game never
 //! touches the others.
@@ -13,6 +13,7 @@
 mod brick;
 mod bridge;
 mod metro;
+mod trace;
 mod water;
 
 use std::io::Write;
@@ -84,7 +85,7 @@ fn parse_args() -> Result<Args, String> {
             "-h" | "--help" => {
                 return Err(
                     "usage: ARC_LEVEL_SEED=<secret> arc-levelgen --out-dir <dir> \
-                            [--game all|water-sort|brick-blast|metro-jam|dead-bridge] [--levels 1..=100]"
+                            [--game all|water-sort|brick-blast|metro-jam|dead-bridge|traceout] [--levels 1..=100]"
                         .to_owned(),
                 )
             }
@@ -93,7 +94,7 @@ fn parse_args() -> Result<Args, String> {
     }
     if !matches!(
         game.as_str(),
-        "all" | "water-sort" | "brick-blast" | "metro-jam" | "dead-bridge"
+        "all" | "water-sort" | "brick-blast" | "metro-jam" | "dead-bridge" | "traceout"
     ) {
         return Err(format!("unknown game {game}"));
     }
@@ -165,6 +166,15 @@ fn main() -> ExitCode {
             started.elapsed()
         );
         result = result.and(write_game(&args.out_dir, "dead-bridge", &levels));
+    }
+    if wants("traceout") {
+        let levels = trace::generate(&master, args.levels);
+        eprintln!(
+            "traceout: {} levels ({:.1?})",
+            levels.len(),
+            started.elapsed()
+        );
+        result = result.and(write_game(&args.out_dir, "traceout", &levels));
     }
     if let Err(e) = result {
         eprintln!("{e}");

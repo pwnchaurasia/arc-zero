@@ -5,6 +5,7 @@
 use engine::brick_blast::{self as bb, bot};
 use engine::dead_bridge as db;
 use engine::metro_jam as mj;
+use engine::traceout as to;
 use engine::water_sort as ws;
 use pyo3::create_exception;
 use pyo3::exceptions::PyValueError;
@@ -315,6 +316,55 @@ fn db_replay(py: Python<'_>, script_json: String, log: Vec<u8>) -> PyResult<DbRe
     .map_err(|e: String| err(e))
 }
 
+// ------------------------------------------------------------------ TraceOut
+
+fn to_level(level_json: &str) -> Result<to::Level, String> {
+    let level: to::Level = serde_json::from_str(level_json).map_err(|e| e.to_string())?;
+    level.validate().map_err(|e| e.to_string())?;
+    Ok(level)
+}
+
+/// Validates a level (shape and solvability).
+#[pyfunction]
+fn to_validate(level_json: &str) -> PyResult<()> {
+    to_level(level_json).map(|_| ()).map_err(err)
+}
+
+/// Result of replaying a TraceOut move list.
+#[pyclass(frozen, get_all, module = "arc_engine")]
+struct ToReplay {
+    /// "playing", "won" or "out".
+    status: &'static str,
+    stars: u8,
+    mistakes: u16,
+    continues: u8,
+    remaining: usize,
+    /// A line that can leave now (for a hint), if any.
+    free: Option<usize>,
+}
+
+/// Replays `moves` (`(op, line)`: 0 tap, 1 continue). Raises `EngineError` on an illegal move.
+#[pyfunction]
+fn to_replay(py: Python<'_>, level_json: String, moves: Vec<(u8, u8)>) -> PyResult<ToReplay> {
+    py.allow_threads(move || {
+        let level = to_level(&level_json)?;
+        let game = to::replay(&level, &moves).map_err(|(i, e)| format!("move {i}: {e}"))?;
+        Ok(ToReplay {
+            status: match game.status() {
+                to::Status::Playing => "playing",
+                to::Status::Won => "won",
+                to::Status::Out => "out",
+            },
+            stars: game.stars(),
+            mistakes: game.mistakes(),
+            continues: game.continues(),
+            remaining: game.remaining(),
+            free: game.free_lines().first().copied(),
+        })
+    })
+    .map_err(|e: String| err(e))
+}
+
 #[pymodule]
 fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("EngineError", m.py().get_type::<EngineError>())?;
@@ -326,6 +376,11 @@ fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<TurnResult>()?;
     m.add_class::<MjReplay>()?;
     m.add_class::<DbReplay>()?;
+    m.add_class::<ToReplay>()?;
+    m.add_function(wrap_pyfunction!(to_validate, m)?)?;
+    m.add_function(wrap_pyfunction!(to_replay, m)?)?;
+    m.add("TO_MAX_MOVES", to::MAX_MOVES)?;
+    m.add("TO_MAX_CONTINUES", to::MAX_CONTINUES)?;
     m.add_function(wrap_pyfunction!(db_validate, m)?)?;
     m.add_function(wrap_pyfunction!(db_replay, m)?)?;
     m.add("DB_TPS", db::TPS)?;

@@ -91,6 +91,22 @@ def db_script() -> dict[str, Any]:
     }
 
 
+# Line 0 points up into line 1 (a bar across its path); tapping 1, 0, 2 wins.
+TO_WIN = [(0, 1), (0, 0), (0, 2)]
+
+
+def to_level() -> dict[str, Any]:
+    return {
+        "width": 5,
+        "height": 5,
+        "lines": [
+            {"cells": [[2, 4], [2, 3]]},
+            {"cells": [[1, 1], [2, 1], [3, 1]]},
+            {"cells": [[0, 4], [0, 3]]},
+        ],
+    }
+
+
 def make_levels(path: Path) -> None:
     ws = []
     for level in range(1, 6):
@@ -110,11 +126,13 @@ def make_levels(path: Path) -> None:
     mj = [{"level": level, "data": mj_level()} for level in range(1, 6)]
     path.mkdir(parents=True, exist_ok=True)
     db = [{"level": level, "script": db_script()} for level in range(1, 6)]
+    to = [{"level": level, "data": to_level()} for level in range(1, 6)]
     for game, levels in (
         ("water-sort", ws),
         ("brick-blast", bb),
         ("metro-jam", mj),
         ("dead-bridge", db),
+        ("traceout", to),
     ):
         (path / f"{game}.json").write_text(
             json.dumps({"version": 2, "game": game, "levels": levels})
@@ -141,6 +159,7 @@ def settings(tmp_path_factory: pytest.TempPathFactory) -> Settings:
         bb_min_ms_between_turns=0,
         mj_min_ms_per_move=0,
         db_min_real_time_pct=0,
+        to_min_ms_per_move=0,
     )
 
 

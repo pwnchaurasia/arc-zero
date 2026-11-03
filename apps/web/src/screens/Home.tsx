@@ -35,6 +35,11 @@ export const GAMES: { id: GameId; name: string; tagline: string; image?: string 
     tagline: "Hold the bridge. Break the cages. Survive the horde.",
     image: "/games/dead-bridge.webp",
   },
+  {
+    id: "traceout",
+    name: "TraceOut",
+    tagline: "Tap a line to send it out. Mind what's in the way.",
+  },
 ];
 
 export function Home({

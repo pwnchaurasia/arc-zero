@@ -3,6 +3,25 @@
 All notable changes to Arc Zero. Releases are deployed from `release/YY.MM.XX` branches;
 the newest is at the top.
 
+## Unreleased
+
+### New game: TraceOut
+- Tap a line to send it off the board along its arrow. If another line is in the way it
+  bounces back and you lose one of your 3 droplets. Clear every line to win.
+- 100 levels. Levels 1–3 are a warm-up; then the board, the number of lines (up to 50)
+  and the "clear this one first" chains grow steadily. Every 5th level forms a picture
+  (heart, diamond, circle, hourglass, cross, ring).
+- Stars: 3 with no mistakes ("Flawless!"), 2 with one, 1 otherwise.
+- Out of droplets: restart for free, or **Continue** (20 coins) to refill them and keep
+  the board. **Hint** (30 coins) shows a line that can leave now. Both ask first.
+- Coins: the usual first-clear rewards; the server replays every tap to check the win.
+- Tap anywhere on a line (not just the arrow). Keyboard and screen readers get one
+  button per line.
+
+### For developers
+- `levels/traceout.json` is a new level file: the release workflow, `activate.sh` and both
+  compose files ship it.
+
 ## Unreleased (planned as 26.11.01)
 
 ### New game: MetroJam

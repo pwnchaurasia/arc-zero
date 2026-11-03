@@ -48,3 +48,11 @@ export function mjConstants(): MjConstants {
   mj ??= JSON.parse(engine.mjConstants()) as MjConstants;
   return mj;
 }
+
+let db: import("../games/dead-bridge/DeadBridgeView").DbConstants | null = null;
+
+/** Dead Bridge geometry and timing, straight from the engine. */
+export function dbConstants(): import("../games/dead-bridge/DeadBridgeView").DbConstants {
+  db ??= JSON.parse(engine.dbConstants()) as import("../games/dead-bridge/DeadBridgeView").DbConstants;
+  return db;
+}

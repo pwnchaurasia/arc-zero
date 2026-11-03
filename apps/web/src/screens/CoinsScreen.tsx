@@ -9,6 +9,7 @@ const GAME_NAMES: Record<string, string> = {
   "metro-jam": "MetroJam",
   "brick-blast": "Brick Blast",
   "water-sort": "Water Sort",
+  "dead-bridge": "Dead Bridge Assault",
 };
 
 const ASSIST_NAMES: Record<string, string> = {
@@ -19,6 +20,11 @@ const ASSIST_NAMES: Record<string, string> = {
   laser: "Laser: clear a column",
   hammer: "Hammer: clear the lowest row",
   extra_bottle: "Extra empty bottle",
+  airstrike: "Airstrike",
+  freeze: "Freeze",
+  drones: "Drone swarm",
+  lance: "Orbital lance",
+  napalm: "Napalm",
 };
 
 /** The coin rules, straight from the server so this page can't drift from what it enforces. */

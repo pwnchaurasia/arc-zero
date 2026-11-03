@@ -14,8 +14,8 @@ from typing import Any, Final, Literal
 
 import arc_engine
 
-GameId = Literal["water-sort", "brick-blast", "metro-jam"]
-GAME_IDS: Final[tuple[GameId, ...]] = ("water-sort", "brick-blast", "metro-jam")
+GameId = Literal["water-sort", "brick-blast", "metro-jam", "dead-bridge"]
+GAME_IDS: Final[tuple[GameId, ...]] = ("water-sort", "brick-blast", "metro-jam", "dead-bridge")
 SUPPORTED_VERSION = 2
 
 
@@ -65,17 +65,27 @@ class MjLevel:
 
 
 @dataclass(frozen=True, slots=True)
+class DbLevel:
+    level: int
+    # The whole script is public: the browser simulates what the server replays.
+    script_json: str
+
+
+@dataclass(frozen=True, slots=True)
 class Levels:
     water_sort: dict[int, WsLevel]
     brick_blast: dict[int, BbLevel]
     metro_jam: dict[int, MjLevel]
+    dead_bridge: dict[int, DbLevel]
 
     def count(self, game: GameId) -> int:
         if game == "water-sort":
             return len(self.water_sort)
         if game == "brick-blast":
             return len(self.brick_blast)
-        return len(self.metro_jam)
+        if game == "metro-jam":
+            return len(self.metro_jam)
+        return len(self.dead_bridge)
 
 
 def _contiguous(levels: dict[int, Any], name: str) -> None:
@@ -127,7 +137,14 @@ def load(directory: Path) -> Levels:
             queue_len=int(item["data"]["queue_len"]),
         )
 
+    db: dict[int, DbLevel] = {}
+    for item in _read_game(directory, "dead-bridge"):
+        script_json = json.dumps(item["script"], separators=(",", ":"))
+        arc_engine.db_validate(script_json)
+        db[int(item["level"])] = DbLevel(level=int(item["level"]), script_json=script_json)
+
     _contiguous(ws, "water_sort")
     _contiguous(bb, "brick_blast")
     _contiguous(mj, "metro_jam")
-    return Levels(water_sort=ws, brick_blast=bb, metro_jam=mj)
+    _contiguous(db, "dead_bridge")
+    return Levels(water_sort=ws, brick_blast=bb, metro_jam=mj, dead_bridge=db)

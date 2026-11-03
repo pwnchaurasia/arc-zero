@@ -29,6 +29,12 @@ export const GAMES: { id: GameId; name: string; tagline: string; image?: string 
     tagline: "Clear the jam. Fill every car. Don't block the bays.",
     image: "/games/metro-jam.webp",
   },
+  {
+    id: "dead-bridge",
+    name: "Dead Bridge Assault",
+    tagline: "Hold the bridge. Break the cages. Survive the horde.",
+    image: "/games/dead-bridge.webp",
+  },
 ];
 
 export function Home({

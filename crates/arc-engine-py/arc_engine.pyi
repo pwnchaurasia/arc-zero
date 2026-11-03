@@ -51,3 +51,18 @@ class MjReplay:
 def mj_validate(level_json: str) -> None: ...
 def mj_public(level_json: str) -> str: ...
 def mj_replay(level_json: str, moves: list[tuple[int, int]]) -> MjReplay: ...
+
+# Dead Bridge Assault
+DB_TPS: Final[int]
+DB_MAX_LOG_BYTES: Final[int]
+
+class DbReplay:
+    status: Literal["won", "lost"]
+    stars: int
+    base_hp: int
+    ticks: int
+    kills: int
+    bought: list[int]
+
+def db_validate(script_json: str) -> None: ...
+def db_replay(script_json: str, log: bytes) -> DbReplay: ...

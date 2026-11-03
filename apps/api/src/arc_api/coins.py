@@ -33,6 +33,15 @@ PRICES: Final[dict[str, dict[str, int]]] = {
     "metro-jam": {"extra_bay": 60, "airlift": 80, "shuffle": 40},
     "brick-blast": {"bonus_balls": 60, "laser": 70, "hammer": 80},
     "water-sort": {"extra_bottle": 60},
+    "dead-bridge": {
+        "airstrike": 60,
+        "freeze": 50,
+        "drones": 70,
+        "lance": 60,
+        "napalm": 50,
+        "barrage": 80,
+        "nuke": 150,
+    },
 }
 # A hint after the free daily ones (Water Sort, Brick Blast).
 HINT_PRICE: Final = 20

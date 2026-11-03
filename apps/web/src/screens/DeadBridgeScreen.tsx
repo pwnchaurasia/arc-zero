@@ -4,7 +4,7 @@ import { ApiError, api } from "../api/client";
 import type { DbAssist, DbComplete, DbStart } from "../api/types";
 import { dbConstants, engine, loadEngine } from "../engine/wasm";
 import { haptic, sfx } from "../feel/audio";
-import { ASSISTS, DeadBridgeView } from "../games/dead-bridge/DeadBridgeView";
+import { ASSISTS, DeadBridgeView, GUNS, HUD } from "../games/dead-bridge/DeadBridgeView";
 import { useSession } from "../state/session";
 import { CoinChip } from "../ui/CoinChip";
 import { Button, IconButton, TopBar } from "../ui/kit";
@@ -19,6 +19,8 @@ const OP_AIM = 0;
 const OP_USE = 1;
 const OP_BUY = 2;
 const OP_WAIT = 3;
+/** Aim changes are recorded at most this often (ticks), so a long level's log stays small. */
+const AIM_EVERY = 2;
 
 interface Hud {
   wave: number;
@@ -29,6 +31,9 @@ interface Hud {
   maxHp: number;
   kills: number;
   charges: number[];
+  gun: number;
+  /** Ticks left: gun, left turret, right turret, tank, mech, barricade. */
+  timers: number[];
 }
 
 /** Records the player's inputs exactly as the server will replay them. */
@@ -56,14 +61,16 @@ class InputRecorder {
 function readHud(sim: Sim): Hud {
   const h = sim.hud();
   return {
-    hp: h[5] ?? 0,
-    maxHp: h[6] ?? 1,
-    wave: h[7] ?? 1,
-    waves: h[8] ?? 3,
-    spawned: h[9] ?? 0,
-    spawns: h[10] ?? 1,
-    kills: h[11] ?? 0,
+    hp: h[HUD.hp] ?? 0,
+    maxHp: h[HUD.maxHp] ?? 1,
+    wave: h[HUD.wave] ?? 1,
+    waves: h[HUD.waves] ?? 3,
+    spawned: h[HUD.spawned] ?? 0,
+    spawns: h[HUD.spawns] ?? 1,
+    kills: h[HUD.kills] ?? 0,
     charges: Array.from(sim.charges()),
+    gun: h[HUD.gun] ?? 0,
+    timers: Array.from(h.slice(HUD.timers, HUD.timers + 6)),
   };
 }
 
@@ -87,6 +94,7 @@ export function DeadBridgeScreen({
     rec: InputRecorder;
     lane: number;
     recordedLane: number;
+    aimAt: number;
     pendingUse: number[];
     over: boolean;
     spent: number;
@@ -150,10 +158,11 @@ export function DeadBridgeScreen({
       const g = game.current;
       if (!g || g.over) return;
       const at = g.sim.tick();
-      if (g.lane !== g.recordedLane) {
+      if (g.lane !== g.recordedLane && at - g.aimAt >= AIM_EVERY) {
         g.sim.setAim(g.lane);
         g.rec.push(at, OP_AIM, g.lane);
         g.recordedLane = g.lane;
+        g.aimAt = at;
       }
       for (const k of g.pendingUse.splice(0)) {
         if (g.sim.useAssist(k)) g.rec.push(at, OP_USE, k);
@@ -175,6 +184,7 @@ export function DeadBridgeScreen({
         rec: new InputRecorder(),
         lane: 128,
         recordedLane: 128,
+        aimAt: -AIM_EVERY,
         pendingUse: [],
         over: false,
         spent: 0,
@@ -259,14 +269,14 @@ export function DeadBridgeScreen({
     }
   };
 
-  // Laptop controls: arrows / A-D steer, 1-5 fire assists, P pauses.
+  // Laptop controls: arrows / A-D steer, 1-7 fire assists, P pauses.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const g = game.current;
       if (!g) return;
       if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") g.lane = Math.max(0, g.lane - 14);
       else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") g.lane = Math.min(255, g.lane + 14);
-      else if (e.key >= "1" && e.key <= "5") fireAssist(Number(e.key) - 1);
+      else if (e.key >= "1" && e.key <= String(ASSISTS.length)) fireAssist(Number(e.key) - 1);
       else if (e.key === "p" || e.key === "P" || e.key === "Escape") setPaused((v) => !v);
       else return;
       e.preventDefault();
@@ -336,6 +346,19 @@ export function DeadBridgeScreen({
           </div>
         </div>
       </div>
+      {/* Upgrades from cages, each with the time it has left. */}
+      <div className="flex min-h-6 flex-wrap justify-center gap-1.5 px-3 pb-1.5">
+        {hud &&
+          upgrades(hud).map((u) => (
+            <span key={u.key} className="relative overflow-hidden rounded-full bg-black/45 px-2.5 py-0.5 text-[10px] font-black ring-1 ring-white/15">
+              <span
+                className="absolute inset-y-0 left-0 opacity-35"
+                style={{ width: `${u.left * 100}%`, background: `#${u.color.toString(16).padStart(6, "0")}` }}
+              />
+              <span className="relative">{u.label}</span>
+            </span>
+          ))}
+      </div>
       <div className="relative min-h-0 flex-1 touch-none">
         <div ref={host} className="game-surface absolute inset-0" />
         {intro && info && (
@@ -344,8 +367,8 @@ export function DeadBridgeScreen({
               <h2 className="text-2xl font-black">Hold the bridge!</h2>
               <ul className="my-4 grid gap-2 text-left text-sm text-muted">
                 <li>👆 Drag (or move the mouse) to steer your gunner. Firing is automatic.</li>
-                <li>🟨 Shoot the gold cages for turrets, a tank and a bigger gun.</li>
-                <li>📦 Break the glowing crates for assists, then tap them below.</li>
+                <li>🟨 Shoot the gold cages for new guns, turrets, a tank or a mech. They last about 25 seconds.</li>
+                <li>📦 Break the glowing crates for assists before they fade, then tap them below.</li>
                 <li>🧟 Don't let the horde reach the sandbags.</li>
               </ul>
               <Button className="w-full" onClick={() => setIntro(false)}>
@@ -360,7 +383,7 @@ export function DeadBridgeScreen({
           </div>
         )}
       </div>
-      <div className="flex justify-center gap-2 px-2 pb-[max(env(safe-area-inset-bottom),10px)] pt-2">
+      <div className="flex justify-center gap-1 px-1.5 pb-[max(env(safe-area-inset-bottom),10px)] pt-2 sm:gap-2">
         {ASSISTS.map((a, k) => {
           const charges = hud?.charges[k] ?? 0;
           return (
@@ -369,7 +392,7 @@ export function DeadBridgeScreen({
               type="button"
               disabled={!info || !!result || lost}
               onClick={() => fireAssist(k)}
-              className={`relative flex min-h-14 w-[19%] max-w-24 flex-col items-center justify-center rounded-2xl border px-1 py-1 text-[10px] font-bold transition active:scale-95 disabled:opacity-40 ${
+              className={`relative flex min-h-14 min-w-0 max-w-24 flex-1 flex-col items-center justify-center rounded-2xl border px-0.5 py-1 text-[9px] font-bold transition active:scale-95 disabled:opacity-40 sm:text-[10px] ${
                 charges > 0 ? "border-amber-300/60 bg-amber-400/15" : "border-line bg-panel-2"
               }`}
               style={charges > 0 ? { boxShadow: `0 0 14px #${a.color.toString(16)}55` } : undefined}
@@ -377,7 +400,7 @@ export function DeadBridgeScreen({
               <span className="text-lg leading-none" style={{ color: `#${a.color.toString(16)}` }}>
                 {a.glyph}
               </span>
-              <span>{a.name}</span>
+              <span className="max-w-full truncate">{a.name}</span>
               <span className={charges > 0 ? "text-amber-200" : "text-gold"}>
                 {charges > 0 ? `×${charges}` : `${info?.prices[a.key as DbAssist] ?? "…"}c`}
               </span>
@@ -412,4 +435,24 @@ const ASSIST_WHAT = [
   "Three drones zap the toughest zombies for 5 seconds.",
   "A beam from orbit down your gunner's lane.",
   "A burning carpet across the lower bridge for 4 seconds.",
+  "Twelve rockets on the toughest zombies.",
+  "Hits everything on the bridge at once.",
 ];
+
+const UNIT_NAMES = ["", "Left turret", "Right turret", "Tank", "Mech", "Barricade"];
+const UNIT_COLORS = [0, 0x84cc16, 0x84cc16, 0x65a30d, 0x38bdf8, 0x60a5fa];
+
+/** Active cage upgrades, with the share of their time left. */
+function upgrades(hud: Hud): { key: number; label: string; color: number; left: number }[] {
+  const { timerTicks: full, tps } = dbConstants();
+  const out = [];
+  for (let k = 0; k < hud.timers.length; k++) {
+    const t = hud.timers[k] ?? 0;
+    if (t <= 0) continue;
+    const gun = GUNS[hud.gun];
+    const label = k === 0 ? (gun?.name ?? "Gun") : (UNIT_NAMES[k] ?? "");
+    const color = k === 0 ? (gun?.color ?? 0xffffff) : (UNIT_COLORS[k] ?? 0xffffff);
+    out.push({ key: k, label: `${label} ${Math.ceil(t / tps)}s`, color, left: t / (full[k] ?? t) });
+  }
+  return out;
+}

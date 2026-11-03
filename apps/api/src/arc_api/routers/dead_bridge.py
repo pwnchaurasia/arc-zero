@@ -30,13 +30,13 @@ from arc_api.state import AppState, DbDep, StateDep
 GAME: GameId = "dead-bridge"
 router = APIRouter(prefix="/games/dead-bridge", tags=["dead-bridge"])
 
-# Engine order: AssistKind codes 0-4.
-ASSISTS: tuple[str, ...] = ("airstrike", "freeze", "drones", "lance", "napalm")
+# Engine order: AssistKind codes 0-6.
+ASSISTS: tuple[str, ...] = ("airstrike", "freeze", "drones", "lance", "napalm", "barrage", "nuke")
 MAX_BOUGHT_EACH = 3
 
 LevelPath = Annotated[int, Path(ge=1, le=10_000)]
 AttemptId = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{16,64}$")]
-AssistName = Literal["airstrike", "freeze", "drones", "lance", "napalm"]
+AssistName = Literal["airstrike", "freeze", "drones", "lance", "napalm", "barrage", "nuke"]
 
 
 class StartOut(StrictModel):

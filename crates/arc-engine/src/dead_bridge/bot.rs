@@ -49,8 +49,15 @@ pub fn play(script: &super::Script, slack: u32) -> BotRun {
                 .filter(|c| c.y > 1_500)
                 .max_by_key(|c| c.y)
                 .map(|c| c.x);
+            let boss = sim
+                .zombies()
+                .iter()
+                .find(|z| z.kind == ZKind::Boss && z.y > LINE_Y * 45 / 100)
+                .map(|z| z.x);
             let target = if near(72) {
                 front.map(|z| z.x)
+            } else if boss.is_some() {
+                boss
             } else if let Some(c) = sim.cages().iter().find(|c| c.y > 1_500) {
                 Some(c.x)
             } else if near(55) {
@@ -71,7 +78,9 @@ pub fn play(script: &super::Script, slack: u32) -> BotRun {
             let boss = sim.zombies().iter().any(|z| z.kind == ZKind::Boss);
             if close || boss {
                 let order = [
+                    AssistKind::Nuke,
                     AssistKind::Lance,
+                    AssistKind::Barrage,
                     AssistKind::Airstrike,
                     AssistKind::Freeze,
                     AssistKind::Napalm,
@@ -126,7 +135,7 @@ mod tests {
                 x: 8_500,
                 stop_y: 5_000,
                 hp: 120,
-                reward: Reward::Weapon,
+                reward: Reward::Gun(super::super::Gun::Minigun),
             }],
             crates: vec![],
         };

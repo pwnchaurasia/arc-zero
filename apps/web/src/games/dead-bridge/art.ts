@@ -92,8 +92,8 @@ export function clearArtCache(): void {
   cache.clear();
 }
 
-/** The soldier with a minigun, seen from behind, drawn around (0, 0) = feet. */
-export function drawGunner(g: Graphics, firing: boolean): void {
+/** The soldier, seen from behind, drawn around (0, 0) = feet; `muzzle` is the flash colour. */
+export function drawGunner(g: Graphics, firing: boolean, muzzle = 0xffd166): void {
   g.clear();
   g.ellipse(0, 0, 26, 8).fill({ color: 0x000000, alpha: 0.4 });
   g.roundRect(-14, -30, 11, 30, 4).fill(0x3d4a2a);
@@ -108,8 +108,8 @@ export function drawGunner(g: Graphics, firing: boolean): void {
   for (const dx of [10, 14, 18, 22]) g.rect(dx, -112, 2.5, 20).fill(0x50565f);
   g.roundRect(20, -66, 10, 16, 4).fill(0xd8b48c); // hand
   if (firing) {
-    g.circle(16, -116, 10).fill({ color: 0xffd166, alpha: 0.9 });
-    g.circle(16, -118, 18).fill({ color: 0xff8c42, alpha: 0.35 });
+    g.circle(16, -116, 10).fill({ color: muzzle, alpha: 0.9 });
+    g.circle(16, -118, 18).fill({ color: muzzle, alpha: 0.35 });
   }
 }
 
@@ -171,4 +171,23 @@ export function drawCrate(g: Graphics, size: number, color: number): void {
   g.roundRect(-size / 2, -size / 2, size, size, size * 0.14).stroke({ width: Math.max(2, size * 0.08), color: 0x5e3b19 });
   g.moveTo(-size / 2, -size / 2).lineTo(size / 2, size / 2).stroke({ width: Math.max(1.5, size * 0.06), color: 0x5e3b19 });
   g.circle(0, 0, size * 0.28).fill(color);
+}
+
+/** The combat mech: two legs, a cockpit and twin cannons, seen from behind. */
+export function drawMech(g: Graphics, firing: boolean): void {
+  g.clear();
+  g.ellipse(0, 0, 40, 11).fill({ color: 0x000000, alpha: 0.4 });
+  for (const s of [-1, 1]) {
+    g.roundRect(s * 22 - 8, -46, 16, 46, 5).fill(0x3f4a5a);
+    g.roundRect(s * 22 - 11, -6, 22, 8, 3).fill(0x2a313c);
+  }
+  g.roundRect(-34, -92, 68, 50, 14).fill(0x64748b);
+  g.roundRect(-26, -86, 52, 12, 5).fill({ color: 0xffffff, alpha: 0.12 });
+  g.roundRect(-14, -104, 28, 18, 6).fill(0x475569);
+  g.roundRect(-8, -100, 16, 6, 3).fill(0x38bdf8);
+  for (const s of [-1, 1]) {
+    g.roundRect(s * 40 - 7, -112, 14, 44, 5).fill(0x334155);
+    g.rect(s * 40 - 3, -128, 6, 18).fill(0x1e293b);
+    if (firing) g.circle(s * 40, -132, 8).fill({ color: 0x7dd3fc, alpha: 0.85 });
+  }
 }

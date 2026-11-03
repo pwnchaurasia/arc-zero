@@ -290,7 +290,7 @@ struct DbReplay {
     ticks: u32,
     kills: u32,
     /// Assist charges bought with coins, per kind (must have been paid for).
-    bought: [u8; 5],
+    bought: [u8; 7],
 }
 
 /// Replays a whole level from its input log. Raises `EngineError` on a bad log or input.

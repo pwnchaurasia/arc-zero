@@ -9,6 +9,7 @@ import {
   drawCage,
   drawCrate,
   drawGunner,
+  drawMech,
   drawTank,
   drawTurret,
   zombieTexture,
@@ -22,23 +23,68 @@ export interface DbConstants {
   gunnerY: number;
   lanes: number;
   maxCharges: number;
+  maxLogBytes: number;
+  /** Full length of each upgrade timer in `hud()` (gun, turrets, tank, mech, barricade). */
+  timerTicks: number[];
+  crateTicks: number;
   radius: number[];
 }
 
-/** The five assists, in engine order. */
+/** The seven assists, in engine order. */
 export const ASSISTS = [
   { key: "airstrike", name: "Airstrike", glyph: "✈", color: 0xf97316 },
   { key: "freeze", name: "Freeze", glyph: "❄", color: 0x38bdf8 },
   { key: "drones", name: "Drones", glyph: "✦", color: 0xa78bfa },
   { key: "lance", name: "Lance", glyph: "⚡", color: 0xfacc15 },
   { key: "napalm", name: "Napalm", glyph: "♨", color: 0xef4444 },
+  { key: "barrage", name: "Barrage", glyph: "➶", color: 0xfb7185 },
+  { key: "nuke", name: "Nuke", glyph: "☢", color: 0xa3e635 },
 ] as const;
 
-const REWARD_NAME: Record<number, string> = { 0: "TURRET", 1: "TURRET", 2: "TANK", 3: "GUN +", 4: "REPAIR" };
+/** The gunner's weapons, in engine order (the rifle is the default). */
+export const GUNS = [
+  { name: "Rifle", color: 0xffd166 },
+  { name: "Shotgun", color: 0xffb703 },
+  { name: "Minigun", color: 0xffe066 },
+  { name: "Flamethrower", color: 0xff7a1a },
+  { name: "Rockets", color: 0xff4d4d },
+  { name: "Laser", color: 0x22d3ee },
+] as const;
 
+const REWARD_NAME: Record<number, string> = { 0: "TURRET", 1: "TURRET", 2: "TANK", 3: "MECH", 4: "REPAIR", 5: "BARRICADE" };
+
+/** Cage reward codes: 0-5 units and instants, 10+k assist k, 20+g gun g. */
 export function rewardName(code: number): string {
+  if (code >= 20) return GUNS[code - 20]?.name.toUpperCase() ?? "?";
   return REWARD_NAME[code] ?? (ASSISTS[code - 10]?.name.toUpperCase() ?? "?");
 }
+
+/** Positions in the WASM `hud()` array. */
+export const HUD = {
+  gunnerX: 0,
+  gun: 1,
+  hp: 2,
+  maxHp: 3,
+  wave: 4,
+  waves: 5,
+  spawned: 6,
+  spawns: 7,
+  kills: 8,
+  frozen: 9,
+  drones: 10,
+  napalm: 11,
+  mechX: 12,
+  /** Ticks left: gun, left turret, right turret, tank, mech, barricade. */
+  timers: 13,
+} as const;
+
+const EXPIRED: Record<number, string> = {
+  0: "Turret out of ammo",
+  2: "Tank out of fuel",
+  3: "Mech offline",
+  4: "Back to the rifle",
+  6: "Barricade down",
+};
 
 /** What the view reads each frame (the WASM `DeadBridge`). */
 export interface SimView {
@@ -84,10 +130,12 @@ export class DeadBridgeView {
   private readonly gunner = new Graphics();
   private readonly turrets = [new Graphics(), new Graphics()];
   private readonly tank = new Graphics();
+  private readonly mech = new Graphics();
+  private readonly barricade = new Graphics();
   private readonly drones: Graphics[] = [];
   private zombies = new Map<number, { s: Sprite; hp: number; flash: number }>();
   private cages = new Map<number, { c: Container; g: Graphics; hp: Text; label: Text; last: number }>();
-  private crates: { c: Container; g: Graphics; glyph: Text; kind: number }[] = [];
+  private crates: { c: Container; g: Graphics; glyph: Text }[] = [];
   private layout: Layout = { W: 0, H: 0, top: 0, bottom: 0, nearW: 0 };
   private acc = 0;
   private clock = 0;
@@ -95,7 +143,7 @@ export class DeadBridgeView {
   private paused = false;
   private pointerDown = false;
   private lastAnnounce = 0;
-  private hud: Int32Array = new Int32Array(15);
+  private hud: Int32Array = new Int32Array(19);
   private destroyed = false;
   private readonly still = prefersReducedMotion();
 
@@ -112,7 +160,7 @@ export class DeadBridgeView {
       this.drones.push(d);
     }
     app.stage.addChild(this.backdrop, this.decals, this.world, this.bulletsG, this.bars, this.fx, this.overlay, ...this.drones);
-    this.world.addChild(this.gunner, this.tank, ...this.turrets);
+    this.world.addChild(this.gunner, this.tank, this.mech, this.barricade, ...this.turrets);
     app.stage.eventMode = "static";
     app.stage.on("pointerdown", this.onPointer);
     app.stage.on("pointermove", this.onPointer);
@@ -320,7 +368,7 @@ export class DeadBridgeView {
   private renderZombies(): void {
     const z = this.sim.zombies();
     const seen = new Set<number>();
-    const frozen = (this.hud[12] ?? 0) === 1;
+    const frozen = (this.hud[HUD.frozen] ?? 0) === 1;
     this.bars.clear();
     for (let i = 0; i + 5 < z.length; i += 6) {
       const id = z[i] ?? 0;
@@ -377,18 +425,48 @@ export class DeadBridgeView {
     for (let i = 0; i + 2 < b.length; i += 3) {
       const x = b[i] ?? 0;
       const y = b[i + 1] ?? 0;
-      const by = b[i + 2] ?? 0;
+      const kind = b[i + 2] ?? 0;
       const px = this.sx(x, y);
       const py = this.sy(y);
       const s = this.scale(y);
-      if (by === 2) {
-        g.circle(px, py, 7 * s).fill({ color: 0xff9f43, alpha: 0.35 });
-        g.circle(px, py, 3.5 * s).fill(0xfff4d6);
-      } else {
-        const tail = this.sy(y + 900);
-        const tx = this.sx(x, y + 900);
-        g.moveTo(px, py).lineTo(tx, tail).stroke({ width: 3 * s, color: by === 1 ? 0xffa94d : 0xffe066, alpha: 0.9, cap: "round" });
-        g.circle(px, py, 2.4 * s).fill(0xfffbe6);
+      switch (kind) {
+        case 2: // tank shell
+          g.circle(px, py, 7 * s).fill({ color: 0xff9f43, alpha: 0.35 });
+          g.circle(px, py, 3.5 * s).fill(0xfff4d6);
+          break;
+        case 3: // shotgun pellet
+          g.circle(px, py, 2.6 * s).fill(0xffd27a);
+          break;
+        case 5: {
+          // flame: flickering blobs that grow as they travel
+          const f = this.still ? 1 : 0.75 + 0.25 * Math.sin(this.clock * 40 + x);
+          g.circle(px, py, 9 * s * f).fill({ color: 0xff6b1a, alpha: 0.45 });
+          g.circle(px, py, 4.5 * s * f).fill({ color: 0xffd166, alpha: 0.8 });
+          break;
+        }
+        case 6: {
+          // rocket: a body and a smoke trail
+          const tail = this.sy(y + 1_400);
+          const tx = this.sx(x, y + 1_400);
+          g.moveTo(px, py).lineTo(tx, tail).stroke({ width: 5 * s, color: 0xcbd5e1, alpha: 0.35, cap: "round" });
+          g.circle(px, py, 4.5 * s).fill(0xff4d4d);
+          g.circle(px, py + 4 * s, 3 * s).fill(0xffd166);
+          break;
+        }
+        case 7: {
+          // mech: heavy blue tracers
+          const tail = this.sy(y + 900);
+          const tx = this.sx(x, y + 900);
+          g.moveTo(px, py).lineTo(tx, tail).stroke({ width: 4 * s, color: 0x7dd3fc, alpha: 0.9, cap: "round" });
+          break;
+        }
+        default: {
+          // rifle, minigun, turret
+          const tail = this.sy(y + 900);
+          const tx = this.sx(x, y + 900);
+          g.moveTo(px, py).lineTo(tx, tail).stroke({ width: (kind === 4 ? 2.4 : 3) * s, color: kind === 1 ? 0xffa94d : 0xffe066, alpha: 0.9, cap: "round" });
+          g.circle(px, py, 2.4 * s).fill(0xfffbe6);
+        }
       }
     }
   }
@@ -439,7 +517,7 @@ export class DeadBridgeView {
 
   private renderCrates(): void {
     const c = this.sim.crates();
-    const n = c.length / 4;
+    const n = c.length / 5;
     while (this.crates.length < n) {
       const cont = new Container();
       const g = new Graphics();
@@ -447,16 +525,17 @@ export class DeadBridgeView {
       glyph.anchor.set(0.5);
       cont.addChild(g, glyph);
       this.world.addChild(cont);
-      this.crates.push({ c: cont, g, glyph, kind: -1 });
+      this.crates.push({ c: cont, g, glyph });
     }
     this.crates.forEach((e, i) => {
       if (i >= n) {
         e.c.visible = false;
         return;
       }
-      const x = c[i * 4] ?? 0;
-      const y = c[i * 4 + 1] ?? 0;
-      const kind = c[i * 4 + 3] ?? 0;
+      const x = c[i * 5] ?? 0;
+      const y = c[i * 5 + 1] ?? 0;
+      const kind = c[i * 5 + 3] ?? 0;
+      const left = c[i * 5 + 4] ?? 0;
       const a = ASSISTS[kind] ?? ASSISTS[0];
       const size = 650 * this.unit(y);
       drawCrate(e.g, size, a.color);
@@ -466,15 +545,21 @@ export class DeadBridgeView {
       e.c.position.set(this.sx(x, y), this.sy(y));
       e.c.zIndex = y;
       e.c.rotation = this.still ? 0 : Math.sin(this.clock * 3 + i) * 0.08;
+      // Crates fade out: they blink for their last two seconds.
+      const blink = left < 2 * this.c.tps && Math.floor(this.clock * 8) % 2 === 0;
+      e.c.alpha = blink ? 0.35 : Math.min(1, 0.45 + left / this.c.crateTicks);
     });
   }
 
   private renderUnits(): void {
     const hud = this.hud;
-    const gx = hud[0] ?? this.c.bridgeW / 2;
+    const gx = hud[HUD.gunnerX] ?? this.c.bridgeW / 2;
+    const left = (k: number) => hud[HUD.timers + k] ?? 0;
+    // Units blink for their last three seconds, so their end is no surprise.
+    const fading = (ticks: number) => (ticks < 3 * this.c.tps && Math.floor(this.clock * 6) % 2 === 0 ? 0.4 : 1);
     const gy = this.c.gunnerY;
     const firing = !this.paused && Math.floor(this.clock * 30) % 2 === 0;
-    drawGunner(this.gunner, firing);
+    drawGunner(this.gunner, firing, GUNS[hud[HUD.gun] ?? 0]?.color);
     this.gunner.position.set(this.sx(gx, gy), this.sy(gy));
     // The drawings are about 120 px tall; the soldier stands ~1,850 world units tall.
     this.gunner.scale.set((1_850 * this.unit(gy)) / 120);
@@ -496,28 +581,55 @@ export class DeadBridgeView {
     TURRET_X.forEach((x, side) => {
       const t = this.turrets[side];
       if (!t) return;
-      t.visible = (hud[2 + side] ?? 0) === 1;
+      t.visible = left(1 + side) > 0;
       if (!t.visible) return;
+      t.alpha = fading(left(1 + side));
       drawTurret(t, aim(x, ty), firing ? 1 : 0);
       t.position.set(this.sx(x, ty), this.sy(ty));
       t.scale.set((1_500 * this.unit(ty)) / 60);
       t.zIndex = ty;
     });
-    this.tank.visible = (hud[4] ?? 0) === 1;
+    this.tank.visible = left(3) > 0;
     if (this.tank.visible) {
+      this.tank.alpha = fading(left(3));
       drawTank(this.tank, aim(TANK_X, ty), Math.floor(this.clock * 30) % 36 < 4 ? 1 : 0);
       this.tank.position.set(this.sx(TANK_X, ty + 300), this.sy(ty + 300));
       this.tank.scale.set((2_600 * this.unit(ty)) / 140);
       this.tank.zIndex = ty + 300;
+    }
+      this.mech.visible = left(4) > 0;
+    if (this.mech.visible) {
+      const my = gy - 300;
+      drawMech(this.mech, firing);
+      this.mech.alpha = fading(left(4));
+      this.mech.position.set(this.sx(hud[HUD.mechX] ?? gx, my), this.sy(my));
+      this.mech.scale.set((2_200 * this.unit(my)) / 130);
+      this.mech.zIndex = my;
+    }
+    // The barricade: a glowing steel wall along the line.
+    const bar = this.barricade;
+    bar.clear();
+    if (left(5) > 0) {
+      const ly = this.c.lineY;
+      const s = this.scale(ly);
+      const pulse = this.still ? 1 : 0.8 + 0.2 * Math.sin(this.clock * 8);
+      bar.alpha = fading(left(5));
+      bar
+        .poly([this.sx(0, ly), this.sy(ly) - 30 * s, this.sx(this.c.bridgeW, ly), this.sy(ly) - 30 * s, this.sx(this.c.bridgeW, ly), this.sy(ly), this.sx(0, ly), this.sy(ly)])
+        .fill({ color: 0x60a5fa, alpha: 0.28 * pulse })
+        .moveTo(this.sx(0, ly), this.sy(ly) - 30 * s)
+        .lineTo(this.sx(this.c.bridgeW, ly), this.sy(ly) - 30 * s)
+        .stroke({ width: 3, color: 0xbfdbfe, alpha: 0.9 });
+      bar.zIndex = ly + 1;
     }
   }
 
   private renderEffects(): void {
     const g = this.overlay;
     const { W, H } = this.layout;
-    const frozen = (this.hud[12] ?? 0) === 1;
-    const drones = (this.hud[13] ?? 0) === 1;
-    const napalm = (this.hud[14] ?? 0) === 1;
+    const frozen = (this.hud[HUD.frozen] ?? 0) === 1;
+    const drones = (this.hud[HUD.drones] ?? 0) === 1;
+    const napalm = (this.hud[HUD.napalm] ?? 0) === 1;
     g.clear();
     if (frozen) g.rect(0, 0, W, H).fill({ color: 0x7dd3fc, alpha: 0.12 });
     if (napalm) {
@@ -558,7 +670,7 @@ export class DeadBridgeView {
       const c = ev[i + 3] ?? 0;
       switch (kind) {
         case 0:
-          this.announce(a >= (this.hud[8] ?? 3) ? "Final wave!" : `Wave ${a}`, 0xfde68a);
+          this.announce(a >= (this.hud[HUD.waves] ?? 3) ? "Final wave!" : `Wave ${a}`, 0xfde68a);
           break;
         case 1:
           this.announce("BOSS INCOMING!", 0xf87171);
@@ -580,7 +692,7 @@ export class DeadBridgeView {
           break;
         case 5:
           this.burst(a, b, 0xffd166, 22);
-          this.announce(c >= 10 ? `+1 ${rewardName(c)}` : `${rewardName(c)} unlocked!`, 0xffe08a);
+          this.announce(c >= 20 ? `${rewardName(c)}!` : c >= 10 ? `+1 ${rewardName(c)}` : `${rewardName(c)}!`, 0xffe08a);
           sfx.complete();
           haptic(20);
           break;
@@ -596,11 +708,23 @@ export class DeadBridgeView {
           haptic(25);
           break;
         case 8:
-          if (b === 0) this.beam(a, c);
+          if (c >= this.c.bridgeW) this.nuke();
           else this.explosion(a, b, c);
           break;
         case 9:
           this.zap(a, b);
+          break;
+        case 10:
+          this.burst(a, this.c.lineY, 0x93c5fd, 6);
+          break;
+        case 11:
+          this.floatText(a, b, "gone", 0x94a3b8);
+          break;
+        case 12:
+          this.beam(a, b);
+          break;
+        case 13:
+          if (EXPIRED[a]) this.floatText(this.hud[HUD.gunnerX] ?? this.c.bridgeW / 2, this.c.lineY - 1_500, EXPIRED[a], 0xcbd5e1);
           break;
       }
     }
@@ -672,11 +796,21 @@ export class DeadBridgeView {
     });
   }
 
+  /** The laser rifle (thin, cyan, quick) or the orbital lance (wide, gold, heavy). */
   private beam(x: number, half: number): void {
     const g = new Graphics();
     this.fx.addChild(g);
     const yTop = -1_500;
     const yBot = this.c.lineY;
+    const lance = half >= 500;
+    if (!lance) {
+      void tween(this.app, 120, (t) => {
+        g.clear()
+          .poly([this.sx(x - half, yTop), this.sy(yTop), this.sx(x + half, yTop), this.sy(yTop), this.sx(x + half / 3, this.c.gunnerY), this.sy(this.c.gunnerY), this.sx(x - half / 3, this.c.gunnerY), this.sy(this.c.gunnerY)])
+          .fill({ color: 0x22d3ee, alpha: 0.5 * (1 - t) });
+      }).then(() => g.destroy());
+      return;
+    }
     this.flash(0xfef08a, 0.25);
     this.shake = 12;
     void tween(this.app, 650, (t) => {
@@ -686,6 +820,23 @@ export class DeadBridgeView {
         .fill({ color: 0xfacc15, alpha: 0.35 * a })
         .poly([this.sx(x - half / 4, yTop), this.sy(yTop), this.sx(x + half / 4, yTop), this.sy(yTop), this.sx(x + half / 4, yBot), this.sy(yBot), this.sx(x - half / 4, yBot), this.sy(yBot)])
         .fill({ color: 0xffffff, alpha: 0.8 * a });
+    }).then(() => g.destroy());
+  }
+
+  private nuke(): void {
+    this.shake = 20;
+    haptic(80);
+    sfx.blast(3);
+    if (this.still) return;
+    const g = new Graphics();
+    this.fx.addChild(g);
+    const { W, H } = this.layout;
+    void tween(this.app, 1_100, (t) => {
+      g.clear()
+        .rect(0, 0, W, H)
+        .fill({ color: 0xfefce8, alpha: 0.9 * (1 - t) * (1 - t) })
+        .circle(W / 2, H * 0.45, Math.max(W, H) * (0.1 + t))
+        .fill({ color: 0xa3e635, alpha: 0.25 * (1 - t) });
     }).then(() => g.destroy());
   }
 

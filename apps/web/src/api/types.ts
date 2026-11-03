@@ -199,7 +199,7 @@ export interface CoinRules {
   hint_price: number;
 }
 
-export type DbAssist = "airstrike" | "freeze" | "drones" | "lance" | "napalm";
+export type DbAssist = "airstrike" | "freeze" | "drones" | "lance" | "napalm" | "barrage" | "nuke";
 
 export interface DbStart {
   attempt_id: string;

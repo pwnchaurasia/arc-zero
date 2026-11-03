@@ -3,6 +3,36 @@
 All notable changes to Arc Zero. Releases are deployed from `release/YY.MM.XX` branches;
 the newest is at the top.
 
+## Unreleased
+
+### New game: GridSnap
+- Drag block shapes onto an 8 × 8 board; full rows and columns clear. Three shapes at a
+  time, placed in any order; new ones come when all three are down. No rotating.
+- The dragged shape floats above your finger so you can see where it lands; a preview
+  shows the spot and the lines it would clear. Keyboard play too (1–3, arrows, Enter).
+- Scoring: 1 per block; 100 / 300 / 600 / 1,000 for 1–4 lines at once (more for 5–6);
+  clearing on back-to-back moves builds a combo (+150 per step, up to 8 steps).
+- Endless, moderately hard: early trays can always be placed, and that help fades as your
+  score climbs, with more big shapes. A careful game usually ends in the low thousands.
+- No room left? Reshuffle the tray (40 coins) or drop a Bomb on a 3 × 3 area (60), with
+  the usual confirmation, or end the game. Up to 3 of each per game.
+- Personal best, plus weekly, monthly and all-time leaderboards (display names only;
+  registered players; games with bought help count for your best but not the boards).
+- Coins at score milestones (1,000 / 2,500 / 5,000 / 10,000 → 5 / 5 / 10 / 10), paid when
+  the game ends, up to 30 a day. Leaving mid-game keeps it: you continue next time.
+- The server deals every tray and checks every placement; the next shapes never reach
+  the browser before they are dealt.
+
+### App updates
+- New versions show up without a hard refresh: the page always loads fresh from the
+  network (a saved copy is used only offline), the app checks for updates whenever it
+  comes back to the front, and switches to the new version on the home screen (never
+  mid-level). Installed home-screen apps update the same way; the first time after this
+  release, close and reopen the app once.
+
+### Upgrade notes
+- Database migration `0004` (GridSnap scores). The release workflow runs it.
+
 ## Unreleased (planned as 26.11.01)
 
 ### New game: MetroJam

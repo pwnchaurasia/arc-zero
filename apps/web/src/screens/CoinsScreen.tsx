@@ -10,6 +10,7 @@ const GAME_NAMES: Record<string, string> = {
   "brick-blast": "Brick Blast",
   "water-sort": "Water Sort",
   "dead-bridge": "Dead Bridge Assault",
+  gridsnap: "GridSnap",
 };
 
 const ASSIST_NAMES: Record<string, string> = {
@@ -25,6 +26,10 @@ const ASSIST_NAMES: Record<string, string> = {
   drones: "Drone swarm",
   lance: "Orbital lance",
   napalm: "Napalm",
+  barrage: "Rocket barrage",
+  nuke: "Nuke",
+  reshuffle: "Reshuffle the tray",
+  bomb: "Bomb: clear a 3 × 3 area",
 };
 
 /** The coin rules, straight from the server so this page can't drift from what it enforces. */
@@ -96,6 +101,20 @@ export function CoinsScreen({ onBack }: { onBack: () => void }) {
                   </tr>
                 </tbody>
               </table>
+              <h3 className="mt-4 mb-1 text-sm font-semibold text-muted">GridSnap (no levels)</h3>
+              <table className="w-full text-sm">
+                <tbody>
+                  {rules.milestones.map((m) => (
+                    <tr key={m.score} className="border-t border-line first:border-0">
+                      <td className="py-2">Reach {m.score.toLocaleString()} points in a game</td>
+                      <td className="py-2 text-right font-bold text-gold">+{m.coins}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="mt-1 text-xs text-muted">
+                Paid when the game ends, up to {rules.milestone_daily_cap} GridSnap coins a day.
+              </p>
             </section>
 
             <section className="rounded-3xl border border-line bg-panel p-5">

@@ -17,6 +17,8 @@ export interface Me {
   registration_required: boolean;
   games: Record<GameId, GameProgress>;
   coins: number;
+  /** GridSnap has no levels: its home tile shows the personal best. */
+  gridsnap_best: number;
 }
 
 export type Board = number[][];
@@ -197,6 +199,9 @@ export interface CoinRules {
   prices: Record<string, Record<string, number>>;
   /** Price of a hint after the 3 free ones each day (Water Sort, Brick Blast). */
   hint_price: number;
+  /** GridSnap: coins for reaching each score in a game, and the daily limit. */
+  milestones: { score: number; coins: number }[];
+  milestone_daily_cap: number;
 }
 
 export type DbAssist = "airstrike" | "freeze" | "drones" | "lance" | "napalm" | "barrage" | "nuke";
@@ -221,4 +226,72 @@ export interface DbComplete extends LevelWin {
   coins_earned: number;
   streak_bonus: number;
   coins: number;
+}
+
+export type GsAssist = "reshuffle" | "bomb";
+export type GsStatus = "playing" | "stuck" | "ended";
+
+export interface GsPiece {
+  shape: number;
+  color: number;
+}
+
+/** What the player sees of a GridSnap game (the deal's seed stays on the server). */
+export interface GsView {
+  /** 64 cells, row by row: 0 empty, else colour + 1. */
+  cells: number[];
+  tray: (GsPiece | null)[];
+  score: number;
+  lines: number;
+  placed: number;
+  combo: number;
+  since_clear: number;
+  status: GsStatus;
+  reshuffles: number;
+  bombs: number;
+}
+
+export interface GsFinal {
+  score: number;
+  lines: number;
+  best: number;
+  new_best: boolean;
+  /** False when bought help was used: personal best only, not the leaderboards. */
+  ranked: boolean;
+  coins_earned: number;
+  coins: number;
+}
+
+export interface GsStart {
+  run_id: string;
+  seq: number;
+  view: GsView;
+  best: number;
+  prices: Record<GsAssist, number>;
+  coins: number;
+  /** The game this start closed, if one was still open. */
+  previous?: GsFinal | null;
+}
+
+export interface GsStep {
+  seq: number;
+  view: GsView;
+  points: number;
+  coins: number | null;
+}
+
+export type GsPeriod = "week" | "month" | "all";
+
+export interface GsEntry {
+  rank: number;
+  name: string;
+  score: number;
+  you: boolean;
+}
+
+export interface GsLeaderboard {
+  period: GsPeriod;
+  entries: GsEntry[];
+  you: GsEntry | null;
+  signed_in: boolean;
 }

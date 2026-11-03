@@ -18,6 +18,7 @@ from arc_api.routers import (
     auth,
     brick_blast,
     dead_bridge,
+    gridsnap,
     me,
     meta,
     metro_jam,
@@ -89,7 +90,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     errors.install(app)
 
     api = APIRouter(prefix="/api/v1")
-    for module in (meta, auth, me, wallet, water_sort, brick_blast, metro_jam, dead_bridge):
+    for module in (
+        meta,
+        auth,
+        me,
+        wallet,
+        water_sort,
+        brick_blast,
+        metro_jam,
+        dead_bridge,
+        gridsnap,
+    ):
         api.include_router(module.router)
     app.include_router(api)
 

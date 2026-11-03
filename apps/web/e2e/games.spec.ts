@@ -157,3 +157,48 @@ test("Dead Bridge Assault runs, steers, pauses, and shows the horde", async ({ p
   await page.getByRole("button", { name: "Cancel" }).click();
   expect(errors).toEqual([]);
 });
+
+test("a guest plays GridSnap by keyboard and by drag, then ends the game", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/");
+  const opened = page.waitForResponse((r) => r.url().includes("/gridsnap/runs/") && r.request().method() !== "OPTIONS");
+  await page.getByRole("heading", { name: "GridSnap" }).click();
+  await opened;
+  await page.waitForTimeout(600);
+
+  // Keyboard: pick the first shape, place it at the first free spot.
+  let placed = page.waitForResponse((r) => r.url().includes("/place"));
+  await page.keyboard.press("1");
+  await page.keyboard.press("Enter");
+  expect((await placed).status()).toBe(200);
+  await expect(page.getByLabel(/^Score [1-9]/)).toBeVisible();
+
+  // Drag the second shape so it lands centred on cell (5, 5): the shape floats
+  // 70 px above the finger, so the finger goes 70 px lower (same layout as GridSnapView).
+  const box = await page.locator(".game-surface").boundingBox();
+  if (!box) throw new Error("no game surface");
+  const { width: W, height: H } = box;
+  const trayH = Math.min(Math.max(H * 0.24, 110), 190);
+  const cell = Math.floor(Math.min((W - 24) / 8, (H - trayH - 24) / 8, 64));
+  const bx = Math.round((W - cell * 8) / 2);
+  const by = Math.round(Math.max(12, (H - trayH - cell * 8) / 2));
+  const trayY = by + cell * 8 + trayH / 2;
+  placed = page.waitForResponse((r) => r.url().includes("/place"));
+  await page.mouse.move(box.x + W / 2, box.y + trayY);
+  await page.mouse.down();
+  await page.mouse.move(box.x + bx + 5.5 * cell, box.y + by + 5.5 * cell + 70, { steps: 8 });
+  await page.waitForTimeout(150);
+  await page.mouse.up();
+  expect((await placed).status()).toBe(200);
+
+  const ended = page.waitForResponse((r) => r.url().includes("/end"));
+  await page.getByRole("button", { name: /End game/ }).first().click();
+  await page.getByRole("dialog").getByRole("button", { name: "End game" }).click();
+  const final = (await (await ended).json()) as { score: number; new_best: boolean };
+  expect(final.score).toBeGreaterThan(0);
+  await expect(page.getByText("New best!")).toBeVisible();
+
+  await page.getByRole("button", { name: "Leaderboards" }).last().click();
+  await expect(page.getByRole("button", { name: "Save your progress to join the leaderboards" })).toBeVisible();
+  expect(errors).toEqual([]);
+});

@@ -111,3 +111,28 @@ export const InstallIcon = (p: IconProps) => (
     <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
   </Icon>
 );
+
+export const TrophyIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M8 4h8v5a4 4 0 0 1-8 0V4ZM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M10 17h4" />
+  </Icon>
+);
+
+export const BombIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="10.5" cy="14" r="6" />
+    <path d="M14.5 9.5 17 7M17 7l1.5 1.5M17 7l-1.5-1.5M19 4.5l1-1M20.5 6.5H22M17 3V1.8" />
+  </Icon>
+);
+
+export const CrownIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5L3 8Z" />
+  </Icon>
+);
+
+export const FlagIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 21V4M5 4h11l-2 4 2 4H5" />
+  </Icon>
+);

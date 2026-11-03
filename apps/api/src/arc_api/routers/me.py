@@ -13,6 +13,7 @@ from arc_api.levels import GAME_IDS
 from arc_api.principal import PrincipalDep, issue_ticket
 from arc_api.progress import unlocked_level
 from arc_api.routers.common import StrictModel, limit
+from arc_api.routers.gridsnap import personal_best
 from arc_api.state import DbDep, StateDep
 
 router = APIRouter(tags=["me"])
@@ -34,6 +35,8 @@ class MeOut(StrictModel):
     registration_required: bool
     games: dict[str, GameOut]
     coins: int
+    # GridSnap has no levels: the home tile shows the personal best.
+    gridsnap_best: int = 0
     # Guests get (or refresh) their ticket here, so the client has one stable
     # identity before any game request. Stateless: no database row is created.
     guest_ticket: str | None = None
@@ -77,6 +80,7 @@ async def me(who: PrincipalDep, state: StateDep, db: DbDep) -> MeOut:
         and any(len(stars[g]) >= gate for g in GAME_IDS),
         games=games,
         coins=await coins.balance(db, state, who),
+        gridsnap_best=await personal_best(db, state, who),
         guest_ticket=issue_ticket(state, who.guest) if who.guest else None,
     )
 

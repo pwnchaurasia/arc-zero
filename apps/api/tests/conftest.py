@@ -141,6 +141,7 @@ def settings(tmp_path_factory: pytest.TempPathFactory) -> Settings:
         bb_min_ms_between_turns=0,
         mj_min_ms_per_move=0,
         db_min_real_time_pct=0,
+        gs_min_ms_between_moves=0,
     )
 
 
@@ -169,7 +170,8 @@ async def app_client(settings: Settings, _database: None) -> AsyncIterator[Async
     await redis.aclose()
     conn = await asyncpg.connect(TEST_DB_URL)
     await conn.execute(
-        "TRUNCATE players, game_progress, level_results, hint_usage, play_events CASCADE"
+        "TRUNCATE players, game_progress, level_results, hint_usage, play_events,"
+        " gridsnap_scores CASCADE"
     )
     await conn.close()
 

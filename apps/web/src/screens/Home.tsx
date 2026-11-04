@@ -39,6 +39,7 @@ export const GAMES: { id: GameId; name: string; tagline: string; image?: string 
     id: "traceout",
     name: "TraceOut",
     tagline: "Tap a line to send it out. Mind what's in the way.",
+    image: "/games/traceout.webp",
   },
 ];
 

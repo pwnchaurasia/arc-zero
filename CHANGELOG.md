@@ -5,6 +5,11 @@ the newest is at the top.
 
 ## Unreleased
 
+### Local arcade keeps players' data in folders
+- The always-on local stack (`make local-up`) now stores Postgres and Redis in
+  `infra/local/pgdata` and `infra/local/redisdata` on the host instead of Docker
+  volumes, so friends' progress survives rebuilds, `down -v` and Docker prunes.
+
 ### TraceOut: much bigger and more tangled from level 5
 - Boards grow to 34 × 48 with longer, twistier lines: across levels 5–100 the "clear
   this first" chains are ~60% deeper and there are ~85% more lines than before.

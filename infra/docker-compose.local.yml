@@ -1,6 +1,7 @@
 # Always-on local arcade for friends (through ngrok), built from your checkout with the
 # production images. Separate from development: its own database and Redis, port 5173,
 # and it restarts with Docker. `make local-up` builds and starts it; see DEVELOPMENT.md.
+# Players' data is kept in infra/local/pgdata and infra/local/redisdata.
 name: arc-zero-local
 services:
   web:
@@ -46,7 +47,9 @@ services:
       POSTGRES_DB: arc
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     secrets: [postgres_password]
-    volumes: [pgdata:/var/lib/postgresql/data]
+    # Data lives in folders on this machine (infra/local/, gitignored), not in Docker
+    # volumes: rebuilding, `docker compose down -v` or a Docker prune can't delete it.
+    volumes: ["./local/pgdata:/var/lib/postgresql/data"]
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U arc"], interval: 5s, retries: 20 }
     networks: [internal]
 
@@ -56,7 +59,7 @@ services:
     # Sessions and guest coins live here, so persist them (AOF) across restarts.
     command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$(cat /run/secrets/redis_password)\""]
     secrets: [redis_password]
-    volumes: [redisdata:/data]
+    volumes: ["./local/redisdata:/data"]
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning ping"]
       interval: 5s
@@ -66,8 +69,6 @@ services:
 secrets:
   postgres_password: { file: ./local/postgres_password }
   redis_password: { file: ./local/redis_password }
-
-volumes: { pgdata: {}, redisdata: {} }
 
 networks:
   edge: {}

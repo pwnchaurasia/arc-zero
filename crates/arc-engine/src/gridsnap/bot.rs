@@ -43,7 +43,12 @@ fn after(board: &Board, slot: usize, row: u8, col: u8) -> Option<(i64, u64)> {
 /// The best `(slot, row, col)` for the current tray, if any shape fits.
 #[must_use]
 pub fn best_move(board: &Board) -> Option<(usize, u8, u8)> {
-    let mut best: Option<(i64, (usize, u8, u8))> = None;
+    ranked_moves(board).first().map(|(_, m)| *m)
+}
+
+/// Every legal move with its value, best first.
+fn ranked_moves(board: &Board) -> Vec<(i64, (usize, u8, u8))> {
+    let mut moves = Vec::new();
     #[allow(clippy::cast_possible_truncation)]
     for slot in 0..TRAY {
         if board.tray[slot].is_none() {
@@ -55,14 +60,38 @@ pub fn best_move(board: &Board) -> Option<(usize, u8, u8)> {
                     continue;
                 }
                 if let Some((value, _)) = after(board, slot, row, col) {
-                    if best.is_none_or(|(v, _)| value > v) {
-                        best = Some((value, (slot, row, col)));
-                    }
+                    moves.push((value, (slot, row, col)));
                 }
             }
         }
     }
-    best.map(|(_, m)| m)
+    // Stable: equal values keep slot/row/col order, so the bot is deterministic.
+    moves.sort_by_key(|(v, _)| std::cmp::Reverse(*v));
+    moves
+}
+
+/// Like [`play_from`], but plays like a person who doesn't always find the best move:
+/// one time in three it takes one of the next few good ones instead. Different `seed`s
+/// play differently, so they also see different trays (the deal depends on the board).
+#[must_use]
+pub fn play_like_a_person(mut game: Game, max: u32, seed: u64) -> Game {
+    let mut rng = crate::rng::Rng::new(seed);
+    while game.board.status == Status::Playing && game.board.placed < max {
+        let moves = ranked_moves(&game.board);
+        if moves.is_empty() {
+            break;
+        }
+        let pick = if rng.chance(1, 3) {
+            usize::try_from(rng.below(moves.len().min(4) as u64)).unwrap_or(0)
+        } else {
+            0
+        };
+        let (slot, row, col) = moves[pick].1;
+        if game.place(slot, row, col).is_err() {
+            break;
+        }
+    }
+    game
 }
 
 /// Plays a run until it is stuck or `max` placements were made.

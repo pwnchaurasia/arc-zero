@@ -108,11 +108,11 @@ def to_level() -> dict[str, Any]:
 
 
 def gs_level() -> dict[str, Any]:
-    """Seven stones on the bottom row: the first tray can finish it (seed 1)."""
+    """Seven stones on the bottom row: the first tray can finish it (seed 3)."""
     cells = [0] * 64
     for col in range(7):
         cells[56 + col] = arc_engine.GS_STONE
-    return {"seed": 1, "stage": 0, "cells": cells, "par": 1}
+    return {"seed": 3, "stage": 0, "cells": cells, "par": 1}
 
 
 def make_levels(path: Path) -> None:

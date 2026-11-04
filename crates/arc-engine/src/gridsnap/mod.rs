@@ -639,7 +639,10 @@ impl Game {
         let stage = self.stage();
         let occupied = self.board.occupied();
         let help = HELP_START - (HELP_START - HELP_END) * u64::from(stage) / 100;
-        let helped = rescue || rng.chance(help, 100);
+        // Levels always deal a tray that can be placed: losing one should come from how
+        // the stones were played, not from a run of unlucky shapes.
+        // (Endless draws exactly as before: the help roll only happens without a rescue.)
+        let helped = rescue || self.fixed_stage.is_some() || rng.chance(help, 100);
         let mut shapes = Self::candidates(rng, stage, occupied, n, helped);
         if helped {
             for _ in 0..REDRAWS {

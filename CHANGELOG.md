@@ -5,6 +5,17 @@ the newest is at the top.
 
 ## Unreleased
 
+### TraceOut: much bigger and more tangled from level 5
+- Boards grow to 34 × 48 with longer, twistier lines: across levels 5–100 the "clear
+  this first" chains are ~60% deeper and there are ~85% more lines than before.
+- Pinch to zoom, drag to move around, double-tap the paper to see the whole board again
+  (mouse wheel zooms on a computer). Taps register on release, so a drag never taps.
+
+### GridSnap: every level can be cleared
+- Level trays always fit somewhere: losing comes from how you play the stones, not
+  from unlucky shapes. Each level must be cleared by most of 10 simulated players who
+  play differently (not one lucky line), and the 3-star target is their median.
+
 ### TraceOut: every level is a picture
 - From level 4 the lines are packed into a picture (91–97% of it covered): heart, apple,
   house, ghost, mushroom, fish, bell, cat, cup, diamond, rabbit, tree, paw, butterfly,

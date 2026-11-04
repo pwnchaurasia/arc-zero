@@ -23,7 +23,7 @@ use serde::Serialize;
 use crate::derive_seed;
 use crate::pictures::{self, PICTURES};
 
-const CANDIDATES: usize = 12;
+const CANDIDATES: usize = 8;
 /// Lines sampled per densify step, and how many of the best are tried.
 const DENSIFY_SAMPLES: usize = 8;
 const DENSIFY_TRIES: usize = 3;
@@ -79,19 +79,24 @@ fn params(level: u16) -> Params {
         };
     }
     // Boards grow fastest early on: more lines means longer chains, and more cells
-    // draw the picture in finer detail.
-    let width = lerp(10.0, 25.0, t.sqrt()).round() as u8;
+    // draw the picture in finer detail. From level 5 boards are big enough that
+    // players pinch to zoom (decision 2026-11-04: about 70% more complex).
+    let width = if level == 4 {
+        11
+    } else {
+        lerp(14.0, 34.0, t.sqrt()).round() as u8
+    };
     Params {
         width,
         height: ((f64::from(width) * 1.42).round() as u8).min(arc_engine::traceout::MAX_SIDE),
         // Share of the picture's cells covered by lines: high, so the shape reads.
-        fill: lerp(0.92, 0.985, t),
+        fill: lerp(0.93, 0.985, t),
         min_len: lerp(3.0, 6.0, t).round() as usize,
-        max_len: lerp(7.0, 20.0, t).round() as usize,
-        max_turns: lerp(3.0, 12.0, t).round() as usize,
-        turn_pct: lerp(30.0, 45.0, t).round() as u64,
-        tangle: lerp(8.0, 40.0, t).round() as usize,
-        depth: lerp(6.0, 21.0, t),
+        max_len: lerp(8.0, 24.0, t).round() as usize,
+        max_turns: lerp(4.0, 14.0, t).round() as usize,
+        turn_pct: lerp(32.0, 48.0, t).round() as u64,
+        tangle: lerp(12.0, 48.0, t).round() as usize,
+        depth: lerp(10.0, 36.0, t),
     }
 }
 

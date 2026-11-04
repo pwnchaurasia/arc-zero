@@ -312,7 +312,13 @@ export function TraceOutScreen({
         {info && <span>{replay ? "Replay: no coins" : `First clear: ${info.reward} coins`}</span>}
       </div>
       <div className="relative min-h-0 flex-1">
-        <div ref={host} className="game-surface absolute inset-0" />
+        {/* touch-none: pinches zoom the board, not the page. */}
+        <div ref={host} className="game-surface absolute inset-0 touch-none" />
+        {info && info.data.width >= 18 && !result && (
+          <p className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-xs text-muted">
+            Pinch to zoom · drag to move · double-tap to fit
+          </p>
+        )}
         {out && !result && !spend && (
           <div className="absolute inset-0 z-10 grid place-items-center bg-ink/55 p-6 backdrop-blur-[2px]">
             <div className="pop-in w-full max-w-xs rounded-3xl border border-line bg-panel p-5 text-center shadow-2xl">

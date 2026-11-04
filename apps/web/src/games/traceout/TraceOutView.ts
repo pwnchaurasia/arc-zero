@@ -13,6 +13,11 @@ const BLOCKED = 0xdc2626;
 const HINT = 0xd97706;
 /** Sparkles where a line leaves the board. */
 const SPARKS = [0xfbbf24, 0xf59e0b, 0x84cc16, 0x38bdf8, 0xf472b6];
+/** Zooming in stops once a cell is this many pixels across. */
+const MAX_CELL_PX = 40;
+/** A press that moves further than this (px) is a drag, not a tap. */
+const TAP_SLOP = 9;
+const DOUBLE_TAP_MS = 320;
 
 export interface TraceOutViewOptions {
   onTap: (line: number) => void;
@@ -25,9 +30,20 @@ type Pt = [number, number];
  * (WASM engine) and tells the view which line left or bounced.
  */
 export class TraceOutView {
+  /** Everything that zooms and pans: the paper, the lines and their effects. */
+  private readonly board = new Container();
   private readonly paper = new Graphics();
   private readonly layer = new Container();
   private readonly fx = new Container();
+  /** Screen-fixed overlay (streak cheers), unaffected by zoom. */
+  private readonly hud = new Container();
+  /** Fingers (or the mouse) currently down, by pointer id, in screen pixels. */
+  private pointers = new Map<number, Pt>();
+  /** A single press that may become a tap or a pan. */
+  private press: { x: number; y: number; from: Pt; moved: boolean } | null = null;
+  /** A two-finger pinch: where it started and the board's scale and position then. */
+  private pinch: { dist: number; mid: Pt; scale: number; at: Pt } | null = null;
+  private lastTap = 0;
   private particles: { g: Graphics; vx: number; vy: number; life: number; fall: number }[] = [];
   private lines: (Graphics | null)[] = [];
   private present: boolean[];
@@ -44,11 +60,16 @@ export class TraceOutView {
     private readonly options: TraceOutViewOptions,
   ) {
     this.present = level.lines.map(() => true);
-    app.stage.addChild(this.paper, this.layer, this.fx);
+    this.board.addChild(this.paper, this.layer, this.fx);
+    app.stage.addChild(this.board, this.hud);
     app.ticker.add(this.animate);
     app.stage.eventMode = "static";
     app.stage.hitArea = app.screen;
     app.stage.on("pointerdown", this.onDown);
+    app.stage.on("pointermove", this.onMove);
+    app.stage.on("pointerup", this.onUp);
+    app.stage.on("pointerupoutside", this.onUp);
+    app.canvas.addEventListener("wheel", this.onWheel, { passive: false });
     app.renderer.on("resize", this.layout);
     this.layout();
   }
@@ -59,6 +80,7 @@ export class TraceOutView {
 
   destroy(): void {
     this.destroyed = true;
+    this.app.canvas.removeEventListener("wheel", this.onWheel);
     this.app.ticker.remove(this.animate);
     this.app.renderer.off("resize", this.layout);
     this.app.destroy({ removeView: true }, { children: true });
@@ -151,9 +173,9 @@ export class TraceOutView {
     });
     t.anchor.set(0.5);
     const x = this.app.screen.width / 2;
-    const y = this.oy + this.cell * 1.5;
+    const y = Math.max(40, this.board.y + (this.oy + this.cell * 1.5) * this.board.scale.y);
     t.position.set(x, y);
-    this.fx.addChild(t);
+    this.hud.addChild(t);
     void tween(this.app, this.fast ? 400 : 1000, (k) => {
       if (t.destroyed) return;
       t.y = y - 36 * k;
@@ -214,6 +236,7 @@ export class TraceOutView {
 
   private readonly layout = () => {
     const { width: W, height: H } = this.app.screen;
+    this.fit();
     const pad = 14;
     // The paper adds 0.4 of a cell around the grid.
     this.cell = Math.floor(
@@ -301,8 +324,118 @@ export class TraceOutView {
 
   // ------------------------------------------------------------------ input
 
+  /** Whether the board is zoomed in (tutorial hints and tests can check this). */
+  get zoomed(): boolean {
+    return this.board.scale.x > 1.01;
+  }
+
+  /** Back to the whole board on screen. */
+  fit(): void {
+    this.board.scale.set(1);
+    this.board.position.set(0, 0);
+  }
+
+  private maxZoom(): number {
+    return Math.max(1, MAX_CELL_PX / Math.max(1, this.cell));
+  }
+
+  /** Zooms to `scale` keeping the board point under screen point `at` where it is. */
+  private zoomAt(at: Pt, scale: number, from = { scale: this.board.scale.x, pos: [this.board.x, this.board.y] as Pt }): void {
+    const s = Math.min(this.maxZoom(), Math.max(1, scale));
+    const bx = (at[0] - from.pos[0]) / from.scale;
+    const by = (at[1] - from.pos[1]) / from.scale;
+    this.board.scale.set(s);
+    this.board.position.set(at[0] - bx * s, at[1] - by * s);
+    this.clampPan();
+  }
+
+  /** Keeps the zoomed board covering the screen: no panning off into empty space. */
+  private clampPan(): void {
+    const { width: W, height: H } = this.app.screen;
+    const s = this.board.scale.x;
+    this.board.x = Math.min(0, Math.max(W - W * s, this.board.x));
+    this.board.y = Math.min(0, Math.max(H - H * s, this.board.y));
+  }
+
   private readonly onDown = (e: FederatedPointerEvent) => {
-    const { x, y } = e.global;
+    this.pointers.set(e.pointerId, [e.global.x, e.global.y]);
+    if (this.pointers.size === 1) {
+      this.press = { x: e.global.x, y: e.global.y, from: [this.board.x, this.board.y], moved: false };
+    } else if (this.pointers.size === 2) {
+      // Two fingers: a pinch, never a tap.
+      this.press = null;
+      const [a, b] = [...this.pointers.values()] as [Pt, Pt];
+      this.pinch = {
+        dist: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1,
+        mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2],
+        scale: this.board.scale.x,
+        at: [this.board.x, this.board.y],
+      };
+    }
+  };
+
+  private readonly onMove = (e: FederatedPointerEvent) => {
+    if (!this.pointers.has(e.pointerId)) return;
+    this.pointers.set(e.pointerId, [e.global.x, e.global.y]);
+    if (this.pinch && this.pointers.size >= 2) {
+      const [a, b] = [...this.pointers.values()] as [Pt, Pt];
+      const dist = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1;
+      const mid: Pt = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      // Zoom about where the pinch started, then follow the fingers' midpoint.
+      this.zoomAt(this.pinch.mid, (this.pinch.scale * dist) / this.pinch.dist, { scale: this.pinch.scale, pos: this.pinch.at });
+      this.board.x += mid[0] - this.pinch.mid[0];
+      this.board.y += mid[1] - this.pinch.mid[1];
+      this.clampPan();
+      return;
+    }
+    const p = this.press;
+    if (!p) return;
+    const dx = e.global.x - p.x;
+    const dy = e.global.y - p.y;
+    if (!p.moved && Math.hypot(dx, dy) > TAP_SLOP) p.moved = true;
+    if (p.moved && this.zoomed) {
+      this.board.position.set(p.from[0] + dx, p.from[1] + dy);
+      this.clampPan();
+    }
+  };
+
+  private readonly onUp = (e: FederatedPointerEvent) => {
+    const p = this.press;
+    this.pointers.delete(e.pointerId);
+    if (this.pointers.size < 2) this.pinch = null;
+    if (this.pointers.size > 0) {
+      // Lifting one finger of a pinch: the other one shouldn't tap or jump.
+      this.press = null;
+      return;
+    }
+    this.press = null;
+    if (!p || p.moved) return;
+    const line = this.lineAt(e.global.x, e.global.y);
+    if (line >= 0) {
+      this.lastTap = 0;
+      this.options.onTap(line);
+      return;
+    }
+    // Double-tap on the paper: back to the whole board.
+    const now = performance.now();
+    if (now - this.lastTap < DOUBLE_TAP_MS) {
+      this.fit();
+      this.lastTap = 0;
+    } else {
+      this.lastTap = now;
+    }
+  };
+
+  private readonly onWheel = (e: WheelEvent) => {
+    e.preventDefault();
+    const rect = this.app.canvas.getBoundingClientRect();
+    const at: Pt = [e.clientX - rect.left, e.clientY - rect.top];
+    this.zoomAt(at, this.board.scale.x * Math.exp(-e.deltaY * 0.0015));
+  };
+
+  /** The line nearest a screen point, within 0.6 of a cell; -1 if none. */
+  private lineAt(sx: number, sy: number): number {
+    const { x, y } = this.board.toLocal({ x: sx, y: sy });
     let best = -1;
     let bestD = this.cell * 0.6;
     this.level.lines.forEach((_, i) => {
@@ -316,8 +449,8 @@ export class TraceOutView {
         }
       }
     });
-    if (best >= 0) this.options.onTap(best);
-  };
+    return best;
+  }
 }
 
 function dirOf(cells: [number, number][]): Pt {

@@ -36,6 +36,8 @@ const STEPS: Record<string, [number, number]> = {
   ArrowLeft: [0, -1],
   ArrowRight: [0, 1],
 };
+/** How long the board stays visible after the last move before "No room!" covers it. */
+const STUCK_CARD_DELAY_MS = 1200;
 const PERIODS: { id: GsPeriod; label: string }[] = [
   { id: "week", label: "This week" },
   { id: "month", label: "This month" },
@@ -105,6 +107,8 @@ export function GridSnapScreen({
   const [best, setBest] = useState(0);
   const [combo, setCombo] = useState(0);
   const [stuck, setStuck] = useState(false);
+  /** Pending "No room!" card: it waits for the last placement's animation to finish. */
+  const stuckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [waiting, setWaiting] = useState(false);
   const [coins, setCoins] = useState<number | undefined>(undefined);
   const [prices, setPrices] = useState<GsStart["prices"] | null>(null);
@@ -130,7 +134,17 @@ export function GridSnapScreen({
     setPlaced(r.sim.placed());
     const empty = tray(r.sim).every((p) => p === null);
     setWaiting(empty);
-    setStuck(r.pending === 0 && r.view.status === "stuck");
+    // Let the last shape land and its lines clear before the card covers the board.
+    if (stuckTimer.current) clearTimeout(stuckTimer.current);
+    stuckTimer.current = null;
+    if (r.pending === 0 && r.view.status === "stuck") {
+      stuckTimer.current = setTimeout(() => {
+        const now = run.current;
+        setStuck(now === r && now.pending === 0 && now.view.status === "stuck");
+      }, STUCK_CARD_DELAY_MS);
+    } else {
+      setStuck(false);
+    }
     // A won level stays locked even before the server confirms it.
     view.current?.setLocked(empty || r.sim.status() === 3 || (r.pending === 0 && r.view.status !== "playing"));
   };
@@ -302,6 +316,7 @@ export function GridSnapScreen({
     });
     return () => {
       cancelled = true;
+      if (stuckTimer.current) clearTimeout(stuckTimer.current);
       created?.destroy();
       view.current = null;
       run.current?.sim.free();

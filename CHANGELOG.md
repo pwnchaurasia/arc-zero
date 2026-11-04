@@ -18,6 +18,8 @@ the newest is at the top.
 - GridSnap, Brick Blast and TraceOut show the result card only after the winning move's
   animation and the celebration have played (about 1.5 s), instead of covering them.
   Brick Blast gets a "Level clear!" banner and bursts.
+- GridSnap's "No room!" card also waits (about 1 s) for the last shape to land and its
+  lines to clear.
 
 ### MetroJam: clearer boarding
 - The waiting commuters stand in one straight line (bigger, front on the left) instead

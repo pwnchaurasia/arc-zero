@@ -27,7 +27,7 @@ def main() -> int:
         "ARC_SIGNING_KEYS": json.dumps({"k1": secrets.token_urlsafe(48)}),
         "ARC_SIGNING_KID": "k1",
         "ARC_RECOVERY_PEPPER": secrets.token_urlsafe(48),
-        "ARC_ALLOWED_ORIGINS": json.dumps(["http://localhost:5173", "http://localhost:4173"]),
+        "ARC_ALLOWED_ORIGINS": json.dumps(["http://localhost:5174", "http://localhost:4173"]),
         "ARC_ALLOWED_HOSTS": json.dumps(["localhost", "127.0.0.1"]),
         "ARC_EXPOSE_DOCS": "true",
     }

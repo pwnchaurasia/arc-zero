@@ -28,7 +28,7 @@ database migrations. Safe to run again: it never overwrites your `.env`.
 ## 3. Day to day
 
 ```bash
-make dev     # API (:8000) + game (:5173) in one terminal; Ctrl+C stops both
+make dev     # API (:8000) + game (:5174) in one terminal; Ctrl+C stops both
 ```
 
 Or in two terminals, if you prefer separate logs: `make api` and `make web`.
@@ -38,7 +38,7 @@ level-3 gate) so you can jump straight to level 80 and judge the difficulty. A b
 on the home screen shows when it's on. Wins are still verified. The setting is
 `ARC_DEV_UNLOCK_ALL=true`, and the API refuses to start with it in production.
 
-Open **http://localhost:5173**. Use `localhost`, not `127.0.0.1`: the API only accepts
+Open **http://localhost:5174**. Use `localhost`, not `127.0.0.1`: the API only accepts
 requests from the origins listed in `apps/api/.env`, and blocks others with a 403.
 
 | You changed… | Run |
@@ -142,14 +142,25 @@ Coin balances and every coin change for saved players are in `wallets` and `coin
 
 ## Let friends play your local game (ngrok)
 
+Run an always-on copy of the arcade in Docker. It keeps running while you develop, and
+it restarts with Docker Desktop:
+
 ```sh
-make share          # like `make dev`, but accepts requests through any ngrok address
-ngrok http 5173     # in a second terminal; send friends the https://….ngrok-free.app URL
+make local-up       # build your checkout and serve it on http://localhost:5173
+ngrok http 5173     # once, in its own terminal; send friends the https://….ngrok-free.app URL
 ```
 
-- Sharing mode (`ARC_DEV_TUNNEL=true`) lets `*.ngrok-free.app`, `*.ngrok.app` and
-  `*.ngrok.io` reach the dev server and the API. Other sites stay blocked, and production
-  refuses to start with it set.
-- Friends play as guests on your machine and your database: progress, coins and analytics
-  land in your local data. Stop `make share` and ngrok when you're done.
+- It uses the production images (Caddy + API), with its **own** Postgres and Redis, so
+  `make dev` (now on :5174) and the tests never touch your friends' data.
+- **New games or fixes:** check out the branch you want friends to play, then rerun
+  `make local-up`. It rebuilds and swaps the containers; data and the ngrok URL stay.
+- `make local-import` copies your dev database and Redis into it (replaces its data), so
+  accounts and progress made under `make share` carry over.
+- `make local-logs` follows its logs; `make local-down` stops it (data kept).
+- Settings and passwords are in `infra/local/` (git-ignored). It runs with
+  `ARC_DEV_TUNNEL=true`: `*.ngrok-free.app`, `*.ngrok.app` and `*.ngrok.io` may reach it.
+- Keep the ngrok terminal open: a free ngrok address changes whenever ngrok restarts.
 - ngrok's free plan shows a one-time "You are about to visit…" page; friends tap **Visit Site**.
+
+`make share` still runs the dev servers in sharing mode (`ngrok http 5174`), for a quick
+look at work in progress.

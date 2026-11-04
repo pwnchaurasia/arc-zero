@@ -1,0 +1,73 @@
+# Always-on local arcade for friends (through ngrok), built from your checkout with the
+# production images. Separate from development: its own database and Redis, port 5173,
+# and it restarts with Docker. `make local-up` builds and starts it; see DEVELOPMENT.md.
+name: arc-zero-local
+services:
+  web:
+    build: { context: .., dockerfile: apps/web/Dockerfile }
+    restart: unless-stopped
+    # localhost only: friends come in through the ngrok agent running on this machine.
+    ports: ["127.0.0.1:5173:80"]
+    depends_on: { api: { condition: service_healthy } }
+    networks: [edge, internal]
+    read_only: true
+    tmpfs: [/data, /config, /tmp]
+    security_opt: ["no-new-privileges:true"]
+
+  api:
+    build: { context: .., dockerfile: apps/api/Dockerfile }
+    restart: unless-stopped
+    env_file: [local/api.env]
+    # The local development levels (`make levels`); ARC_LEVELS_PATH=/run/secrets.
+    volumes: ["../apps/api/levels:/run/secrets:ro"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    networks: [internal]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+  migrate:
+    build: { context: .., dockerfile: apps/api/Dockerfile }
+    command: ["alembic", "upgrade", "head"]
+    env_file: [local/api.env]
+    depends_on: { postgres: { condition: service_healthy } }
+    networks: [internal]
+    restart: "no"
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: arc
+      POSTGRES_DB: arc
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U arc"], interval: 5s, retries: 20 }
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Sessions and guest coins live here, so persist them (AOF) across restarts.
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$(cat /run/secrets/redis_password)\""]
+    secrets: [redis_password]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning ping"]
+      interval: 5s
+      retries: 20
+    networks: [internal]
+
+secrets:
+  postgres_password: { file: ./local/postgres_password }
+  redis_password: { file: ./local/redis_password }
+
+volumes: { pgdata: {}, redisdata: {} }
+
+networks:
+  edge: {}
+  internal: { internal: true }

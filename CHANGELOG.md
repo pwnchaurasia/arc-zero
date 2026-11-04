@@ -5,6 +5,10 @@ the newest is at the top.
 
 ## Unreleased
 
+### Development
+- `make local-up` runs an always-on copy of the arcade in Docker on port 5173 for
+  friends through ngrok, with its own database; `make dev` moved to port 5174.
+
 ### New game: GridSnap
 - Drag block shapes onto an 8 × 8 board; full rows and columns clear. Three shapes at a
   time, placed in any order; new ones come when all three are down. No rotating.

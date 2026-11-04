@@ -4,11 +4,12 @@
 SHELL := /bin/bash
 DEV := docker compose -f infra/docker-compose.dev.yml
 E2E := docker compose -f infra/docker-compose.e2e.yml
+LOCAL := docker compose -f infra/docker-compose.local.yml
 # Not a secret: local development levels only. Production uses ARC_LEVEL_SEED from GitHub.
 DEV_LEVEL_SEED := dev-only-level-seed-not-secret-0123456789abcdef
 
 .DEFAULT_GOAL := help
-.PHONY: help doctor setup env services services-down levels wasm engine migrate dev dev-unlocked share share-unlocked api web preview \
+.PHONY: help doctor setup env services services-down local-up local-down local-logs local-import levels wasm engine migrate dev dev-unlocked share share-unlocked api web preview \
 	test test-rust test-api test-web lint fmt check e2e e2e-docker e2e-docker-down ci clean
 
 help: ## List commands
@@ -28,7 +29,7 @@ setup: doctor env services ## One-time setup: secrets, services, deps, WASM, lev
 	cd apps/api && uv sync
 	cd apps/web && pnpm install --frozen-lockfile
 	$(MAKE) wasm levels migrate
-	@echo; echo "Ready. Run 'make api' and 'make web' in two terminals, then open http://localhost:5173"
+	@echo; echo "Ready. Run 'make api' and 'make web' in two terminals, then open http://localhost:5174"
 
 env: ## Create apps/api/.env with fresh local secrets (never overwrites)
 	python3 tools/dev_env.py
@@ -51,27 +52,43 @@ engine: wasm ## Rebuild the Rust engine for the browser and the API (after chang
 migrate: ## Apply database migrations
 	cd apps/api && uv run alembic upgrade head
 
+# --------------------------------------------- always-on local arcade
+
+local-up: levels ## Build your checkout and run it for friends on :5173 (stays up; rerun after changes)
+	python3 tools/local_env.py
+	$(LOCAL) up -d --build --wait --remove-orphans
+	@echo "Local arcade running on http://localhost:5173 (and your ngrok address). It restarts with Docker."
+
+local-down: ## Stop the local arcade (its data is kept)
+	$(LOCAL) down
+
+local-logs: ## Follow the local arcade's API and web logs
+	$(LOCAL) logs -f --tail 50 api web
+
+local-import: services ## Copy your dev database and Redis into the local arcade (replaces its data)
+	tools/local_import.sh
+
 # ------------------------------------------------------------------ run
 
-dev: services ## Play locally: API + web in one terminal, open http://localhost:5173 (Ctrl+C stops)
-	@echo "Starting API (:8000) and web (:5173). Open http://localhost:5173 ; Ctrl+C stops both."
+dev: services ## Play locally: API + web in one terminal, open http://localhost:5174 (Ctrl+C stops)
+	@echo "Starting API (:8000) and web (:5174). Open http://localhost:5174 ; Ctrl+C stops both."
 	@$(MAKE) -j2 --no-print-directory api web
 
 dev-unlocked: ## Like 'make dev', but every level is open (local playtesting only)
 	@ARC_DEV_UNLOCK_ALL=true $(MAKE) --no-print-directory dev
 
-share: services ## Like 'make dev', but friends can play through ngrok: then run 'ngrok http 5173'
-	@echo "Sharing mode: any ngrok address may reach this local game. Now run: ngrok http 5173"
+share: services ## Like 'make dev', but friends can play through ngrok: then run 'ngrok http 5174'
+	@echo "Sharing mode: any ngrok address may reach this local game. Now run: ngrok http 5174"
 	@ARC_DEV_TUNNEL=true $(MAKE) --no-print-directory dev
 
 share-unlocked: services ## 'make share' with every level open (friends can try any level)
-	@echo "Sharing mode with all levels open. Now run: ngrok http 5173"
+	@echo "Sharing mode with all levels open. Now run: ngrok http 5174"
 	@ARC_DEV_TUNNEL=true ARC_DEV_UNLOCK_ALL=true $(MAKE) --no-print-directory dev
 
 api: ## Run the API with auto-reload on :8000
 	cd apps/api && uv run uvicorn --factory arc_api.main:app --reload --no-access-log
 
-web: ## Run the web app with hot reload on :5173
+web: ## Run the web app with hot reload on :5174
 	cd apps/web && pnpm dev
 
 preview: ## Serve the production build under the production CSP on :4173

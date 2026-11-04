@@ -14,3 +14,4 @@ apps/web/src/wasm/pkg
 apps/api/levels/
 infra/secrets
 .git
+infra/local/

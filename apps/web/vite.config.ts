@@ -77,7 +77,8 @@ export default defineConfig({
   worker: { format: "es" },
   build: { target: "es2022", sourcemap: false, assetsInlineLimit: 0 },
   server: {
-    port: 5173,
+    // 5173 belongs to the always-on local arcade (`make local-up`).
+    port: 5174,
     strictPort: true,
     proxy: api,
     // `make share`: let friends in through any ngrok address (local dev only).

@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # Pepper for recovery-key hashes. Changing it invalidates every account key.
     recovery_pepper: SecretStr = SecretStr("")
 
-    allowed_origins: list[str] = ["http://localhost:5173"]
+    allowed_origins: list[str] = ["http://localhost:5174"]
     allowed_hosts: list[str] = ["localhost", "127.0.0.1", "testserver"]
     expose_docs: bool = False
     # Local playtesting only: every level can be started, skipping the unlock order and

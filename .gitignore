@@ -22,6 +22,7 @@ apps/api/levels/
 *.levels.json
 apps/api/levels/
 infra/secrets/
+infra/local/
 
 # OS / editors
 .DS_Store

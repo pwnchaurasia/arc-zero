@@ -98,8 +98,16 @@ Every level start, clear, loss, hint, assist purchase, GridSnap endless game end
 sign-up adds a row to `play_events`. Nothing is sent anywhere else. Clears, losses and
 endless ends also carry `seconds`: how long that level or game took, by the server's clock
 (levels left without finishing have no end row, so they don't count towards play time). `who` is a keyed one-way hash of the
-player or guest id: it counts distinct players but can't be turned back into an account.
-`signed_in` tells guests from saved players.
+player or guest id, so plain SQL can't join it to `players`. `signed_in` tells guests from
+saved players.
+
+**Plays and time by player name:** `make local-players` prints each player's games, plays,
+clears, minutes and last visit, in total and per game (rebuild first with `make local-up`
+after changing it). On production, run `docker compose exec api python -m arc_api.player_report`
+in the deploy directory. It recomputes saved players' hashes with `ARC_RECOVERY_PEPPER`, which
+never reaches SQL or the shell. Guests have no account, so they stay anonymous. Use a row's
+`who` value to filter the queries below to one player. Anyone holding the pepper and the
+database can link events to accounts, so treat both as personal data.
 
 Connect with `psql` using the production `ARC_DATABASE_URL` (or your local dev database) and run:
 

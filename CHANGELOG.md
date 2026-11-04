@@ -5,6 +5,10 @@ the newest is at the top.
 
 ## Unreleased
 
+### Analytics: plays and time by player name
+- `make local-players` (or `python -m arc_api.player_report` in the API container) lists
+  each saved player's games, plays, clears, minutes and last visit. Guests stay anonymous.
+
 ### Local arcade keeps players' data in folders
 - The always-on local stack (`make local-up`) now stores Postgres and Redis in
   `infra/local/pgdata` and `infra/local/redisdata` on the host instead of Docker

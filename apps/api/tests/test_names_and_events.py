@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import asyncpg
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from arc_api.config import Settings
+from arc_api.db import make_engine, make_sessionmaker
+from arc_api.player_report import by_game, render, totals
 from tests.conftest import MJ_WIN, TEST_DB_URL, guest_through_gate, pow_for
 
 
@@ -72,3 +76,47 @@ async def test_plays_are_counted_without_storing_ids(app_client: AsyncClient) ->
     # Play time on the finishing event only (this test is quick: 0 seconds).
     assert rows[0]["seconds"] is None
     assert rows[1]["seconds"] is not None and 0 <= rows[1]["seconds"] < 60
+
+
+async def test_report_links_plays_to_names_and_keeps_guests_anonymous(
+    app_client: AsyncClient, settings: Settings
+) -> None:
+    async def play(ticket: str | None = None) -> str:
+        headers = {"x-guest-ticket": ticket} if ticket else {}
+        start = await app_client.post("/api/v1/games/metro-jam/levels/1/start", headers=headers)
+        body = start.json()
+        ticket = body.get("guest_ticket") or ticket
+        done = await app_client.post(
+            "/api/v1/games/metro-jam/levels/1/complete",
+            json={"attempt_id": body["attempt_id"], "moves": MJ_WIN},
+            headers={"x-guest-ticket": ticket} if ticket else {},
+        )
+        assert done.status_code == 200, done.text
+        return ticket or ""
+
+    await play()
+    ticket = await guest_through_gate(app_client)
+    r = await app_client.post(
+        "/api/v1/auth/register",
+        json={
+            "guest_ticket": ticket,
+            "pow": await pow_for(app_client, "register"),
+            "name": "Nisha",
+        },
+    )
+    assert r.status_code == 200, r.text
+    await play()
+
+    engine = make_engine(settings.database_url.get_secret_value(), 1, 0)
+    try:
+        session: AsyncSession
+        async with make_sessionmaker(engine)() as session:
+            rows = await by_game(session, settings.recovery_pepper.get_secret_value())
+    finally:
+        await engine.dispose()
+
+    named = [row for row in rows if row.name == "Nisha"]
+    assert [(row.game, row.plays, row.clears) for row in named] == [("metro-jam", 1, 1)]
+    assert {row.name for row in rows} == {"Nisha", "(guest)"}
+    assert sum(games for _, games in totals(named)) == 1
+    assert "Nisha" in render(rows)

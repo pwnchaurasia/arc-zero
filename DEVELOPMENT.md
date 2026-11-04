@@ -173,6 +173,10 @@ ngrok http 5173     # once, in its own terminal; send friends the https://….ng
 - `make local-import` copies your dev database and Redis into it (replaces its data), so
   accounts and progress made under `make share` carry over.
 - `make local-logs` follows its logs; `make local-down` stops it (data kept).
+- Players' data is stored in folders on your Mac, `infra/local/pgdata` and
+  `infra/local/redisdata`, not in Docker volumes, so rebuilds, `down -v` and Docker
+  prunes can't delete it. Back it up by copying `infra/local/` while the stack is stopped.
+  Don't run `git clean -x`: it would delete these git-ignored folders.
 - Settings and passwords are in `infra/local/` (git-ignored). It runs with
   `ARC_DEV_TUNNEL=true`: `*.ngrok-free.app`, `*.ngrok.app` and `*.ngrok.io` may reach it.
 - Keep the ngrok terminal open: a free ngrok address changes whenever ngrok restarts.

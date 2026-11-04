@@ -384,7 +384,7 @@ export function DeadBridgeScreen({
             <div className="pop-in w-full max-w-sm rounded-3xl border border-line bg-panel p-5 text-center shadow-2xl">
               <h2 className="text-2xl font-black">Hold the bridge!</h2>
               <ul className="my-4 grid gap-2 text-left text-sm text-muted">
-                <li>👆 Drag (or move the mouse) to steer your gunner. Firing is automatic.</li>
+                <li>👆 Slide a finger anywhere on the screen (or move the mouse) to steer your gunner. Firing is automatic.</li>
                 <li>🟨 Shoot the gold cages. New guns switch on at once; turrets, the tank and the mech wait for you: tap Deploy when the horde gets close (they go in on their own after 15 seconds).</li>
                 <li>📦 Break the glowing crates for assists before they fade, then tap them below.</li>
                 <li>🧟 Don't let the horde reach the sandbags.</li>

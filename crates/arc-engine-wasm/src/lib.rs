@@ -484,14 +484,15 @@ impl DeadBridge {
         out
     }
 
-    /// Flat `[x, y, kind]` per bullet; kind 0 rifle, 1 turret, 2 tank shell, 3 pellet,
-    /// 4 minigun, 5 flame, 6 rocket, 7 mech.
+    /// Flat `[x, y, kind, spent]` per bullet; kind 0 rifle, 1 turret, 2 tank shell,
+    /// 3 pellet, 4 minigun, 5 flame, 6 rocket, 7 mech. `spent` 1: past its range (only
+    /// cages and crates still catch it).
     #[must_use]
     pub fn bullets(&self) -> Vec<i32> {
         self.sim
             .bullets()
             .iter()
-            .flat_map(|b| [b.x, b.y, b.kind as i32])
+            .flat_map(|b| [b.x, b.y, b.kind as i32, i32::from(b.spent)])
             .collect()
     }
 

@@ -5,6 +5,32 @@ the newest is at the top.
 
 ## Unreleased
 
+### MetroJam: clearer boarding
+- The waiting commuters stand in one straight line (bigger, front on the left) instead
+  of a crowded loop. Coloured pills group them: "NEXT 6" over the first group, then the
+  following groups; "+N" counts the rest.
+- Parked cars show a dot per seat that fills as each commuter walks over and gets in,
+  and "Full!" when it leaves.
+- The bay that takes the next commuter glows, and so do the cars in the lot of that
+  colour, so it's clear which car to send.
+
+### Dead Bridge
+- Steering by touch works like a trackpad: slide a finger anywhere and the gunner
+  moves by as much (a little more). No need to hold the gunner under your finger.
+  The mouse still steers by pointing.
+- Zombies are drawn inside the rails; the big ones no longer hang off the bridge.
+- Shots that look like hits are hits: bullets hit a zombie anywhere on its drawn body.
+- Shotgun pellets and flames past their range still break gold cages (Tank, Turret…)
+  and crates, so every power-up can be reached with any gun; they can't hurt zombies
+  that far away. Cages and crates flash on every hit.
+
+### Water Sort
+- Bottles are glass tubes: round bottom, lip, highlights and a shadow; the liquid has
+  depth and a lit surface.
+- Pouring: the bottle lifts, glides over in an arc while tipping, a curved stream
+  flows with small splashes, the source drains as the target fills, then it settles
+  back.
+
 ### GridSnap: 100 levels (Endless stays)
 - GridSnap opens a level list now, with **Endless** (the game so far, best score and
   leaderboards unchanged) at the top.

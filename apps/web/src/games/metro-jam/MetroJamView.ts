@@ -89,18 +89,19 @@ interface Layout {
   figure: number;
 }
 
+/** The platform queue: one straight line, front on the left. */
 interface Ring {
-  cx: number;
-  cy: number;
-  half: number;
-  r: number;
+  /** The front commuter's position. */
+  x0: number;
+  y: number;
   spacing: number;
+  /** Commuters that fit in the line on screen. */
   capacity: number;
 }
 
 interface Walker {
   sprite: Container;
-  /** Place in line along the loop (0 = at the gate); fractional while stepping forward. */
+  /** Place in line (0 = the front); fractional while stepping forward. */
   slot: number;
   phase: number;
 }
@@ -117,11 +118,16 @@ export class MetroJamView {
   private readonly world = new Container();
   private readonly labels = new Container();
   private readonly fx = new Container();
+  /** Glows on the cars and the bay that suit the next commuter (pulses in `idle`). */
+  private readonly hints = new Graphics();
+  /** Colour group pills above the queue and the "+N" count. */
+  private readonly queueLabels = new Container();
   private layout: Layout = { cw: 0, ch: 0, zh: 0, ox: 0, oy: 0, ringTop: 0, ringH: 0, figure: 0 };
-  private ring: Ring = { cx: 0, cy: 0, half: 0, r: 0, spacing: 1, capacity: 0 };
+  private ring: Ring = { x0: 0, y: 0, spacing: 1, capacity: 0 };
   private cars: (Container | null)[] = [];
   private bayCars = new Map<number, Container>();
-  private seatLabels = new Map<number, Text>();
+  /** Seat dots under each parked car: filled ones are commuters on board. */
+  private seats = new Map<number, { g: Graphics; color: number; capacity: number }>();
   private walkers: Walker[] = [];
   private waitingLabel: Text | null = null;
   private snap: MjSnapshot;
@@ -139,7 +145,7 @@ export class MetroJamView {
   ) {
     this.snap = snap;
     this.world.sortableChildren = true;
-    app.stage.addChild(this.ground, this.platform, this.people, this.world, this.labels, this.fx);
+    app.stage.addChild(this.ground, this.platform, this.queueLabels, this.people, this.hints, this.world, this.labels, this.fx);
     this.build();
     app.renderer.on("resize", this.relayout);
     app.ticker.add(this.idle);
@@ -252,7 +258,8 @@ export class MetroJamView {
       oy: worldTop + (ROAD_W + BAY_DEPTH + 0.15) * ch + 0.45 * cw,
       ringTop,
       ringH,
-      figure: Math.max(13, Math.min(22, ringH * 0.15)),
+      // Big enough to tell colours apart at a glance.
+      figure: Math.max(20, Math.min(34, ringH * 0.3)),
     };
   }
 
@@ -264,6 +271,7 @@ export class MetroJamView {
     this.drawRing();
     this.drawCars();
     this.drawBays();
+    this.drawHints();
   }
 
   private drawGround(): void {
@@ -468,45 +476,16 @@ export class MetroJamView {
   private computeRing(): void {
     const W = this.app.screen.width;
     const { ringTop, ringH, figure } = this.layout;
-    const r = (ringH - figure * 1.7) / 2;
-    const half = Math.max(0, W / 2 - 16 - r - figure * 0.6);
-    const loop = 4 * half + 2 * Math.PI * r;
-    const spacing = figure * 0.82;
-    this.ring = {
-      cx: W / 2,
-      cy: ringTop + ringH / 2 + figure * 0.2,
-      half,
-      r,
-      spacing,
-      // Leave the stretch just right of the gate free: that's where people walk in.
-      capacity: Math.floor((loop - spacing * 3) / spacing),
-    };
+    const spacing = figure * 0.92;
+    const x0 = 16 + figure * 0.75;
+    // Leave room on the right for the "+N more" count.
+    const capacity = Math.max(1, Math.floor((W - x0 - figure * 2.2) / spacing) + 1);
+    this.ring = { x0, y: ringTop + ringH * 0.66, spacing, capacity };
   }
 
-  /**
-   * The point `d` pixels behind the gate. The line runs from the gate (bottom middle)
-   * left, up round the left end, right along the top, down round the right end and
-   * back along the bottom towards the gate: a loop.
-   */
-  private ringPoint(d: number): Pt {
-    const { cx, cy, half, r } = this.ring;
-    let s = Math.max(0, d);
-    if (s <= half) return [cx - s, cy + r];
-    s -= half;
-    const arc = Math.PI * r;
-    if (s <= arc) {
-      const a = Math.PI / 2 + s / r;
-      return [cx - half + Math.cos(a) * r, cy + Math.sin(a) * r];
-    }
-    s -= arc;
-    if (s <= 2 * half) return [cx - half + s, cy - r];
-    s -= 2 * half;
-    if (s <= arc) {
-      const a = -Math.PI / 2 + s / r;
-      return [cx + half + Math.cos(a) * r, cy + Math.sin(a) * r];
-    }
-    s -= arc;
-    return [cx + half - Math.min(s, half), cy + r];
+  /** Where place `slot` in the line stands (0 = the front). */
+  private ringPoint(slot: number): Pt {
+    return [this.ring.x0 + Math.max(0, slot) * this.ring.spacing, this.ring.y];
   }
 
   private drawFigure(color: number | null): Container {
@@ -541,31 +520,30 @@ export class MetroJamView {
     this.platform.removeChildren().forEach((c) => c.destroy({ children: true }));
     this.people.removeChildren().forEach((c) => c.destroy({ children: true }));
     this.walkers = [];
-    const { cx, cy, half, r } = this.ring;
+    const W = this.app.screen.width;
+    const { x0, y } = this.ring;
     const { figure } = this.layout;
     const g = new Graphics();
-    // The track: a wide loop with yellow guide lines either side.
-    const outer = r + figure * 0.6;
-    const inner = Math.max(4, r - figure * 0.6);
-    g.roundRect(cx - half - outer, cy - outer, 2 * (half + outer), 2 * outer, outer)
+    // The platform edge the queue stands on, with the front spot marked.
+    g.roundRect(8, y - figure * 0.75, W - 16, figure * 1.5, figure * 0.4)
       .fill(TRACK)
       .stroke({ width: 2, color: TACTILE, alpha: 0.85 });
-    g.roundRect(cx - half - inner, cy - inner, 2 * (half + inner), 2 * inner, inner)
-      .fill(PAVING)
-      .stroke({ width: 2, color: TACTILE, alpha: 0.85 });
-    // Gate: where the front of the line steps down to the bays.
-    const gy = cy + r;
-    g.roundRect(cx - figure * 0.8, gy - figure * 0.95, figure * 1.6, figure * 1.6, 6).stroke({ width: 3, color: 0xffffff });
-    g.poly([cx - figure * 0.35, gy + figure * 0.75, cx + figure * 0.35, gy + figure * 0.75, cx, gy + figure * 1.15]).fill(0xffffff);
+    g.roundRect(x0 - figure * 0.6, y - figure * 0.72, figure * 1.2, figure * 1.44, figure * 0.3).stroke({
+      width: 3,
+      color: 0xffffff,
+    });
     this.platform.addChild(g);
 
-    const label = new Text({ text: "", style: { fill: 0x1e293b, fontSize: Math.max(12, figure * 0.75), fontWeight: "900" } });
-    label.anchor.set(0.5);
-    label.position.set(cx, cy - figure * 0.15);
+    const label = new Text({
+      text: "",
+      style: { fill: 0x1e293b, fontSize: Math.max(12, figure * 0.5), fontWeight: "900" },
+    });
+    label.anchor.set(1, 0.5);
+    label.position.set(W - 16, y);
     this.platform.addChild(label);
     this.waitingLabel = label;
 
-    // Visible commuters in colour, then hidden ones as grey silhouettes until the loop is full.
+    // Known commuters in colour, then hidden ones as grey silhouettes.
     const visible = this.snap.waiting.slice(0, Math.min(this.level.visible, this.ring.capacity));
     const shown = Math.min(this.snap.remaining, this.ring.capacity);
     for (let i = 0; i < shown; i++) {
@@ -577,25 +555,91 @@ export class MetroJamView {
     this.updateWaitingLabel();
   }
 
+  /** The "+N" count and a pill over each run of same-coloured commuters ("NEXT 6"). */
   private updateWaitingLabel(): void {
-    if (this.waitingLabel && !this.waitingLabel.destroyed) this.waitingLabel.text = `${this.snap.remaining} waiting`;
+    const shown = Math.min(this.snap.remaining, this.ring.capacity);
+    if (this.waitingLabel && !this.waitingLabel.destroyed) {
+      const more = this.snap.remaining - shown;
+      this.waitingLabel.text = more > 0 ? `+${more}` : "";
+      this.waitingLabel.style.fill = 0xe2e8f0;
+    }
+    this.queueLabels.removeChildren().forEach((c) => c.destroy({ children: true }));
+    const { figure } = this.layout;
+    const known = this.snap.waiting.slice(0, Math.min(this.level.visible, shown));
+    let start = 0;
+    let prevRight = 0;
+    for (let i = 1; i <= known.length; i++) {
+      if (i < known.length && known[i] === known[start]) continue;
+      const color = known[start];
+      if (color === undefined) break;
+      const count = i - start;
+      // The run may carry on past what is visible: say so.
+      const open = i === known.length && this.snap.remaining > known.length;
+      const [ax] = this.ringPoint(start);
+      const [bx] = this.ringPoint(i - 1);
+      const top = this.ring.y - figure * 1.55;
+      const text = new Text({
+        text: `${start === 0 ? "NEXT " : ""}${count}${open ? "+" : ""}`,
+        style: { fill: 0xffffff, fontSize: Math.max(10, figure * 0.36), fontWeight: "900", stroke: { color: 0x0b1020, width: 3 } },
+      });
+      text.anchor.set(0.5);
+      // As wide as the group, but never narrower than its label; kept on screen.
+      const width = Math.max(bx - ax + figure * 0.84, text.width + figure * 0.5);
+      const mid = Math.max(8 + width / 2, prevRight + 4 + width / 2, (ax + bx) / 2);
+      prevRight = mid + width / 2;
+      const pill = new Graphics();
+      pill.roundRect(mid - width / 2, top, width, figure * 0.5, figure * 0.25).fill(mjColor(color).color);
+      text.position.set(mid, top + figure * 0.25);
+      this.queueLabels.addChild(pill, text);
+      start = i;
+    }
   }
 
   private placeWalkers(): void {
     for (const w of this.walkers) {
       if (w.sprite.destroyed) continue;
-      const [x, y] = this.ringPoint(w.slot * this.ring.spacing);
+      const [x, y] = this.ringPoint(w.slot);
       const bob = this.fast ? 0 : Math.abs(Math.sin(this.clock * 6 + w.phase)) * 1.6;
       w.sprite.position.set(x, y - bob);
     }
   }
 
-  /** Keeps the loop in place every frame; people shuffle their feet while they wait. */
+  /** Keeps the line in place every frame; people shuffle their feet while they wait. */
   private readonly idle = () => {
     if (this.destroyed) return;
     this.clock += this.app.ticker.deltaMS / 1000;
     this.placeWalkers();
+    this.hints.alpha = this.fast ? 0.8 : 0.55 + 0.4 * Math.abs(Math.sin(this.clock * 3));
   };
+
+  /**
+   * Shows who the next commuter can ride with: the bay whose car matches glows, and
+   * so do matching cars still in the lot (tap one to send it to a bay).
+   */
+  private drawHints(): void {
+    const g = this.hints.clear();
+    const next = this.snap.waiting[0];
+    if (next === undefined) return;
+    const color = mjColor(next).color;
+    const { cw, ch } = this.layout;
+    const width = Math.max(3, cw * 0.09);
+    this.snap.bays.forEach(([vehicle], i) => {
+      if (this.level.vehicles[vehicle]?.color !== next) return;
+      const r = this.bayRect(i);
+      g.roundRect(this.sx(r.x0) + 3, this.sy(r.cy - BAY_DEPTH / 2 + 0.08), r.w * cw - 6, (BAY_DEPTH - 0.2) * ch, 8).stroke({
+        width,
+        color,
+      });
+    });
+    this.level.vehicles.forEach((v, i) => {
+      if (v.color !== next || !(this.snap.onGrid[i] ?? false)) return;
+      const [cx, cy] = this.centre(v);
+      const along = v.dir === "n" || v.dir === "s";
+      const lw = (along ? 0.92 : length(v.kind) - 0.08) * cw;
+      const lh = (along ? length(v.kind) - 0.08 : 0.92) * ch;
+      g.roundRect(this.sx(cx) - lw / 2, this.sy(cy) - lh / 2, lw, lh, 8).stroke({ width, color });
+    });
+  }
 
   // ----------------------------------------------------------------- bays
 
@@ -616,7 +660,7 @@ export class MetroJamView {
     this.labels.removeChildren().forEach((c) => c.destroy({ children: true }));
     for (const car of this.bayCars.values()) if (!car.destroyed) car.destroy({ children: true });
     this.bayCars.clear();
-    this.seatLabels.clear();
+    this.seats.clear();
     const g = new Graphics();
     const { ch, cw } = this.layout;
     this.labels.addChild(g);
@@ -636,6 +680,7 @@ export class MetroJamView {
       const v = this.level.vehicles[vehicle];
       if (v) this.placeInBay(i, v, riders);
     });
+    this.drawHints();
   }
 
   private placeInBay(bay: number, v: MjVehicle, riders: number): void {
@@ -645,19 +690,31 @@ export class MetroJamView {
     car.zIndex = -10;
     this.world.addChild(car);
     this.bayCars.set(bay, car);
-    const seats = new Text({
-      text: `${riders}/${riderCount(v.kind)}`,
-      style: {
-        fill: 0xffffff,
-        fontSize: Math.max(11, Math.min(15, this.layout.cw * 0.34)),
-        fontWeight: "900",
-        stroke: { color: 0x0b1020, width: 3 },
-      },
-    });
-    seats.anchor.set(0.5, 0);
-    seats.position.set(this.sx(r.cx), this.sy(r.cy + 0.3));
-    this.labels.addChild(seats);
-    this.seatLabels.set(bay, seats);
+    const g = new Graphics();
+    this.labels.addChild(g);
+    this.seats.set(bay, { g, color: mjColor(v.color).color, capacity: riderCount(v.kind) });
+    this.drawSeats(bay, riders);
+  }
+
+  /** One dot per seat under the car in `bay`, `riders` of them filled. */
+  private drawSeats(bay: number, riders: number): void {
+    const seat = this.seats.get(bay);
+    if (!seat || seat.g.destroyed) return;
+    const r = this.bayRect(bay);
+    const { cw } = this.layout;
+    const perRow = seat.capacity > 8 ? Math.ceil(seat.capacity / 2) : seat.capacity;
+    const gap = Math.min(cw * 0.3, (r.w * cw * 0.9) / perRow);
+    const radius = Math.max(2.5, Math.min(cw * 0.11, gap * 0.38));
+    const g = seat.g.clear();
+    for (let k = 0; k < seat.capacity; k++) {
+      const row = Math.floor(k / perRow);
+      const col = k % perRow;
+      const inRow = Math.min(perRow, seat.capacity - row * perRow);
+      const x = this.sx(r.cx) + (col - (inRow - 1) / 2) * gap;
+      const y = this.sy(r.cy + 0.48) + row * gap;
+      if (k < riders) g.circle(x, y, radius).fill(seat.color).stroke({ width: 1.5, color: 0xffffff });
+      else g.circle(x, y, radius).stroke({ width: 1.5, color: 0xffffff, alpha: 0.55 });
+    }
   }
 
   // ------------------------------------------------------------ animation
@@ -795,6 +852,7 @@ export class MetroJamView {
     bays[bay] = [vehicle, riders + 1];
     this.snap = { ...this.snap, bays, waiting: this.snap.waiting.slice(1), remaining: this.snap.remaining - 1 };
     this.updateWaitingLabel();
+    this.drawHints();
     // A new commuter walks in at the back of the loop if any are left.
     const back = this.walkers.length;
     if (this.snap.remaining > back && back < this.ring.capacity) {
@@ -823,17 +881,18 @@ export class MetroJamView {
       const fy = s.y;
       const tx = this.sx(r.cx);
       const ty = this.sy(r.cy);
-      void this.tw(170, [s], (t) => {
+      // Walks over to their car in a hop, so you can follow who boards where.
+      s.zIndex = 1;
+      this.fx.addChild(s);
+      void this.tw(300, [s], (t) => {
         s.x = lerp(fx, tx, t);
-        s.y = lerp(fy, ty, t) - Math.sin(t * Math.PI) * 18;
-        s.scale.set(1 - t * 0.45);
-        s.alpha = 1 - t * 0.6;
+        s.y = lerp(fy, ty, t) - Math.sin(t * Math.PI) * this.layout.figure * 1.2;
+        s.scale.set(1 - t * 0.35);
+        s.alpha = t < 0.85 ? 1 : 1 - (t - 0.85) / 0.15;
       }).then(() => {
         if (!s.destroyed) s.destroy({ children: true });
-        const label = this.seatLabels.get(bay);
-        const v = this.level.vehicles[vehicle];
         const now = this.snap.bays[bay];
-        if (label && !label.destroyed && v && now?.[0] === vehicle) label.text = `${now[1]}/${riderCount(v.kind)}`;
+        if (now?.[0] === vehicle) this.drawSeats(bay, now[1]);
         const car = this.bayCars.get(bay);
         if (car && !car.destroyed) {
           const k = car.scale.x;
@@ -848,8 +907,7 @@ export class MetroJamView {
     // The last rider reaches the car before it pulls away.
     await this.wait(this.fast ? 0 : 170);
     const car = this.bayCars.get(bay);
-    const label = this.seatLabels.get(bay);
-    if (label && !label.destroyed) label.text = "Full!";
+    if (car && !car.destroyed) this.floatText(car.x, car.y - this.layout.ch * 0.6, "Full!");
     if (car && !car.destroyed) {
       this.bayCars.delete(bay);
       const x0 = car.x;
@@ -863,6 +921,21 @@ export class MetroJamView {
     bays[bay] = [-1, 0];
     this.snap = { ...this.snap, bays };
     this.drawBays();
+  }
+
+  private floatText(x: number, y: number, text: string): void {
+    const t = new Text({
+      text,
+      style: { fill: 0xffffff, fontSize: Math.max(13, this.layout.cw * 0.42), fontWeight: "900", stroke: { color: 0x0b1020, width: 4 } },
+    });
+    t.anchor.set(0.5);
+    t.position.set(x, y);
+    this.fx.addChild(t);
+    void tween(this.app, this.fast ? 300 : 800, (k) => {
+      if (t.destroyed) return;
+      t.y = y - 26 * k;
+      t.alpha = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4;
+    }).then(() => t.destroy());
   }
 
   /** Confetti when a full vehicle leaves. */

@@ -18,8 +18,9 @@ services:
     build: { context: .., dockerfile: apps/api/Dockerfile }
     restart: unless-stopped
     env_file: [local/api.env]
-    # The local development levels (`make levels`); ARC_LEVELS_PATH=/run/secrets.
-    volumes: ["../apps/api/levels:/run/secrets:ro"]
+    # A copy of the levels made by `make local-up`, so they always match the code this
+    # stack was built from (regenerating levels for development never touches it).
+    volumes: ["./local/levels:/run/secrets:ro"]
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }

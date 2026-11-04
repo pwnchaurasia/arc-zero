@@ -56,6 +56,7 @@ migrate: ## Apply database migrations
 
 local-up: levels ## Build your checkout and run it for friends on :5173 (stays up; rerun after changes)
 	python3 tools/local_env.py
+	rm -rf infra/local/levels && cp -R apps/api/levels infra/local/levels
 	$(LOCAL) up -d --build --wait --remove-orphans
 	@echo "Local arcade running on http://localhost:5173 (and your ngrok address). It restarts with Docker."
 

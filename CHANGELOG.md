@@ -34,6 +34,25 @@ the newest is at the top.
   mid-level). Installed home-screen apps update the same way; the first time after this
   release, close and reopen the app once.
 
+### Brick Blast
+- While you aim, the block the ball will hit first blinks. When the shot grazes the corner
+  between two blocks, it shows the one the ball really takes (the engine works it out
+  with the same rule as the real shot).
+- Aiming on Android: lifting your finger no longer nudges the shot. On release the game
+  fires the aim from just before the lift (about 0.1 s earlier); a bigger last-moment
+  change is still treated as a deliberate adjustment.
+- Three new power-ups from level 11, replacing some of the usual ones (same number per
+  level): **DMG** (orange) — balls that touch it hit for double damage until they land;
+  **Pierce** (teal ➤) — balls pass through the next 2 blocks, damaging each; **TNT** —
+  the first ball to touch it blasts the 8 cells around it for 30 HP. Powered balls glow
+  in the power-up's colour.
+- Power-ups are no longer sealed inside blocks: one with blocks on every side is moved
+  to the nearest open cell in its row (or the row next to it). About 600 moved; ~160
+  have no open cell nearby and stay.
+- Blocks and starting balls are unchanged on every level; only power-ups changed. Levels
+  60, 71, 87 and 90 keep their old power-ups (the solver bot could not finish them with
+  the new placement, so they stay as they were).
+
 ### Upgrade notes
 - Database migration `0004` (GridSnap scores). The release workflow runs it.
 

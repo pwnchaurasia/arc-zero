@@ -31,6 +31,9 @@ function stateFromError(e: unknown): BbState | null {
   return null;
 }
 
+
+/** How long the board celebrates a clear before the result card covers it. */
+const WIN_CARD_DELAY_MS = 1500;
 export function BrickBlastScreen({
   level,
   onBack,
@@ -86,7 +89,9 @@ export function BrickBlastScreen({
       view.current?.setState(next);
       if (next.status === "won") {
         sfx.win();
-        if (turnResult) setResult(turnResult);
+        void view.current?.celebrate();
+        // Let the last blocks burst and the celebration play before the card covers it.
+        if (turnResult) setTimeout(() => !cancelled && run.current === r && setResult(turnResult), WIN_CARD_DELAY_MS);
         void refresh();
         if (turnResult?.registration_required) onCheckpoint();
       } else if (next.status === "lost") {
@@ -284,7 +289,10 @@ export function BrickBlastScreen({
     r.busy = false;
     setState(next);
     view.current?.setState(next);
-    if (next.status === "won" && res) setResult(res);
+    if (next.status === "won" && res) {
+      void view.current?.celebrate();
+      setTimeout(() => run.current === r && setResult(res), WIN_CARD_DELAY_MS);
+    }
     else if (next.status === "lost") setLost(true);
     else view.current?.setAimEnabled(true);
   };

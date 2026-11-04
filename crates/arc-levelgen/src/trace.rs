@@ -12,7 +12,8 @@
 //! 4. Several candidates per level; keep the one whose "clear this first" chain
 //!    (rounds of removing every free line at once) is closest to the target.
 //!
-//! Every 5th level from 5 on is laid inside a picture (heart, diamond, ...).
+//! Every level from 4 on is laid inside a picture (see `pictures.rs`), packed tight so
+//! the lines draw it, like the reference apps.
 
 use arc_engine::rng::Rng;
 use arc_engine::traceout::{Game, Level, Line};
@@ -20,12 +21,12 @@ use rayon::prelude::*;
 use serde::Serialize;
 
 use crate::derive_seed;
+use crate::pictures::{self, PICTURES};
 
 const CANDIDATES: usize = 12;
 /// Lines sampled per densify step, and how many of the best are tried.
 const DENSIFY_SAMPLES: usize = 8;
 const DENSIFY_TRIES: usize = 3;
-const THEMES: [&str; 6] = ["heart", "diamond", "circle", "hourglass", "cross", "ring"];
 
 #[derive(Clone, Debug, Serialize)]
 pub struct TraceLevel {
@@ -35,6 +36,9 @@ pub struct TraceLevel {
     pub depth: usize,
     /// Lines that can leave at the very start.
     pub free_at_start: usize,
+    /// Share of the picture's cells covered by lines (for the log).
+    #[serde(skip)]
+    pub cover: f64,
 }
 
 struct Params {
@@ -74,12 +78,14 @@ fn params(level: u16) -> Params {
             depth: [2.0, 3.0, 4.0][l - 1],
         };
     }
-    // Boards grow fastest early on: more lines means longer chains.
-    let width = lerp(8.0, 16.0, t.sqrt()).round() as u8;
+    // Boards grow fastest early on: more lines means longer chains, and more cells
+    // draw the picture in finer detail.
+    let width = lerp(10.0, 25.0, t.sqrt()).round() as u8;
     Params {
         width,
-        height: ((f64::from(width) * 1.45).round() as u8).min(arc_engine::traceout::MAX_SIDE),
-        fill: lerp(0.86, 0.97, t),
+        height: ((f64::from(width) * 1.42).round() as u8).min(arc_engine::traceout::MAX_SIDE),
+        // Share of the picture's cells covered by lines: high, so the shape reads.
+        fill: lerp(0.92, 0.985, t),
         min_len: lerp(3.0, 6.0, t).round() as usize,
         max_len: lerp(7.0, 20.0, t).round() as usize,
         max_turns: lerp(3.0, 12.0, t).round() as usize,
@@ -89,30 +95,31 @@ fn params(level: u16) -> Params {
     }
 }
 
-/// Cells inside the picture for silhouette levels (all cells otherwise).
+/// Cells inside the picture (all cells when there is none). The picture is scaled to
+/// fill the board, keeping its proportions, with a cell of paper around it.
 fn mask(theme: Option<&str>, w: usize, h: usize) -> Vec<bool> {
-    let mut out = vec![true; w * h];
     let Some(theme) = theme else {
-        return out;
+        return vec![true; w * h];
     };
+    // The picture's bounding box, found by sampling its coordinate space finely.
+    let (mut x0, mut x1, mut y0, mut y1) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+    for i in 0..=200 {
+        for j in 0..=280 {
+            let (x, y) = (-1.0 + f64::from(i) / 100.0, -1.4 + f64::from(j) / 100.0);
+            if pictures::inside(theme, x, y) {
+                (x0, x1, y0, y1) = (x0.min(x), x1.max(x), y0.min(y), y1.max(y));
+            }
+        }
+    }
+    // Board units per picture unit: as large as fits inside a one-cell margin.
+    let scale = ((w as f64 - 2.0) / (x1 - x0)).min((h as f64 - 2.0) / (y1 - y0));
+    let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    let mut out = vec![false; w * h];
     for y in 0..h {
         for x in 0..w {
-            // -1..1 across the board, y pointing up.
-            let nx = (x as f64 + 0.5) / w as f64 * 2.0 - 1.0;
-            let ny = 1.0 - (y as f64 + 0.5) / h as f64 * 2.0;
-            let r = (nx * nx + ny * ny).sqrt();
-            out[y * w + x] = match theme {
-                "heart" => {
-                    let (x, y) = (nx * 1.25, ny * 1.25 + 0.2);
-                    (x * x + y * y - 1.0).powi(3) - x * x * y.powi(3) <= 0.0
-                }
-                "diamond" => nx.abs() + ny.abs() <= 1.05,
-                "circle" => r <= 1.0,
-                "hourglass" => nx.abs() <= ny.abs() + 0.2,
-                "cross" => nx.abs() < 0.4 || ny.abs() < 0.32,
-                "ring" => (0.42..=1.0).contains(&r),
-                _ => true,
-            };
+            let px = cx + (x as f64 + 0.5 - w as f64 / 2.0) / scale;
+            let py = cy - (y as f64 + 0.5 - h as f64 / 2.0) / scale;
+            out[y * w + x] = pictures::inside(theme, px, py);
         }
     }
     out
@@ -311,8 +318,7 @@ impl Board {
 fn candidate(level: u16, seed: u64) -> Option<TraceLevel> {
     let p = params(level);
     let mut rng = Rng::new(seed);
-    let theme = (level >= 5 && level.is_multiple_of(5))
-        .then(|| THEMES[usize::from(level / 5) % THEMES.len()]);
+    let theme = (level >= 4).then(|| PICTURES[usize::from(level - 4) % PICTURES.len()]);
     let (w, h) = (usize::from(p.width), usize::from(p.height));
     let mut board = Board {
         w,
@@ -357,6 +363,20 @@ fn candidate(level: u16, seed: u64) -> Option<TraceLevel> {
             failures += 1;
         }
     }
+    // Last, 2-cell lines into whatever gaps are left, so the picture has no holes.
+    let pairs = Params {
+        min_len: 2,
+        max_len: 2,
+        ..p
+    };
+    failures = 0;
+    while failures < 600 && !full(&board) {
+        if board.densify(&mut rng, &pairs) {
+            failures = 0;
+        } else {
+            failures += 1;
+        }
+    }
     // Shuffle line order so indices say nothing about the solution order.
     rng.shuffle(&mut board.lines);
     let data = Level {
@@ -365,6 +385,7 @@ fn candidate(level: u16, seed: u64) -> Option<TraceLevel> {
         lines: board.lines,
         theme: theme.map(str::to_owned),
     };
+    let covered = board.occ.iter().filter(|c| **c != 0).count() as f64 / area.max(1) as f64;
     data.validate().ok()?;
     let depth = data.depth()?;
     let free_at_start = Game::new(&data).ok()?.free_lines().len();
@@ -373,14 +394,16 @@ fn candidate(level: u16, seed: u64) -> Option<TraceLevel> {
         data,
         depth,
         free_at_start,
+        cover: covered,
     })
 }
 
-/// How far a candidate is from what we want: its chain depth near the target, and
-/// few lines free at the start (a point per 5% free).
+/// How far a candidate is from what we want: its chain depth near the target, few
+/// lines free at the start (a point per 5% free), and the picture fully drawn (a point
+/// per 2% of it left uncovered).
 fn miss(c: &TraceLevel, target: f64) -> f64 {
     let free = c.free_at_start as f64 / c.data.lines.len().max(1) as f64;
-    (c.depth as f64 - target).abs() + free * 20.0
+    (c.depth as f64 - target).abs() + free * 20.0 + (1.0 - c.cover) * 50.0
 }
 
 pub fn generate(master: &str, max_level: u16) -> Vec<TraceLevel> {
@@ -396,10 +419,11 @@ pub fn generate(master: &str, max_level: u16) -> Vec<TraceLevel> {
                 .min_by(|a, b| miss(a, target).total_cmp(&miss(b, target)))
                 .unwrap_or_else(|| panic!("traceout level {level}: no valid candidate"));
             eprintln!(
-                "  to level {level}: {}x{} {} lines, depth {} (target {target:.1}), {} free at start{}",
+                "  to level {level}: {}x{} {} lines, {:.0}% covered, depth {} (target {target:.1}), {} free at start{}",
                 best.data.width,
                 best.data.height,
                 best.data.lines.len(),
+                best.cover * 100.0,
                 best.depth,
                 best.free_at_start,
                 best.data.theme.as_deref().map(|t| format!(", {t}")).unwrap_or_default()
@@ -420,7 +444,7 @@ mod tests {
         assert!(easy.data.lines.len() < hard.data.lines.len());
         assert!(easy.depth <= hard.depth);
         assert!(hard.data.solvable());
-        let heart = candidate(5, 3).expect("level 5");
-        assert!(heart.data.theme.is_some());
+        let picture = candidate(5, 3).expect("level 5");
+        assert!(picture.data.theme.is_some());
     }
 }

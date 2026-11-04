@@ -5,6 +5,20 @@ the newest is at the top.
 
 ## Unreleased
 
+### TraceOut: every level is a picture
+- From level 4 the lines are packed into a picture (91–97% of it covered): heart, apple,
+  house, ghost, mushroom, fish, bell, cat, cup, diamond, rabbit, tree, paw, butterfly,
+  crown, moon, leaf, rocket, star, umbrella, then round again on bigger boards. Bold
+  shapes come first; detailed ones once boards are big enough to draw them.
+- Boards grow to 25 × 36 so pictures have detail; the paper shows the picture's outline
+  faintly, and a clear says what you drew ("You drew a rabbit!"). Levels 1–3 stay plain
+  warm-ups.
+
+### Win cards wait for the celebration
+- GridSnap, Brick Blast and TraceOut show the result card only after the winning move's
+  animation and the celebration have played (about 1.5 s), instead of covering them.
+  Brick Blast gets a "Level clear!" banner and bursts.
+
 ### MetroJam: clearer boarding
 - The waiting commuters stand in one straight line (bigger, front on the left) instead
   of a crowded loop. Coloured pills group them: "NEXT 6" over the first group, then the

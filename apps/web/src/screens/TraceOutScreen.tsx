@@ -118,10 +118,13 @@ export function TraceOutScreen({
     g.done = true;
     try {
       const res = await api.to.complete(level, g.start.attempt_id, g.moves);
-      await new Promise((r) => setTimeout(r, 500));
+      // The last line slides out, then the confetti plays, then the card.
+      await new Promise((r) => setTimeout(r, 900));
       if (!game.current) return;
       sfx.win();
       void view.current?.celebrate();
+      await new Promise((r) => setTimeout(r, 1100));
+      if (!game.current) return;
       haptic(30);
       setResult(res);
       setCoins(res.coins);
@@ -276,7 +279,8 @@ export function TraceOutScreen({
 
   const count = me?.games.traceout.level_count ?? 0;
   const resultDetail = (r: ToComplete) => {
-    const flawless = r.mistakes === 0 ? "Flawless! " : "";
+    const theme = info?.data.theme;
+    const flawless = `${theme ? `You drew ${/^[aeiou]/.test(theme) ? "an" : "a"} ${theme}! ` : ""}${r.mistakes === 0 ? "Flawless! " : ""}`;
     if (!r.first_clear) return `${flawless}Replay: no coins this time.`;
     const parts = [`+${r.coins_earned} coins`];
     if (r.streak_bonus) parts.push(`+${r.streak_bonus} streak bonus`);

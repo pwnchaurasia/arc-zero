@@ -6,6 +6,8 @@ import { createPixi, prefersReducedMotion, tween } from "../pixi";
 const PAPER = 0xfcf8f2;
 const PAPER_EDGE = 0xe9dcc6;
 const DOT = 0xe2d3bb;
+/** The picture's outline: a faint tint under its lines, so the shape reads even as they leave. */
+const PICTURE = 0xf2e6d2;
 const INK = 0x3d2616;
 const BLOCKED = 0xdc2626;
 const HINT = 0xd97706;
@@ -224,6 +226,13 @@ export class TraceOutView {
     g.roundRect(this.ox - m, this.oy - m, this.cell * this.level.width + 2 * m, this.cell * this.level.height + 2 * m, 22)
       .fill(PAPER)
       .stroke({ width: 2, color: PAPER_EDGE });
+    if (this.level.theme) {
+      for (const line of this.level.lines) {
+        for (const [x, y] of line.cells) {
+          g.rect(this.ox + x * this.cell, this.oy + y * this.cell, this.cell + 0.5, this.cell + 0.5).fill(PICTURE);
+        }
+      }
+    }
     for (let y = 0; y < this.level.height; y++) {
       for (let x = 0; x < this.level.width; x++) {
         g.circle(this.ox + (x + 0.5) * this.cell, this.oy + (y + 0.5) * this.cell, Math.max(1, this.cell * 0.05)).fill(DOT);

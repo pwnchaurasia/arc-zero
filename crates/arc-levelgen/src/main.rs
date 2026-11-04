@@ -14,6 +14,7 @@ mod brick;
 mod bridge;
 mod grid;
 mod metro;
+mod pictures;
 mod trace;
 mod water;
 

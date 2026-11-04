@@ -137,7 +137,9 @@ export function GridSnapScreen({
 
   /** The server confirmed a level's last stone: celebrate and show the result. */
   const won = (res: GsLevelResult) => {
-    setResult(res);
+    // The last lines clear and the fireworks play before the result card covers them.
+    const r = run.current;
+    setTimeout(() => run.current === r && setResult(res), 1600);
     setCoins(res.coins);
     sfx.win();
     haptic(30);

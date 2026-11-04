@@ -17,7 +17,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 pub const MIN_SIDE: u8 = 4;
-pub const MAX_SIDE: u8 = 24;
+pub const MAX_SIDE: u8 = 40;
 pub const MAX_LINES: usize = 200;
 pub const MAX_LINE_LEN: usize = 48;
 pub const LIVES: u8 = 3;

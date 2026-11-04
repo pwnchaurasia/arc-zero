@@ -5,6 +5,10 @@ the newest is at the top.
 
 ## Unreleased
 
+### Development
+- `make local-up` runs an always-on copy of the arcade in Docker on port 5173 for
+  friends through ngrok, with its own database; `make dev` moved to port 5174.
+
 ### New game: GridSnap
 - Drag block shapes onto an 8 × 8 board; full rows and columns clear. Three shapes at a
   time, placed in any order; new ones come when all three are down. No rotating.
@@ -29,6 +33,42 @@ the newest is at the top.
   comes back to the front, and switches to the new version on the home screen (never
   mid-level). Installed home-screen apps update the same way; the first time after this
   release, close and reopen the app once.
+
+### New game: TraceOut
+- Tap a line to send it off the board along its arrow. If another line is in the way it
+  bounces back and you lose one of your 3 droplets. Clear every line to win.
+- 100 levels. Levels 1–3 are a warm-up; then the board, the number of lines (up to 50)
+  and the "clear this one first" chains grow steadily. Every 5th level forms a picture
+  (heart, diamond, circle, hourglass, cross, ring).
+- Stars: 3 with no mistakes ("Flawless!"), 2 with one, 1 otherwise.
+- Out of droplets: restart for free, or **Continue** (20 coins) to refill them and keep
+  the board. **Hint** (30 coins) shows a line that can leave now. Both ask first.
+- Coins: the usual first-clear rewards; the server replays every tap to check the win.
+- Tap anywhere on a line (not just the arrow). Keyboard and screen readers get one
+  button per line.
+
+### For developers
+- `levels/traceout.json` is a new level file: the release workflow, `activate.sh` and both
+  compose files ship it.
+
+### Brick Blast
+- While you aim, the block the ball will hit first blinks. When the shot grazes the corner
+  between two blocks, it shows the one the ball really takes (the engine works it out
+  with the same rule as the real shot).
+- Aiming on Android: lifting your finger no longer nudges the shot. On release the game
+  fires the aim from just before the lift (about 0.1 s earlier); a bigger last-moment
+  change is still treated as a deliberate adjustment.
+- Three new power-ups from level 11, replacing some of the usual ones (same number per
+  level): **DMG** (orange) — balls that touch it hit for double damage until they land;
+  **Pierce** (teal ➤) — balls pass through the next 2 blocks, damaging each; **TNT** —
+  the first ball to touch it blasts the 8 cells around it for 30 HP. Powered balls glow
+  in the power-up's colour.
+- Power-ups are no longer sealed inside blocks: one with blocks on every side is moved
+  to the nearest open cell in its row (or the row next to it). About 600 moved; ~160
+  have no open cell nearby and stay.
+- Blocks and starting balls are unchanged on every level; only power-ups changed. Levels
+  60, 71, 87 and 90 keep their old power-ups (the solver bot could not finish them with
+  the new placement, so they stay as they were).
 
 ### Upgrade notes
 - Database migration `0004` (GridSnap scores). The release workflow runs it.

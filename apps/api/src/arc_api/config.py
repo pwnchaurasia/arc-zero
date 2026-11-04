@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # Pepper for recovery-key hashes. Changing it invalidates every account key.
     recovery_pepper: SecretStr = SecretStr("")
 
-    allowed_origins: list[str] = ["http://localhost:5173"]
+    allowed_origins: list[str] = ["http://localhost:5174"]
     allowed_hosts: list[str] = ["localhost", "127.0.0.1", "testserver"]
     expose_docs: bool = False
     # Local playtesting only: every level can be started, skipping the unlock order and
@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     mj_min_ms_per_move: int = Field(default=200, ge=0)
     # GridSnap: a drag-and-drop placement takes a human well over this.
     gs_min_ms_between_moves: int = Field(default=150, ge=0)
+    to_min_ms_per_move: int = Field(default=150, ge=0)
     # Dead Bridge is real time: the replayed level can't have taken less wall-clock time
     # than this share of its simulated length (stops sped-up clients).
     db_min_real_time_pct: int = Field(default=85, ge=0, le=100)

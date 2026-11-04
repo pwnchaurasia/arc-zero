@@ -45,7 +45,7 @@ See **[DEVELOPMENT.md](DEVELOPMENT.md)**. In short:
 
 ```bash
 make setup        # once: secrets, Postgres + Redis, dependencies, WASM, levels, DB
-make dev          # play: http://localhost:5173 (API + web in one terminal)
+make dev          # play: http://localhost:5174 (API + web in one terminal)
 make ci           # before a PR: every check CI runs, incl. e2e in Docker under CI conditions
 ```
 

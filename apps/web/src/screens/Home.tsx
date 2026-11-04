@@ -41,6 +41,12 @@ export const GAMES: { id: GameId | "gridsnap"; name: string; tagline: string; im
     tagline: "Drop the shapes. Fill a line. Chase your best.",
     image: "/games/gridsnap.webp",
   },
+  {
+    id: "traceout",
+    name: "TraceOut",
+    tagline: "Tap a line to send it out. Mind what's in the way.",
+    image: "/games/traceout.webp",
+  },
 ];
 
 export function Home({

@@ -22,6 +22,7 @@ from arc_api.routers import (
     me,
     meta,
     metro_jam,
+    traceout,
     wallet,
     water_sort,
 )
@@ -66,11 +67,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             engine_slots=CapacityLimiter(settings.engine_threads),
         )
         log.info(
-            "started: %d water sort, %d brick blast, %d metro jam, %d dead bridge levels",
+            "started: %d water sort, %d brick blast, %d metro jam, %d dead bridge, %d traceout"
+            " levels",
             len(catalogue.water_sort),
             len(catalogue.brick_blast),
             len(catalogue.metro_jam),
             len(catalogue.dead_bridge),
+            len(catalogue.traceout),
         )
         try:
             yield
@@ -100,6 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         metro_jam,
         dead_bridge,
         gridsnap,
+        traceout,
     ):
         api.include_router(module.router)
     app.include_router(api)

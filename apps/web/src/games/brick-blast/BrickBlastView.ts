@@ -19,15 +19,28 @@ import { createPixi, prefersReducedMotion, tween } from "../pixi";
 /** Engine encodings (see crates/arc-engine-wasm): cells are [tag, kind, hp]. */
 const SHAPES = ["square", "tri_bl", "tri_br", "tri_tl", "tri_tr"] as const;
 /** Indexed by the engine's power-up kind (new kinds are appended there too). */
-const POWER_GLYPH = ["↔", "↕", "✚", "×3", "×5", "+2", "+3", "+5", "✦", "2×", "3×"];
+const POWER_GLYPH = ["↔", "↕", "✚", "×3", "×5", "+2", "+3", "+5", "✦", "2×", "3×", "DMG", "➤", "TNT"];
 const POWER_COLOR = [
   0xf43f5e, 0xf43f5e, 0xf43f5e, 0x38bdf8, 0x38bdf8, 0xfacc15, 0xfacc15, 0xfacc15,
   // scatter, boost x2, boost x3
   0xa855f7, 0x22c55e, 0xf59e0b,
+  // double damage, pierce, bomb
+  0xf97316, 0x2dd4bf, 0xef4444,
 ];
+/** Engine power-up kinds that power up the ball itself (see `handleEvents`). */
+const DOUBLE_DAMAGE = 11;
+/** Ball flags from the engine: [id, x, y, flags]. */
+const BALL_CLONE = 1;
+const BALL_DOUBLE = 2;
+const BALL_PIERCE = 4;
 /** Gap between on-screen messages, so they never pile up. */
 const ANNOUNCE_GAP_MS = 650;
 const MAX_STEPS_PER_FRAME = 48;
+
+/** On release, fire the aim from this long before the lift (finger-lift jitter). */
+const LIFT_SETTLE_MS = 100;
+/** Larger last-moment changes than this (tenths of a degree) are deliberate: keep them. */
+const LIFT_JITTER_TENTHS = 40;
 
 export interface BrickBlastViewOptions {
   onFire: (aim: number) => void;
@@ -59,6 +72,8 @@ export class BrickBlastView {
   private readonly ambient = new Container();
   private readonly cellLayer = new Container();
   private readonly guide = new Graphics();
+  /** Outline of the block the aimed shot hits first; blinks while aiming. */
+  private readonly hitMark = new Graphics();
   private readonly fx = new Container();
   private readonly ballGlowLayer = new Container();
   private readonly ballLayer = new Container();
@@ -80,11 +95,16 @@ export class BrickBlastView {
   private aiming = false;
   private aim: number | null = null;
   private hintAim: number | null = null;
+  /** Recent aims while dragging, `[time, aim]`, newest last (see `settledAim`). */
+  private aimTrail: [number, number][] = [];
   private speed = 1;
   private skipping = false;
   private combo = 0;
   /** Per-shot tallies for the messages ("Good shot!", "Multi break!"...). */
-  private shot = { blasts: 0, powers: 0, laser: false, scatter: false, lastBall: false, recent: [] as number[] };
+  private shot = {
+    blasts: 0, powers: 0, laser: false, scatter: false, double: false, pierce: false, lastBall: false,
+    recent: [] as number[],
+  };
   private tick = 0;
   private lastAnnounce = 0;
   private picking = false;
@@ -118,6 +138,7 @@ export class BrickBlastView {
       this.frame,
       this.ambient,
       this.cellLayer,
+      this.hitMark,
       this.guide,
       this.fx,
       this.ballGlowLayer,
@@ -200,7 +221,10 @@ export class BrickBlastView {
     this.skipping = false;
     this.combo = 0;
     this.tick = 0;
-    this.shot = { blasts: 0, powers: 0, laser: false, scatter: false, lastBall: false, recent: [] };
+    this.shot = {
+      blasts: 0, powers: 0, laser: false, scatter: false, double: false, pierce: false, lastBall: false,
+      recent: [],
+    };
     this.hintAim = null;
     this.drawGuide();
     const tps = this.c.ticksPerSecond;
@@ -225,7 +249,7 @@ export class BrickBlastView {
           turn.step();
           this.tick += 1;
           if (this.skipping) continue;
-          const lone = turn.waiting() === 0 && turn.balls().length === 4; // one ball: [id, x, y, clone]
+          const lone = turn.waiting() === 0 && turn.balls().length === 4; // one ball: [id, x, y, flags]
           changed = this.handleEvents(turn.takeEvents(), lone) || changed;
         }
         if (this.skipping) turn.takeEvents();
@@ -410,6 +434,7 @@ export class BrickBlastView {
     const dt = this.app.ticker.deltaMS / 1000;
     this.pulse += dt;
     const still = prefersReducedMotion();
+    this.hitMark.alpha = still ? 0.9 : 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(this.pulse * 12));
     const s = still ? 1 : 1 + Math.sin(this.pulse * 4) * 0.06;
     for (const v of this.cells) {
       if (v.node?.label !== "power") continue;
@@ -457,11 +482,21 @@ export class BrickBlastView {
       s.visible = g.visible = true;
       const x = flat[i * 4 + 1] ?? 0;
       const y = flat[i * 4 + 2] ?? 0;
-      const clone = (flat[i * 4 + 3] ?? 0) !== 0;
+      const flags = flat[i * 4 + 3] ?? 0;
       s.position.set(x, y);
       g.position.set(x, y);
-      s.tint = clone ? 0xa5f3fc : 0xffffff;
-      g.tint = clone ? 0x22d3ee : 0x9bdcff;
+      // Powered-up balls take the power-up's colour until they land.
+      if (flags & BALL_DOUBLE) {
+        s.tint = 0xfdba74;
+        g.tint = 0xf97316;
+      } else if (flags & BALL_PIERCE) {
+        s.tint = 0x99f6e4;
+        g.tint = 0x2dd4bf;
+      } else {
+        const clone = (flags & BALL_CLONE) !== 0;
+        s.tint = clone ? 0xa5f3fc : 0xffffff;
+        g.tint = clone ? 0x22d3ee : 0x9bdcff;
+      }
     }
   }
 
@@ -514,6 +549,7 @@ export class BrickBlastView {
     if (!this.aimEnabled) return;
     this.aiming = true;
     this.aim = this.aimFrom(e);
+    this.aimTrail = this.aim === null ? [] : [[performance.now(), this.aim]];
     this.drawGuide();
   };
 
@@ -527,9 +563,29 @@ export class BrickBlastView {
     const next = this.aimFrom(e);
     if (next !== this.aim) {
       this.aim = next;
+      if (next !== null) {
+        this.aimTrail.push([performance.now(), next]);
+        if (this.aimTrail.length > 24) this.aimTrail.shift();
+      }
       this.drawGuide();
     }
   };
+
+  /**
+   * The aim to fire on release. Lifting a finger rolls the touch point a few
+   * pixels (very noticeable on Android), which near the ball turns the aim by a
+   * few degrees. So use the aim from just before the lift, unless the last
+   * moment's change was big enough to be a deliberate adjustment.
+   */
+  private settledAim(): number | null {
+    const now = this.aim;
+    if (now === null) return null;
+    const cutoff = performance.now() - LIFT_SETTLE_MS;
+    let before: number | null = null;
+    for (const [t, aim] of this.aimTrail) if (t <= cutoff) before = aim;
+    if (before === null || Math.abs(before - now) > LIFT_JITTER_TENTHS) return now;
+    return before;
+  }
 
   private readonly onUp = () => {
     if (this.picking && this.pickCol !== null) {
@@ -539,8 +595,9 @@ export class BrickBlastView {
     }
     if (!this.aiming) return;
     this.aiming = false;
-    const aim = this.aim;
+    const aim = this.settledAim();
     this.aim = null;
+    this.aimTrail = [];
     this.drawGuide();
     if (aim !== null && this.aimEnabled) {
       haptic(10);
@@ -574,6 +631,31 @@ export class BrickBlastView {
     };
     if (this.hintAim !== null && this.aimEnabled) draw(this.hintAim, 0xfacc15, 0.55);
     if (this.aim !== null && this.aiming) draw(this.aim, 0xffffff, 0.8);
+    this.drawHitMark(this.aiming ? this.aim : null);
+  }
+
+  /** Outlines the block the shot at `aim` hits first (the engine's own contact rule). */
+  private drawHitMark(aim: number | null): void {
+    const g = this.hitMark.clear();
+    if (aim === null || !this.state || !this.stateJson) return;
+    const [row, col] = Array.from(engine.bbAimHit(this.stateJson, aim));
+    if (row === undefined || col === undefined) return;
+    const cell = this.state.grid[row]?.[col];
+    if (cell?.t !== "block") return;
+    const { cell: size, blockInset } = this.c;
+    const x0 = col * size;
+    const y0 = row * size;
+    const a = blockInset;
+    const b = size - blockInset;
+    const pts: Record<string, number[]> = {
+      square: [a, a, b, a, b, b, a, b],
+      tri_bl: [a, b, a, a, b, b],
+      tri_br: [b, b, a, b, b, a],
+      tri_tl: [a, a, b, a, a, b],
+      tri_tr: [b, a, b, b, a, a],
+    };
+    const poly = (pts[cell.shape] ?? pts.square ?? []).map((v, i) => v + (i % 2 ? y0 : x0));
+    g.poly(poly).fill({ color: 0xffffff, alpha: 0.28 }).stroke({ width: size * 0.07, color: 0xffffff });
   }
 
   // --------------------------------------------------------------- effects
@@ -631,6 +713,25 @@ export class BrickBlastView {
           break;
         case 5:
           this.launchX = a;
+          break;
+        case 7: {
+          sfx.pickup();
+          const double = b === DOUBLE_DAMAGE;
+          if (double ? !this.shot.double : !this.shot.pierce) {
+            if (double) this.shot.double = true;
+            else this.shot.pierce = true;
+            this.shot.powers += 1;
+            this.announce(double ? "Double damage!" : "Pierce!", double ? 0xfb923c : 0x5eead4);
+          }
+          break;
+        }
+        case 8:
+          changed = true;
+          sfx.blast(this.combo + 2);
+          haptic(20);
+          this.shockwave(a);
+          this.shot.powers += 1;
+          this.announce("Boom!", 0xf87171);
           break;
       }
     }
@@ -700,6 +801,32 @@ export class BrickBlastView {
     void tween(this.app, 220, (t) => {
       g.alpha = 1 - t;
     }).then(() => g.destroy());
+  }
+
+  /** A bomb going off: a flash and a ring sweeping over the 8 cells around it. */
+  private shockwave(index: number): void {
+    const { x, y } = this.cellCenter(index);
+    const cell = this.c.cell;
+    const flash = new Sprite(this.glowTexture);
+    flash.anchor.set(0.5);
+    flash.position.set(x, y);
+    flash.tint = 0xfb923c;
+    flash.blendMode = "add";
+    const ring = new Graphics();
+    ring.blendMode = "add";
+    this.fx.addChild(flash, ring);
+    const reduced = prefersReducedMotion();
+    void tween(this.app, reduced ? 200 : 380, (t) => {
+      flash.width = flash.height = cell * (reduced ? 3 : 1 + t * 3);
+      flash.alpha = 1 - t;
+      ring.clear();
+      if (!reduced) {
+        ring.circle(x, y, cell * (0.4 + t * 1.2)).stroke({ width: cell * 0.12 * (1 - t), color: 0xfdba74, alpha: 1 - t });
+      }
+    }).then(() => {
+      flash.destroy();
+      ring.destroy();
+    });
   }
 
   /** Tracks breaks in this shot: bursts close together are a multi-break. */

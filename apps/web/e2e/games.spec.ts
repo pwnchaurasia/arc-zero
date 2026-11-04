@@ -202,3 +202,45 @@ test("a guest plays GridSnap by keyboard and by drag, then ends the game", async
   await expect(page.getByRole("button", { name: "Save your progress to join the leaderboards" })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("a guest clears TraceOut level 1 without a mistake", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/");
+  await page.getByRole("heading", { name: "TraceOut" }).click();
+  const startResp = page.waitForResponse((r) => r.url().includes("/traceout/levels/1/start"));
+  await page.getByRole("button", { name: "Level 1", exact: true }).click();
+  const start = (await (await startResp).json()) as {
+    data: { width: number; height: number; lines: { cells: [number, number][] }[] };
+  };
+  await page.waitForTimeout(600);
+
+  // Like a careful player: only tap lines whose way out is clear.
+  const { width, height, lines } = start.data;
+  const left = new Set(lines.map((_, i) => i));
+  const free = (i: number) => {
+    const cells = lines[i]?.cells ?? [];
+    const [hx, hy] = cells[cells.length - 1] ?? [0, 0];
+    const [px, py] = cells[cells.length - 2] ?? [0, 0];
+    const [dx, dy] = [hx - px, hy - py];
+    const taken = new Set([...left].flatMap((j) => (lines[j]?.cells ?? []).map(([x, y]) => `${x},${y}`)));
+    for (let x = hx + dx, y = hy + dy; x >= 0 && y >= 0 && x < width && y < height; x += dx, y += dy) {
+      if (taken.has(`${x},${y}`)) return false;
+    }
+    return true;
+  };
+  const done = page.waitForResponse((r) => r.url().includes("/traceout/levels/1/complete"));
+  while (left.size > 0) {
+    const next = [...left].find(free);
+    if (next === undefined) throw new Error("level 1 is not solvable");
+    left.delete(next);
+    await page.getByRole("button", { name: new RegExp(`^Line ${next + 1}:`) }).press("Enter");
+    await page.waitForTimeout(200); // the server rejects inhumanly fast play
+  }
+  const result = (await (await done).json()) as { stars: number; coins_earned: number; unlocked_level: number };
+  expect(result.stars).toBe(3);
+  expect(result.coins_earned).toBe(5);
+  expect(result.unlocked_level).toBe(2);
+  await expect(page.getByText("Level clear!")).toBeVisible();
+  await expect(page.getByText(/Flawless!/)).toBeVisible();
+  expect(errors).toEqual([]);
+});

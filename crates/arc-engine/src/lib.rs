@@ -16,6 +16,7 @@ pub mod gridsnap;
 pub mod hash;
 pub mod metro_jam;
 pub mod rng;
+pub mod traceout;
 pub mod water_sort;
 
 /// Integer square root (floor). Deterministic on every target.

@@ -7,6 +7,7 @@ use arc_engine::brick_blast::{self as bb, Cell, Event};
 use arc_engine::dead_bridge as db;
 use arc_engine::gridsnap as gs;
 use arc_engine::metro_jam as mj;
+use arc_engine::traceout as to;
 use arc_engine::water_sort as ws;
 use sha2::{Digest, Sha256};
 use wasm_bindgen::prelude::*;
@@ -134,7 +135,7 @@ impl BrickTurn {
         self.turn.waiting()
     }
 
-    /// Flat `[id, x, y, isClone]` per live ball.
+    /// Flat `[id, x, y, flags]` per live ball. flags: 1 clone, 2 double damage, 4 piercing.
     #[must_use]
     pub fn balls(&self) -> Vec<i32> {
         let balls = self.turn.balls();
@@ -144,7 +145,9 @@ impl BrickTurn {
                 i32::try_from(b.id).unwrap_or(i32::MAX),
                 b.x,
                 b.y,
-                i32::from(b.is_clone()),
+                i32::from(b.is_clone())
+                    | i32::from(b.damage > 1) << 1
+                    | i32::from(b.pierce > 0) << 2,
             ]);
         }
         out
@@ -158,7 +161,8 @@ impl BrickTurn {
 
     /// Flat `[kind, a, b]` per event since the last call.
     /// kind: 0 hit(cell, hp) 1 blast(cell) 2 laser(cell, power) 3 split(cell)
-    /// 4 collect(cell, amount) 5 land(x) 6 boost(cell, factor)
+    /// 4 collect(cell, amount) 5 land(x) 6 boost(cell, factor) 7 empower(cell, power)
+    /// 8 bomb(cell)
     #[wasm_bindgen(js_name = takeEvents)]
     pub fn take_events(&mut self) -> Vec<i32> {
         let mut out = Vec::new();
@@ -171,6 +175,8 @@ impl BrickTurn {
                 Event::Collect { cell, amount } => [4, i32::from(cell), i32::from(amount)],
                 Event::Land { x } => [5, x, 0],
                 Event::Boost { cell, factor } => [6, i32::from(cell), i32::from(factor)],
+                Event::Empower { cell, kind } => [7, i32::from(cell), kind as i32],
+                Event::Bomb { cell } => [8, i32::from(cell), 0],
             });
         }
         out
@@ -200,6 +206,17 @@ pub fn bb_aim_path(state_json: &str, aim: u16, bounces: usize) -> Result<Vec<i32
         .into_iter()
         .flat_map(|(x, y)| [x, y])
         .collect())
+}
+
+/// `[row, col]` of the block a shot at `aim` hits first, or empty if it hits none.
+#[wasm_bindgen(js_name = bbAimHit)]
+pub fn bb_aim_hit(state_json: &str, aim: u16) -> Result<Vec<i32>, JsError> {
+    let state = parse_state(state_json)?;
+    Ok(bb::aim_trace(&state, aim, 0)
+        .1
+        .map_or_else(Vec::new, |(r, c)| {
+            vec![i32::try_from(r).unwrap_or(0), i32::try_from(c).unwrap_or(0)]
+        }))
 }
 
 /// Flat `[tag, kind, hp]` per cell for a state (used when no turn is running).
@@ -701,6 +718,77 @@ impl GridSnap {
             gs::Status::Playing => 0,
             gs::Status::Stuck => 1,
             gs::Status::Ended => 2,
+        }
+    }
+}
+
+// ------------------------------------------------------------------ TraceOut
+
+/// A TraceOut level in the browser; the server replays the same taps.
+#[wasm_bindgen]
+pub struct TraceOut {
+    game: to::Game,
+}
+
+#[wasm_bindgen]
+impl TraceOut {
+    #[wasm_bindgen(constructor)]
+    pub fn new(level_json: &str) -> Result<TraceOut, JsError> {
+        let level: to::Level = serde_json::from_str(level_json).map_err(js_err)?;
+        level.validate().map_err(js_err)?;
+        Ok(Self {
+            game: to::Game::new(&level).map_err(js_err)?,
+        })
+    }
+
+    /// Taps a line: -1 if it left, otherwise the line it bounced off (a droplet lost).
+    pub fn tap(&mut self, line: usize) -> Result<i32, JsError> {
+        match self.game.tap(line).map_err(js_err)? {
+            to::Outcome::Exited => Ok(-1),
+            to::Outcome::Blocked { by } => Ok(i32::try_from(by).unwrap_or(-1)),
+        }
+    }
+
+    /// Refills the droplets (the server checks it was paid for).
+    pub fn revive(&mut self) -> Result<(), JsError> {
+        self.game.revive().map_err(js_err)
+    }
+
+    /// The line in the way of `line`'s exit, or -1 if it can leave.
+    #[must_use]
+    pub fn blocker(&self, line: usize) -> i32 {
+        self.game
+            .blocker(line)
+            .map_or(-1, |b| i32::try_from(b).unwrap_or(-1))
+    }
+
+    #[must_use]
+    pub fn present(&self, line: usize) -> bool {
+        self.game.present(line)
+    }
+
+    #[must_use]
+    pub fn lives(&self) -> u8 {
+        self.game.lives()
+    }
+
+    #[must_use]
+    pub fn mistakes(&self) -> u16 {
+        self.game.mistakes()
+    }
+
+    #[must_use]
+    pub fn remaining(&self) -> usize {
+        self.game.remaining()
+    }
+
+    /// 0 playing, 1 won, 2 out of droplets.
+    #[must_use]
+    pub fn status(&self) -> u8 {
+        match self.game.status() {
+            to::Status::Playing => 0,
+            to::Status::Won => 1,
+            to::Status::Out => 2,
         }
     }
 }

@@ -23,6 +23,9 @@ const DeadBridgeScreen = lazy(() =>
 const GridSnapScreen = lazy(() =>
   import("./screens/GridSnapScreen").then((m) => ({ default: m.GridSnapScreen })),
 );
+const TraceOutScreen = lazy(() =>
+  import("./screens/TraceOutScreen").then((m) => ({ default: m.TraceOutScreen })),
+);
 const CoinsScreen = lazy(() => import("./screens/CoinsScreen").then((m) => ({ default: m.CoinsScreen })));
 
 function Loading() {
@@ -111,6 +114,15 @@ export function App() {
           level={route.level}
           onBack={back}
           onLevel={(level) => replaceLevel("dead-bridge", level)}
+          onCheckpoint={openCheckpoint}
+        />
+      )}
+      {route.name === "play" && route.game === "traceout" && (
+        <TraceOutScreen
+          key={`to-${route.level}`}
+          level={route.level}
+          onBack={back}
+          onLevel={(level) => replaceLevel("traceout", level)}
           onCheckpoint={openCheckpoint}
         />
       )}

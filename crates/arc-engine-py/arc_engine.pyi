@@ -66,3 +66,22 @@ class DbReplay:
 
 def db_validate(script_json: str) -> None: ...
 def db_replay(script_json: str, log: bytes) -> DbReplay: ...
+
+# GridSnap
+GS_MAX_RESHUFFLES: Final[int]
+GS_MAX_BOMBS: Final[int]
+GS_SHAPES: Final[list[list[int]]]
+
+class GsStep:
+    state: str
+    view: str
+    status: Literal["playing", "stuck", "ended"]
+    score: int
+    lines: int
+    placed: int
+    points: int
+
+def gs_new(seed: int) -> GsStep: ...
+def gs_place(state_json: str, slot: int, row: int, col: int) -> GsStep: ...
+def gs_assist(state_json: str, kind: str, row: int, col: int) -> GsStep: ...
+def gs_end(state_json: str) -> GsStep: ...

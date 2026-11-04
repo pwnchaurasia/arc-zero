@@ -9,6 +9,12 @@ import type {
   DbComplete,
   DbStart,
   GameId,
+  GsAssist,
+  GsFinal,
+  GsLeaderboard,
+  GsPeriod,
+  GsStart,
+  GsStep,
   Me,
   MjAssist,
   MjBuy,
@@ -193,6 +199,19 @@ export const api = {
         attempt_id: attemptId,
         log,
       }),
+  },
+
+  gs: {
+    /** The open game to continue, or undefined when there is none. */
+    current: () => request<GsStart | undefined>("GET", "/games/gridsnap/runs/current"),
+    start: () => request<GsStart>("POST", "/games/gridsnap/runs/start"),
+    place: (runId: string, seq: number, slot: number, row: number, col: number) =>
+      request<GsStep>("POST", `/games/gridsnap/runs/${runId}/place`, { seq, slot, row, col }),
+    assist: (runId: string, seq: number, kind: GsAssist, price: number, row = 0, col = 0) =>
+      request<GsStep>("POST", `/games/gridsnap/runs/${runId}/assist`, { seq, kind, row, col, price }),
+    end: (runId: string) => request<GsFinal>("POST", `/games/gridsnap/runs/${runId}/end`),
+    leaderboard: (period: GsPeriod) =>
+      request<GsLeaderboard>("GET", `/games/gridsnap/leaderboard?period=${period}`),
   },
 
   coins: () => request<CoinRules>("GET", "/coins"),

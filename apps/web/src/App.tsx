@@ -6,6 +6,7 @@ import { IosInstallModal } from "./screens/IosInstallModal";
 import { LevelSelect } from "./screens/LevelSelect";
 import { CheckpointModal, RestoreModal, SettingsModal } from "./screens/modals";
 import { NavContext } from "./state/nav";
+import { setAtHome } from "./state/updates";
 
 const WaterSortScreen = lazy(() =>
   import("./screens/WaterSortScreen").then((m) => ({ default: m.WaterSortScreen })),
@@ -19,6 +20,9 @@ const MetroJamScreen = lazy(() =>
 const DeadBridgeScreen = lazy(() =>
   import("./screens/DeadBridgeScreen").then((m) => ({ default: m.DeadBridgeScreen })),
 );
+const GridSnapScreen = lazy(() =>
+  import("./screens/GridSnapScreen").then((m) => ({ default: m.GridSnapScreen })),
+);
 const CoinsScreen = lazy(() => import("./screens/CoinsScreen").then((m) => ({ default: m.CoinsScreen })));
 
 function Loading() {
@@ -28,6 +32,7 @@ function Loading() {
 type Route =
   | { name: "home" }
   | { name: "coins" }
+  | { name: "gridsnap" }
   | { name: "levels"; game: GameId }
   | { name: "play"; game: GameId; level: number };
 
@@ -61,6 +66,8 @@ function useRoute() {
 
 export function App() {
   const { route, go, replace, back } = useRoute();
+  // A waiting app update is applied only here, never in the middle of a game.
+  useEffect(() => setAtHome(route.name === "home"), [route.name]);
   const [modal, setModal] = useState<"settings" | "restore" | "checkpoint" | "ios-install" | null>(null);
   const close = useCallback(() => setModal(null), []);
   const openCheckpoint = useCallback(() => setModal("checkpoint"), []);
@@ -81,7 +88,7 @@ export function App() {
     <NavContext value={nav}>
       {route.name === "home" && (
         <Home
-          onOpen={(game) => go({ name: "levels", game })}
+          onOpen={(game) => go(game === "gridsnap" ? { name: "gridsnap" } : { name: "levels", game })}
           onSettings={() => setModal("settings")}
           onCheckpoint={openCheckpoint}
           onIosInstall={() => setModal("ios-install")}
@@ -97,6 +104,7 @@ export function App() {
       )}
       <Suspense fallback={<Loading />}>
       {route.name === "coins" && <CoinsScreen onBack={back} />}
+      {route.name === "gridsnap" && <GridSnapScreen onBack={back} onCheckpoint={openCheckpoint} />}
       {route.name === "play" && route.game === "dead-bridge" && (
         <DeadBridgeScreen
           key={`db-${route.level}`}

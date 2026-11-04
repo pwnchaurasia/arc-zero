@@ -18,6 +18,11 @@ class RewardBand(StrictModel):
     coins: int
 
 
+class Milestone(StrictModel):
+    score: int
+    coins: int
+
+
 class CoinsOut(StrictModel):
     balance: int
     start_balance: int
@@ -27,6 +32,9 @@ class CoinsOut(StrictModel):
     # Assist prices per game, and the price of a hint after the free daily ones.
     prices: dict[str, dict[str, int]]
     hint_price: int
+    # GridSnap: coins for reaching each score in a run, and the daily limit.
+    milestones: list[Milestone]
+    milestone_daily_cap: int
 
 
 @router.get("/coins")
@@ -43,4 +51,6 @@ async def coin_rules(who: PrincipalDep, state: StateDep, db: DbDep) -> CoinsOut:
         streak_bonus=coins.STREAK_BONUS,
         prices=coins.PRICES,
         hint_price=coins.HINT_PRICE,
+        milestones=[Milestone(score=at, coins=paid) for at, paid in coins.MILESTONES],
+        milestone_daily_cap=coins.MILESTONE_DAILY_CAP,
     )

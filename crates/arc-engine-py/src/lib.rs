@@ -4,6 +4,7 @@
 
 use engine::brick_blast::{self as bb, bot};
 use engine::dead_bridge as db;
+use engine::gridsnap as gs;
 use engine::metro_jam as mj;
 use engine::water_sort as ws;
 use pyo3::create_exception;
@@ -315,6 +316,77 @@ fn db_replay(py: Python<'_>, script_json: String, log: Vec<u8>) -> PyResult<DbRe
     .map_err(|e: String| err(e))
 }
 
+// ------------------------------------------------------------------ GridSnap
+
+/// The board after a GridSnap action, plus what the action did.
+#[pyclass(frozen, get_all, module = "arc_engine")]
+struct GsStep {
+    /// Full game including the deal's seed. Keep server-side only.
+    state: String,
+    /// What the player may see.
+    view: String,
+    /// "playing", "stuck" or "ended".
+    status: String,
+    score: u32,
+    lines: u32,
+    placed: u32,
+    /// Points the placement scored (0 for assists).
+    points: u32,
+}
+
+fn gs_parse(state_json: &str) -> Result<gs::Game, String> {
+    let game: gs::Game = serde_json::from_str(state_json).map_err(|e| e.to_string())?;
+    game.validate().map_err(|e| e.to_string())?;
+    Ok(game)
+}
+
+fn gs_step(game: &gs::Game, points: u32) -> Result<GsStep, String> {
+    Ok(GsStep {
+        state: to_json(game)?,
+        view: to_json(&game.board)?,
+        status: to_json(&game.board.status)?.trim_matches('"').to_owned(),
+        score: game.board.score,
+        lines: game.board.lines,
+        placed: game.board.placed,
+        points,
+    })
+}
+
+/// Starts a run: deals the first tray from `seed`.
+#[pyfunction]
+fn gs_new(seed: u64) -> PyResult<GsStep> {
+    gs_step(&gs::Game::new(seed), 0).map_err(err)
+}
+
+/// Places the piece in `slot` with its top-left at `(row, col)`; deals when the tray empties.
+#[pyfunction]
+fn gs_place(state_json: &str, slot: usize, row: u8, col: u8) -> PyResult<GsStep> {
+    let mut game = gs_parse(state_json).map_err(err)?;
+    let placed = game.place(slot, row, col).map_err(err)?;
+    gs_step(&game, placed.points).map_err(err)
+}
+
+/// Applies a paid assist: "reshuffle", or "bomb" at `(row, col)`.
+#[pyfunction]
+fn gs_assist(state_json: &str, kind: &str, row: u8, col: u8) -> PyResult<GsStep> {
+    let mut game = gs_parse(state_json).map_err(err)?;
+    let assist = match kind {
+        "reshuffle" => gs::Assist::Reshuffle,
+        "bomb" => gs::Assist::Bomb { row, col },
+        _ => return Err(err(format!("unknown assist {kind}"))),
+    };
+    game.assist(assist).map_err(err)?;
+    gs_step(&game, 0).map_err(err)
+}
+
+/// Ends the run.
+#[pyfunction]
+fn gs_end(state_json: &str) -> PyResult<GsStep> {
+    let mut game = gs_parse(state_json).map_err(err)?;
+    game.end();
+    gs_step(&game, 0).map_err(err)
+}
+
 #[pymodule]
 fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("EngineError", m.py().get_type::<EngineError>())?;
@@ -326,6 +398,19 @@ fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<TurnResult>()?;
     m.add_class::<MjReplay>()?;
     m.add_class::<DbReplay>()?;
+    m.add_class::<GsStep>()?;
+    m.add_function(wrap_pyfunction!(gs_new, m)?)?;
+    m.add_function(wrap_pyfunction!(gs_place, m)?)?;
+    m.add_function(wrap_pyfunction!(gs_assist, m)?)?;
+    m.add_function(wrap_pyfunction!(gs_end, m)?)?;
+    m.add("GS_MAX_RESHUFFLES", gs::MAX_RESHUFFLES)?;
+    m.add("GS_MAX_BOMBS", gs::MAX_BOMBS)?;
+    // Each shape's rows, bit `c` = column `c` (tests use it to find free spots).
+    let shapes: Vec<Vec<u16>> = gs::SHAPES
+        .iter()
+        .map(|s| s.rows.iter().map(|r| u16::from(*r)).collect())
+        .collect();
+    m.add("GS_SHAPES", shapes)?;
     m.add_function(wrap_pyfunction!(db_validate, m)?)?;
     m.add_function(wrap_pyfunction!(db_replay, m)?)?;
     m.add("DB_TPS", db::TPS)?;

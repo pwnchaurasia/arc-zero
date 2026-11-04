@@ -5,6 +5,7 @@
 
 use arc_engine::brick_blast::{self as bb, Cell, Event};
 use arc_engine::dead_bridge as db;
+use arc_engine::gridsnap as gs;
 use arc_engine::metro_jam as mj;
 use arc_engine::water_sort as ws;
 use sha2::{Digest, Sha256};
@@ -611,6 +612,105 @@ pub fn db_constants() -> String {
         "radius": [db::ZKind::Walker.stats().1, db::ZKind::Runner.stats().1, db::ZKind::Brute.stats().1, db::ZKind::Boss.stats().1],
     })
     .to_string()
+}
+
+// ------------------------------------------------------------------ GridSnap
+
+/// The board the player sees. Placements apply here at once for animation;
+/// the server applies the same placement, deals, and sends back its board.
+#[wasm_bindgen]
+pub struct GridSnap {
+    board: gs::Board,
+}
+
+#[wasm_bindgen]
+impl GridSnap {
+    #[wasm_bindgen(constructor)]
+    pub fn new(view_json: &str) -> Result<GridSnap, JsError> {
+        let board: gs::Board = serde_json::from_str(view_json).map_err(js_err)?;
+        board.validate().map_err(js_err)?;
+        Ok(Self { board })
+    }
+
+    #[wasm_bindgen(js_name = canPlace)]
+    #[must_use]
+    pub fn can_place(&self, slot: usize, row: u8, col: u8) -> bool {
+        self.board.can_place(slot, row, col)
+    }
+
+    /// `[rows, cols]` bit sets that the placement would clear.
+    #[wasm_bindgen(js_name = wouldClear)]
+    #[must_use]
+    pub fn would_clear(&self, slot: usize, row: u8, col: u8) -> Vec<u8> {
+        let (rows, cols) = self.board.would_clear(slot, row, col);
+        vec![rows, cols]
+    }
+
+    /// Places a piece. Returns `[rows, cols, points, combo]`.
+    pub fn place(&mut self, slot: usize, row: u8, col: u8) -> Result<Vec<u32>, JsError> {
+        let p = self.board.place(slot, row, col).map_err(js_err)?;
+        Ok(vec![
+            u32::from(p.rows),
+            u32::from(p.cols),
+            p.points,
+            u32::from(p.combo),
+        ])
+    }
+
+    /// Whether the piece in `slot` fits anywhere.
+    #[must_use]
+    pub fn fits(&self, slot: usize) -> bool {
+        self.board
+            .tray
+            .get(slot)
+            .copied()
+            .flatten()
+            .is_some_and(|p| self.board.fits(p.shape))
+    }
+
+    /// 64 cells, row by row: 0 empty, else colour + 1.
+    #[must_use]
+    pub fn cells(&self) -> Vec<u8> {
+        self.board.cells.clone()
+    }
+
+    /// Flat `[shape, colour]` per slot; `[-1, -1]` for an empty slot.
+    #[must_use]
+    pub fn tray(&self) -> Vec<i32> {
+        self.board
+            .tray
+            .iter()
+            .flat_map(|p| p.map_or([-1, -1], |p| [i32::from(p.shape), i32::from(p.color)]))
+            .collect()
+    }
+
+    #[must_use]
+    pub fn score(&self) -> u32 {
+        self.board.score
+    }
+
+    #[must_use]
+    pub fn combo(&self) -> u16 {
+        self.board.combo
+    }
+
+    /// 0 playing, 1 stuck, 2 ended.
+    #[must_use]
+    pub fn status(&self) -> u8 {
+        match self.board.status {
+            gs::Status::Playing => 0,
+            gs::Status::Stuck => 1,
+            gs::Status::Ended => 2,
+        }
+    }
+}
+
+/// Every shape's rows (bit `c` = column `c`), indexed by shape id.
+#[wasm_bindgen(js_name = gsShapes)]
+#[must_use]
+pub fn gs_shapes() -> String {
+    let rows: Vec<&[u8]> = gs::SHAPES.iter().map(|s| s.rows).collect();
+    serde_json::to_string(&rows).unwrap_or_default()
 }
 
 // ------------------------------------------------------------ Proof of work

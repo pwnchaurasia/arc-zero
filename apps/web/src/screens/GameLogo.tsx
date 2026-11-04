@@ -6,7 +6,7 @@ import type { GameId } from "../api/types";
  * Square logo for a game tile. Uses the game's image when one is configured,
  * otherwise a drawn placeholder in the game's own art style.
  */
-export function GameLogo({ game, image }: { game: GameId; image?: string }) {
+export function GameLogo({ game, image }: { game: GameId | "gridsnap"; image?: string }) {
   if (image) {
     return (
       <img

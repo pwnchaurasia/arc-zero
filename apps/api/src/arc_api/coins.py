@@ -33,6 +33,7 @@ PRICES: Final[dict[str, dict[str, int]]] = {
     "metro-jam": {"extra_bay": 60, "airlift": 80, "shuffle": 40},
     "brick-blast": {"bonus_balls": 60, "laser": 70, "hammer": 80},
     "water-sort": {"extra_bottle": 60},
+    "gridsnap": {"reshuffle": 40, "bomb": 60},
     "dead-bridge": {
         "airstrike": 60,
         "freeze": 50,
@@ -45,6 +46,10 @@ PRICES: Final[dict[str, dict[str, int]]] = {
 }
 # A hint after the free daily ones (Water Sort, Brick Blast).
 HINT_PRICE: Final = 20
+# GridSnap has no levels: a run pays at score milestones, (score, coins), when it ends.
+MILESTONES: Final = ((1_000, 5), (2_500, 5), (5_000, 10), (10_000, 10))
+# Most milestone coins one player or guest can earn per UTC day.
+MILESTONE_DAILY_CAP: Final = 30
 
 _SPEND = """
 redis.call('hsetnx', KEYS[1], 'bal', ARGV[2])
@@ -74,6 +79,73 @@ local bal = redis.call('hincrby', key, 'bal', tonumber(ARGV[2]) + bonus)
 redis.call('expire', key, ARGV[8])
 return {1, bonus, bal}
 """
+
+
+# Pays up to ARGV[1] of today's remaining allowance (ARGV[2]); returns what was allowed.
+_ALLOW = """
+local used = tonumber(redis.call('get', KEYS[1]) or '0')
+local allowed = math.max(0, math.min(tonumber(ARGV[1]), tonumber(ARGV[2]) - used))
+if allowed > 0 then
+  redis.call('incrby', KEYS[1], allowed)
+  redis.call('expire', KEYS[1], 172800)
+end
+return allowed
+"""
+
+# Credits a guest: returns the new balance.
+_CREDIT_GUEST = """
+redis.call('hsetnx', KEYS[1], 'bal', ARGV[2])
+local bal = redis.call('hincrby', KEYS[1], 'bal', tonumber(ARGV[1]))
+redis.call('expire', KEYS[1], ARGV[3])
+return bal
+"""
+
+
+def milestone_coins(score: int) -> int:
+    return sum(coins for at, coins in MILESTONES if score >= at)
+
+
+@dataclass(slots=True)
+class MilestoneOutcome:
+    earned: int
+    balance: int
+
+
+async def award_milestones(
+    db: AsyncSession, state: AppState, who: Principal, game: str, score: int, day: str
+) -> MilestoneOutcome:
+    """Pays a finished run's milestones, within the daily cap. Players: the caller commits."""
+    allowed = int(
+        await state.redis.eval(
+            _ALLOW,
+            1,
+            f"coins:milestones:{who.owner}:{day}",
+            milestone_coins(score),
+            MILESTONE_DAILY_CAP,
+        )
+    )
+    if who.player_id is None:
+        bal = await state.redis.eval(
+            _CREDIT_GUEST, 1, _guest_key(who), allowed, START_BALANCE, _guest_ttl(state)
+        )
+        return MilestoneOutcome(earned=allowed, balance=int(bal))
+    await _ensure_wallet(db, who.player_id)
+    if allowed == 0:
+        current = await db.scalar(select(Wallet.balance).where(Wallet.player_id == who.player_id))
+        return MilestoneOutcome(earned=0, balance=int(current or 0))
+    bal = await _credit(db, who.player_id, allowed)
+    db.add(
+        CoinLedger(
+            player_id=who.player_id,
+            delta=allowed,
+            balance_after=bal,
+            reason="milestone",
+            game_id=game,
+            detail=f"score:{score}",
+        )
+    )
+    await db.flush()
+    return MilestoneOutcome(earned=allowed, balance=bal)
 
 
 def clear_reward(level: int) -> int:
@@ -133,8 +205,8 @@ async def spend(
     state: AppState,
     who: Principal,
     price: int,
-    game: GameId,
-    level: int,
+    game: str,
+    level: int | None,
     detail: str,
 ) -> int:
     """Takes `price` coins atomically. Returns the balance left."""

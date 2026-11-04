@@ -126,11 +126,34 @@ class CoinLedger(Base):
     )
     delta: Mapped[int] = mapped_column(Integer, nullable=False)
     balance_after: Mapped[int] = mapped_column(Integer, nullable=False)
-    # welcome | guest_play | clear | streak | assist
+    # welcome | guest_play | clear | streak | assist | milestone
     reason: Mapped[str] = mapped_column(String(16), nullable=False)
     game_id: Mapped[str | None] = mapped_column(String(32))
     level: Mapped[int | None] = mapped_column(Integer)
     detail: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class GridSnapScore(Base):
+    """One finished GridSnap run (players only). Leaderboards read the best per player."""
+
+    __tablename__ = "gridsnap_scores"
+    __table_args__ = (
+        CheckConstraint("score >= 0", name="score_non_negative"),
+        Index("ix_gridsnap_scores_created", "created_at"),
+        Index("ix_gridsnap_scores_player_score", "player_id", "score"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    player_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    )
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    lines: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Runs that used bought help count for the personal best, not the leaderboards.
+    assisted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

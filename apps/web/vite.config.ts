@@ -34,9 +34,11 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: "autoUpdate",
-      // External registerSW.js (no inline script), so the strict CSP holds.
-      injectRegister: "script",
+      // A new version waits until the player is on the home screen (src/state/updates.ts),
+      // so an update never reloads the page in the middle of a level.
+      registerType: "prompt",
+      // Registered from our own bundle (no inline script), so the strict CSP holds.
+      injectRegister: false,
       includeAssets: ["icons/*.png", "icons/*.svg", "games/*.webp"],
       manifest: {
         name: "Arc Zero",
@@ -55,10 +57,19 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,wasm,png,svg,webp,webmanifest}"],
-        // Never cache or fall back for the API: progress always comes from the server.
-        navigateFallbackDenylist: [/^\/api\//],
-        runtimeCaching: [],
+        // Hashed files only. The page itself is never served from the precache: it
+        // always comes from the network first (below), so a deploy shows on the next open.
+        globPatterns: ["**/*.{js,css,wasm,png,svg,webp,webmanifest}"],
+        navigateFallback: null,
+        runtimeCaching: [
+          {
+            // Never the API: progress always comes from the server.
+            urlPattern: ({ request, url }) => request.mode === "navigate" && !url.pathname.startsWith("/api/"),
+            handler: "NetworkFirst",
+            // The saved copy is only for opening the installed app offline.
+            options: { cacheName: "pages", networkTimeoutSeconds: 4, expiration: { maxEntries: 4 } },
+          },
+        ],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
     }),

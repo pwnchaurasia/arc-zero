@@ -11,6 +11,7 @@ const GAME_NAMES: Record<string, string> = {
   "water-sort": "Water Sort",
   "dead-bridge": "Dead Bridge Assault",
   gridsnap: "GridSnap",
+  traceout: "TraceOut",
 };
 
 const ASSIST_NAMES: Record<string, string> = {
@@ -30,6 +31,8 @@ const ASSIST_NAMES: Record<string, string> = {
   nuke: "Nuke",
   reshuffle: "Reshuffle the tray",
   bomb: "Bomb: clear a 3 × 3 area",
+  continue: "Continue: refill 3 droplets",
+  hint: "Hint: show a line that can leave",
 };
 
 /** The coin rules, straight from the server so this page can't drift from what it enforces. */

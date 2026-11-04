@@ -34,6 +34,23 @@ the newest is at the top.
   mid-level). Installed home-screen apps update the same way; the first time after this
   release, close and reopen the app once.
 
+### New game: TraceOut
+- Tap a line to send it off the board along its arrow. If another line is in the way it
+  bounces back and you lose one of your 3 droplets. Clear every line to win.
+- 100 levels. Levels 1–3 are a warm-up; then the board, the number of lines (up to 50)
+  and the "clear this one first" chains grow steadily. Every 5th level forms a picture
+  (heart, diamond, circle, hourglass, cross, ring).
+- Stars: 3 with no mistakes ("Flawless!"), 2 with one, 1 otherwise.
+- Out of droplets: restart for free, or **Continue** (20 coins) to refill them and keep
+  the board. **Hint** (30 coins) shows a line that can leave now. Both ask first.
+- Coins: the usual first-clear rewards; the server replays every tap to check the win.
+- Tap anywhere on a line (not just the arrow). Keyboard and screen readers get one
+  button per line.
+
+### For developers
+- `levels/traceout.json` is a new level file: the release workflow, `activate.sh` and both
+  compose files ship it.
+
 ### Brick Blast
 - While you aim, the block the ball will hit first blinks. When the shot grazes the corner
   between two blocks, it shows the one the ball really takes (the engine works it out

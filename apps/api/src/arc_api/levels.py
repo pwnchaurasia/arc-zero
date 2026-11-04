@@ -14,8 +14,14 @@ from typing import Any, Final, Literal
 
 import arc_engine
 
-GameId = Literal["water-sort", "brick-blast", "metro-jam", "dead-bridge"]
-GAME_IDS: Final[tuple[GameId, ...]] = ("water-sort", "brick-blast", "metro-jam", "dead-bridge")
+GameId = Literal["water-sort", "brick-blast", "metro-jam", "dead-bridge", "traceout"]
+GAME_IDS: Final[tuple[GameId, ...]] = (
+    "water-sort",
+    "brick-blast",
+    "metro-jam",
+    "dead-bridge",
+    "traceout",
+)
 SUPPORTED_VERSION = 2
 
 
@@ -72,11 +78,19 @@ class DbLevel:
 
 
 @dataclass(frozen=True, slots=True)
+class ToLevel:
+    level: int
+    # The whole level is public: every line is on screen.
+    level_json: str
+
+
+@dataclass(frozen=True, slots=True)
 class Levels:
     water_sort: dict[int, WsLevel]
     brick_blast: dict[int, BbLevel]
     metro_jam: dict[int, MjLevel]
     dead_bridge: dict[int, DbLevel]
+    traceout: dict[int, ToLevel]
 
     def count(self, game: GameId) -> int:
         if game == "water-sort":
@@ -85,6 +99,8 @@ class Levels:
             return len(self.brick_blast)
         if game == "metro-jam":
             return len(self.metro_jam)
+        if game == "traceout":
+            return len(self.traceout)
         return len(self.dead_bridge)
 
 
@@ -143,8 +159,15 @@ def load(directory: Path) -> Levels:
         arc_engine.db_validate(script_json)
         db[int(item["level"])] = DbLevel(level=int(item["level"]), script_json=script_json)
 
+    to: dict[int, ToLevel] = {}
+    for item in _read_game(directory, "traceout"):
+        level_json = json.dumps(item["data"], separators=(",", ":"))
+        arc_engine.to_validate(level_json)
+        to[int(item["level"])] = ToLevel(level=int(item["level"]), level_json=level_json)
+
     _contiguous(ws, "water_sort")
     _contiguous(bb, "brick_blast")
     _contiguous(mj, "metro_jam")
     _contiguous(db, "dead_bridge")
-    return Levels(water_sort=ws, brick_blast=bb, metro_jam=mj, dead_bridge=db)
+    _contiguous(to, "traceout")
+    return Levels(water_sort=ws, brick_blast=bb, metro_jam=mj, dead_bridge=db, traceout=to)

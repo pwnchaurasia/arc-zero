@@ -34,6 +34,7 @@ PRICES: Final[dict[str, dict[str, int]]] = {
     "brick-blast": {"bonus_balls": 60, "laser": 70, "hammer": 80},
     "water-sort": {"extra_bottle": 60},
     "gridsnap": {"reshuffle": 40, "bomb": 60},
+    "traceout": {"continue": 20, "hint": 30},
     "dead-bridge": {
         "airstrike": 60,
         "freeze": 50,

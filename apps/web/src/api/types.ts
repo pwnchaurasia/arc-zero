@@ -75,7 +75,10 @@ export type PowerKind =
   | "ball_up5"
   | "plus_balls2"
   | "plus_balls3"
-  | "plus_balls5";
+  | "plus_balls5"
+  | "double_damage"
+  | "pierce"
+  | "bomb";
 
 export type BbCell =
   | { t: "empty" }

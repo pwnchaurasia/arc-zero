@@ -82,6 +82,13 @@ pub enum PowerKind {
     /// Next shot launches 2x (or 3x) the balls.
     Boost2,
     Boost3,
+    // Added 2026-11-04.
+    /// Balls that touch it deal double damage until they land.
+    DoubleDamage,
+    /// Balls that touch it pass through the next `PIERCE_BLOCKS` blocks, damaging each.
+    Pierce,
+    /// The first ball to touch it sets it off: `BOMB_DAMAGE` to each of the 8 cells around.
+    Bomb,
 }
 
 impl PowerKind {
@@ -109,6 +116,12 @@ pub enum Assist {
 }
 
 pub const ASSIST_BONUS_BALLS: u16 = 15;
+/// Damage per hit for a ball that touched a Double Damage power-up.
+pub const DOUBLE_DAMAGE: u16 = 2;
+/// Blocks a ball passes through after touching a Pierce power-up.
+pub const PIERCE_BLOCKS: u8 = 2;
+/// Damage a Bomb deals to each neighbouring block.
+pub const BOMB_DAMAGE: u16 = 30;
 pub const MAX_BOOST: u8 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

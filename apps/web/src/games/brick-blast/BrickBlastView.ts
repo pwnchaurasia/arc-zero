@@ -19,12 +19,20 @@ import { createPixi, prefersReducedMotion, tween } from "../pixi";
 /** Engine encodings (see crates/arc-engine-wasm): cells are [tag, kind, hp]. */
 const SHAPES = ["square", "tri_bl", "tri_br", "tri_tl", "tri_tr"] as const;
 /** Indexed by the engine's power-up kind (new kinds are appended there too). */
-const POWER_GLYPH = ["↔", "↕", "✚", "×3", "×5", "+2", "+3", "+5", "✦", "2×", "3×"];
+const POWER_GLYPH = ["↔", "↕", "✚", "×3", "×5", "+2", "+3", "+5", "✦", "2×", "3×", "DMG", "➤", "TNT"];
 const POWER_COLOR = [
   0xf43f5e, 0xf43f5e, 0xf43f5e, 0x38bdf8, 0x38bdf8, 0xfacc15, 0xfacc15, 0xfacc15,
   // scatter, boost x2, boost x3
   0xa855f7, 0x22c55e, 0xf59e0b,
+  // double damage, pierce, bomb
+  0xf97316, 0x2dd4bf, 0xef4444,
 ];
+/** Engine power-up kinds that power up the ball itself (see `handleEvents`). */
+const DOUBLE_DAMAGE = 11;
+/** Ball flags from the engine: [id, x, y, flags]. */
+const BALL_CLONE = 1;
+const BALL_DOUBLE = 2;
+const BALL_PIERCE = 4;
 /** Gap between on-screen messages, so they never pile up. */
 const ANNOUNCE_GAP_MS = 650;
 const MAX_STEPS_PER_FRAME = 48;
@@ -93,7 +101,10 @@ export class BrickBlastView {
   private skipping = false;
   private combo = 0;
   /** Per-shot tallies for the messages ("Good shot!", "Multi break!"...). */
-  private shot = { blasts: 0, powers: 0, laser: false, scatter: false, lastBall: false, recent: [] as number[] };
+  private shot = {
+    blasts: 0, powers: 0, laser: false, scatter: false, double: false, pierce: false, lastBall: false,
+    recent: [] as number[],
+  };
   private tick = 0;
   private lastAnnounce = 0;
   private picking = false;
@@ -210,7 +221,10 @@ export class BrickBlastView {
     this.skipping = false;
     this.combo = 0;
     this.tick = 0;
-    this.shot = { blasts: 0, powers: 0, laser: false, scatter: false, lastBall: false, recent: [] };
+    this.shot = {
+      blasts: 0, powers: 0, laser: false, scatter: false, double: false, pierce: false, lastBall: false,
+      recent: [],
+    };
     this.hintAim = null;
     this.drawGuide();
     const tps = this.c.ticksPerSecond;
@@ -235,7 +249,7 @@ export class BrickBlastView {
           turn.step();
           this.tick += 1;
           if (this.skipping) continue;
-          const lone = turn.waiting() === 0 && turn.balls().length === 4; // one ball: [id, x, y, clone]
+          const lone = turn.waiting() === 0 && turn.balls().length === 4; // one ball: [id, x, y, flags]
           changed = this.handleEvents(turn.takeEvents(), lone) || changed;
         }
         if (this.skipping) turn.takeEvents();
@@ -468,11 +482,21 @@ export class BrickBlastView {
       s.visible = g.visible = true;
       const x = flat[i * 4 + 1] ?? 0;
       const y = flat[i * 4 + 2] ?? 0;
-      const clone = (flat[i * 4 + 3] ?? 0) !== 0;
+      const flags = flat[i * 4 + 3] ?? 0;
       s.position.set(x, y);
       g.position.set(x, y);
-      s.tint = clone ? 0xa5f3fc : 0xffffff;
-      g.tint = clone ? 0x22d3ee : 0x9bdcff;
+      // Powered-up balls take the power-up's colour until they land.
+      if (flags & BALL_DOUBLE) {
+        s.tint = 0xfdba74;
+        g.tint = 0xf97316;
+      } else if (flags & BALL_PIERCE) {
+        s.tint = 0x99f6e4;
+        g.tint = 0x2dd4bf;
+      } else {
+        const clone = (flags & BALL_CLONE) !== 0;
+        s.tint = clone ? 0xa5f3fc : 0xffffff;
+        g.tint = clone ? 0x22d3ee : 0x9bdcff;
+      }
     }
   }
 
@@ -690,6 +714,25 @@ export class BrickBlastView {
         case 5:
           this.launchX = a;
           break;
+        case 7: {
+          sfx.pickup();
+          const double = b === DOUBLE_DAMAGE;
+          if (double ? !this.shot.double : !this.shot.pierce) {
+            if (double) this.shot.double = true;
+            else this.shot.pierce = true;
+            this.shot.powers += 1;
+            this.announce(double ? "Double damage!" : "Pierce!", double ? 0xfb923c : 0x5eead4);
+          }
+          break;
+        }
+        case 8:
+          changed = true;
+          sfx.blast(this.combo + 2);
+          haptic(20);
+          this.shockwave(a);
+          this.shot.powers += 1;
+          this.announce("Boom!", 0xf87171);
+          break;
       }
     }
     return changed;
@@ -758,6 +801,32 @@ export class BrickBlastView {
     void tween(this.app, 220, (t) => {
       g.alpha = 1 - t;
     }).then(() => g.destroy());
+  }
+
+  /** A bomb going off: a flash and a ring sweeping over the 8 cells around it. */
+  private shockwave(index: number): void {
+    const { x, y } = this.cellCenter(index);
+    const cell = this.c.cell;
+    const flash = new Sprite(this.glowTexture);
+    flash.anchor.set(0.5);
+    flash.position.set(x, y);
+    flash.tint = 0xfb923c;
+    flash.blendMode = "add";
+    const ring = new Graphics();
+    ring.blendMode = "add";
+    this.fx.addChild(flash, ring);
+    const reduced = prefersReducedMotion();
+    void tween(this.app, reduced ? 200 : 380, (t) => {
+      flash.width = flash.height = cell * (reduced ? 3 : 1 + t * 3);
+      flash.alpha = 1 - t;
+      ring.clear();
+      if (!reduced) {
+        ring.circle(x, y, cell * (0.4 + t * 1.2)).stroke({ width: cell * 0.12 * (1 - t), color: 0xfdba74, alpha: 1 - t });
+      }
+    }).then(() => {
+      flash.destroy();
+      ring.destroy();
+    });
   }
 
   /** Tracks breaks in this shot: bursts close together are a multi-break. */

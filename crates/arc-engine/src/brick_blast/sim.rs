@@ -8,8 +8,9 @@ use std::fmt;
 use super::geom::{aim_velocity, closest_on_polygon, polygon, reflect, rotate, to_i32, V};
 use super::{
     cell_index, free_rows, Cell, PowerKind, Row, State, StateError, Status, AIM_MAX, AIM_MIN,
-    BALL_R, BOARD_W, CELL, CLONE_LIFETIME, COLS, EMPTY_ROW, FLOOR_Y, GROUND_ROW, LAUNCH_INTERVAL,
-    MAX_ACTIVE_BALLS, MAX_BALLS, MAX_TICKS_PER_TURN, MAX_TURNS, PLAY_ROWS, POWER_R, ROWS, SUBSTEPS,
+    BALL_R, BOARD_W, BOMB_DAMAGE, CELL, CLONE_LIFETIME, COLS, DOUBLE_DAMAGE, EMPTY_ROW, FLOOR_Y,
+    GROUND_ROW, LAUNCH_INTERVAL, MAX_ACTIVE_BALLS, MAX_BALLS, MAX_TICKS_PER_TURN, MAX_TURNS,
+    PIERCE_BLOCKS, PLAY_ROWS, POWER_R, ROWS, SUBSTEPS,
 };
 use crate::isqrt;
 
@@ -27,9 +28,32 @@ pub struct Ball {
     touching: u128,
     /// Ball Up cells this ball has already split on.
     split: u128,
+    /// Damage per block hit: `DOUBLE_DAMAGE` after a Double Damage power-up.
+    pub damage: u16,
+    /// Blocks this ball will still pass through (Pierce power-up).
+    pub pierce: u8,
+    /// Blocks a piercing ball is inside (bit = cell index), ignored until it leaves them.
+    passing: u128,
 }
 
 impl Ball {
+    fn launch(id: u32, x: i32, (vx, vy): (i32, i32)) -> Self {
+        Self {
+            id,
+            x,
+            y: launch_y(),
+            vx,
+            vy,
+            clone_expires: 0,
+            alive: true,
+            touching: 0,
+            split: 0,
+            damage: 1,
+            pierce: 0,
+            passing: 0,
+        }
+    }
+
     #[must_use]
     pub fn is_clone(&self) -> bool {
         self.clone_expires != 0
@@ -57,6 +81,15 @@ pub enum Event {
     Boost {
         cell: u8,
         factor: u8,
+    },
+    /// A ball picked up Double Damage or Pierce.
+    Empower {
+        cell: u8,
+        kind: PowerKind,
+    },
+    /// A Bomb went off.
+    Bomb {
+        cell: u8,
     },
     Collect {
         cell: u8,
@@ -106,8 +139,9 @@ struct Contact {
     inside: bool,
 }
 
-/// Deepest block overlap for a ball centred at `(x, y)`, if any.
-fn find_contact(grid: &[Row], x: i32, y: i32) -> Option<Contact> {
+/// Deepest block overlap for a ball centred at `(x, y)`, if any, ignoring the cells
+/// in `skip` (bit = cell index).
+fn find_contact(grid: &[Row], x: i32, y: i32, skip: u128) -> Option<Contact> {
     let p = V::new(i64::from(x), i64::from(y));
     let r2 = i64::from(BALL_R) * i64::from(BALL_R);
     let span = |c: i32, max: usize| {
@@ -123,6 +157,9 @@ fn find_contact(grid: &[Row], x: i32, y: i32) -> Option<Contact> {
             let Cell::Block { shape, .. } = *cell else {
                 continue;
             };
+            if skip & (1u128 << cell_index(row, col)) != 0 {
+                continue;
+            }
             let (poly, n) = polygon(shape, row, col);
             let (point, inside) = closest_on_polygon(p, &poly[..n]);
             let d2 = V::new(p.x - point.x, p.y - point.y).len2();
@@ -144,6 +181,26 @@ fn find_contact(grid: &[Row], x: i32, y: i32) -> Option<Contact> {
         }
     }
     best.map(|(_, c)| c)
+}
+
+/// Whether a ball centred at `(x, y)` overlaps the block at `(row, col)`.
+fn overlaps(grid: &[Row], row: usize, col: usize, x: i32, y: i32) -> bool {
+    let Cell::Block { shape, .. } = grid[row][col] else {
+        return false;
+    };
+    let p = V::new(i64::from(x), i64::from(y));
+    let (poly, n) = polygon(shape, row, col);
+    let (point, inside) = closest_on_polygon(p, &poly[..n]);
+    let r = i64::from(BALL_R);
+    inside || V::new(p.x - point.x, p.y - point.y).len2() < r * r
+}
+
+/// Whether the ball is moving into the contact's surface (a real strike).
+fn approaching(ball: &Ball, contact: &Contact) -> bool {
+    contact.inside
+        || i64::from(ball.vx) * (i64::from(ball.x) - contact.point.x)
+            + i64::from(ball.vy) * (i64::from(ball.y) - contact.point.y)
+            < 0
 }
 
 /// Bounces a ball off a block contact. Returns true if the ball struck it
@@ -304,17 +361,11 @@ impl Turn {
             return true;
         }
         if self.launched < self.to_launch && self.tick.is_multiple_of(LAUNCH_INTERVAL) {
-            self.balls.push(Ball {
-                id: self.next_id,
-                x: self.state.launch_x,
-                y: launch_y(),
-                vx: self.launch_v.0,
-                vy: self.launch_v.1,
-                clone_expires: 0,
-                alive: true,
-                touching: 0,
-                split: 0,
-            });
+            self.balls.push(Ball::launch(
+                self.next_id,
+                self.state.launch_x,
+                self.launch_v,
+            ));
             self.next_id += 1;
             self.launched += 1;
         }
@@ -366,20 +417,34 @@ impl Turn {
             }
             return;
         }
-        if let Some(contact) = find_contact(&self.state.grid, ball.x, ball.y) {
-            if resolve(ball, &contact) {
-                self.damage(contact.row, contact.col);
+        let mut inside = ball.passing;
+        while inside != 0 {
+            let idx = inside.trailing_zeros() as usize;
+            inside &= inside - 1;
+            if !overlaps(&self.state.grid, idx / COLS, idx % COLS, ball.x, ball.y) {
+                ball.passing &= !(1u128 << idx);
+            }
+        }
+        if let Some(contact) = find_contact(&self.state.grid, ball.x, ball.y, ball.passing) {
+            if ball.pierce > 0 {
+                if approaching(ball, &contact) {
+                    ball.pierce -= 1;
+                    ball.passing |= 1u128 << cell_index(contact.row, contact.col);
+                    self.damage(contact.row, contact.col, ball.damage);
+                }
+            } else if resolve(ball, &contact) {
+                self.damage(contact.row, contact.col, ball.damage);
             }
         }
         self.touch_power_ups(ball);
     }
 
-    fn damage(&mut self, row: usize, col: usize) {
+    fn damage(&mut self, row: usize, col: usize, amount: u16) {
         let cell = cell_index(row, col);
         let Cell::Block { hp, .. } = &mut self.state.grid[row][col] else {
             return;
         };
-        *hp -= 1;
+        *hp = hp.saturating_sub(amount);
         self.hits += 1;
         if *hp > 0 {
             self.events.push(Event::Hit { cell, hp: *hp });
@@ -453,12 +518,12 @@ impl Turn {
                 self.events.push(Event::Laser { cell, kind });
                 if matches!(kind, PowerKind::LaserH | PowerKind::LaserX) {
                     for c in 0..COLS {
-                        self.damage(row, c);
+                        self.damage(row, c, 1);
                     }
                 }
                 if matches!(kind, PowerKind::LaserV | PowerKind::LaserX) {
                     for r in 0..PLAY_ROWS {
-                        self.damage(r, col);
+                        self.damage(r, col, 1);
                     }
                 }
             }
@@ -520,6 +585,28 @@ impl Turn {
                         cell,
                         factor: kind.boost(),
                     });
+                }
+            }
+            PowerKind::DoubleDamage => {
+                if ball.damage < DOUBLE_DAMAGE {
+                    ball.damage = DOUBLE_DAMAGE;
+                    self.events.push(Event::Empower { cell, kind });
+                }
+            }
+            PowerKind::Pierce => {
+                if ball.pierce < PIERCE_BLOCKS {
+                    ball.pierce = PIERCE_BLOCKS;
+                    self.events.push(Event::Empower { cell, kind });
+                }
+            }
+            PowerKind::Bomb => {
+                // Gone at once: only the first ball sets it off.
+                self.state.grid[row][col] = Cell::Empty;
+                self.events.push(Event::Bomb { cell });
+                for r in row.saturating_sub(1)..=(row + 1).min(PLAY_ROWS - 1) {
+                    for c in col.saturating_sub(1)..=(col + 1).min(COLS - 1) {
+                        self.damage(r, c, BOMB_DAMAGE);
+                    }
                 }
             }
             PowerKind::PlusBalls2 | PowerKind::PlusBalls3 | PowerKind::PlusBalls5 => {
@@ -619,19 +706,12 @@ pub type GridPos = (usize, usize);
 /// grazes the corner between two blocks this is the one it really takes.
 /// `None` when it lands without touching a block.
 #[must_use]
-pub fn aim_trace(state: &State, aim: u16, max_bounces: usize) -> (Vec<(i32, i32)>, Option<GridPos>) {
-    let (vx, vy) = aim_velocity(aim);
-    let mut ball = Ball {
-        id: 0,
-        x: state.launch_x,
-        y: launch_y(),
-        vx,
-        vy,
-        clone_expires: 0,
-        alive: true,
-        touching: 0,
-        split: 0,
-    };
+pub fn aim_trace(
+    state: &State,
+    aim: u16,
+    max_bounces: usize,
+) -> (Vec<(i32, i32)>, Option<GridPos>) {
+    let mut ball = Ball::launch(0, state.launch_x, aim_velocity(aim));
     let mut points = vec![(ball.x, ball.y)];
     let mut first_hit = None;
     for _ in 0..(MAX_TICKS_PER_TURN * SUBSTEPS) {
@@ -645,7 +725,7 @@ pub fn aim_trace(state: &State, aim: u16, max_bounces: usize) -> (Vec<(i32, i32)
             }
             break;
         }
-        if let Some(contact) = find_contact(&state.grid, ball.x, ball.y) {
+        if let Some(contact) = find_contact(&state.grid, ball.x, ball.y, 0) {
             // A real shot damages a block exactly when it bounces off it.
             if resolve(&mut ball, &contact) {
                 bounced = true;
@@ -738,6 +818,98 @@ mod tests {
         assert!(summary.hits >= 8, "the boosted shot launched 8 balls");
         assert_eq!(again.boost, 1);
         assert_eq!(again.launch_count(), 4);
+    }
+
+    fn hp_at(s: &State, row: usize, col: usize) -> Option<u16> {
+        match s.grid[row][col] {
+            Cell::Block { hp, .. } => Some(hp),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn double_damage_lasts_until_the_ball_lands() {
+        // Straight up: each ball touches the power-up, hits the top block once, and
+        // comes back down. Without it the block would lose 3.
+        let (after, summary) = play_turn(&with_power(PowerKind::DoubleDamage, 3), 900).unwrap();
+        assert_eq!(summary.hits, 3);
+        assert_eq!(hp_at(&after, 1, 4), Some(144));
+        assert_eq!(after.grid[6][4], Cell::Empty, "used up after the shot");
+        // The next shot is back to normal.
+        let (again, _) = play_turn(&after, 900).unwrap();
+        assert_eq!(hp_at(&again, 2, 4), Some(141));
+    }
+
+    #[test]
+    fn pierce_passes_through_blocks() {
+        let mut blocks = EMPTY_ROW;
+        blocks[4] = block(50);
+        let mut mid = EMPTY_ROW;
+        mid[4] = power(PowerKind::Pierce);
+        let rows = vec![EMPTY_ROW, EMPTY_ROW, EMPTY_ROW, blocks, EMPTY_ROW, mid];
+        let s = state_with(rows, vec![], 1);
+        let mut turn = Turn::new(&s, 900).unwrap();
+        let mut empowered = false;
+        while !turn.step() {
+            empowered |= turn.take_events().iter().any(|e| {
+                matches!(
+                    e,
+                    Event::Empower {
+                        kind: PowerKind::Pierce,
+                        ..
+                    }
+                )
+            });
+        }
+        assert!(empowered);
+        let (after, summary) = turn.finish().unwrap();
+        // Up through the block, off the ceiling, and down through it again.
+        assert_eq!(summary.hits, 2);
+        assert_eq!(hp_at(&after, 4, 4), Some(48));
+        // Deterministic, like every shot.
+        assert_eq!(play_turn(&s, 900).unwrap().0, after);
+    }
+
+    #[test]
+    fn bomb_damages_the_eight_cells_around_it() {
+        let mut above = EMPTY_ROW;
+        above[3] = block(30);
+        above[4] = block(50);
+        above[5] = block(50);
+        let mut mid = EMPTY_ROW;
+        mid[3] = block(50);
+        mid[4] = power(PowerKind::Bomb);
+        mid[5] = block(50);
+        let mut below = EMPTY_ROW;
+        below[3] = block(50);
+        below[5] = block(50);
+        let mut far = EMPTY_ROW;
+        far[6] = block(50);
+        let rows = vec![far, EMPTY_ROW, EMPTY_ROW, above, mid, below];
+        let s = state_with(rows, vec![], 1);
+        let mut turn = Turn::new(&s, 900).unwrap();
+        let mut bombs = 0;
+        while !turn.step() {
+            bombs += turn
+                .take_events()
+                .iter()
+                .filter(|e| matches!(e, Event::Bomb { .. }))
+                .count();
+        }
+        assert_eq!(bombs, 1, "only the first touch sets it off");
+        let (after, _) = turn.finish().unwrap();
+        // Rows moved down one: `above` is now row 4.
+        assert_eq!(hp_at(&after, 4, 3), None, "a 30 HP block is destroyed");
+        assert_eq!(
+            hp_at(&after, 4, 4),
+            Some(19),
+            "20 after the blast, then hit once"
+        );
+        assert_eq!(hp_at(&after, 4, 5), Some(20));
+        assert_eq!(hp_at(&after, 5, 3), Some(20));
+        assert_eq!(after.grid[5][4], Cell::Empty);
+        assert_eq!(hp_at(&after, 6, 5), Some(20));
+        assert_eq!(hp_at(&after, 1, 6), Some(50), "out of range");
     }
 
     #[test]

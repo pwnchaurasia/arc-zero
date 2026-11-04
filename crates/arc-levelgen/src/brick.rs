@@ -36,6 +36,21 @@ const BONUS_BALLS: u16 = 10;
 const MAX_ATTEMPTS: u32 = 16;
 /// Balls added after every two layouts the bot could not finish.
 const BALLS_PER_RETRY: u16 = 8;
+/// Double Damage, Pierce and Bomb appear from this level (decision 2026-11-04).
+const NEW_POWERS_FROM: u16 = 11;
+/// A power-up is trapped when its open area (cells without a block) reaches neither the
+/// row above nor the row below and holds fewer than `OPEN_AREA` cells: blocks seal it in.
+const OPEN_REACH: usize = 1;
+const OPEN_AREA: usize = 3;
+
+/// Which power-ups a layout gets. Layouts are chosen (and checked by the bot) with the
+/// power-ups from before 2026-11-04, so blocks and balls stay exactly as they were; the
+/// final level then gets the current ones. Both use the same random draws.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Powers {
+    Original,
+    Current,
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct BbLevel {
@@ -57,7 +72,7 @@ fn to_u16(v: f64) -> u16 {
 
 /// Power-ups available at an (equivalent) level. Decision 2026-11-02: +2 balls and the
 /// old x3/x5 splits are gone; scatter and next-shot boosts (x2, rarer x3) are in.
-fn power_pool(level: u16) -> Vec<(PowerKind, u32)> {
+fn power_pool(level: u16, actual_level: u16, powers: Powers) -> Vec<(PowerKind, u32)> {
     let mut pool = vec![
         (PowerKind::PlusBalls3, 4),
         (PowerKind::PlusBalls5, 2),
@@ -73,7 +88,69 @@ fn power_pool(level: u16) -> Vec<(PowerKind, u32)> {
     if level >= 40 {
         pool.push((PowerKind::Boost3, 1));
     }
+    if powers == Powers::Current && actual_level >= NEW_POWERS_FROM {
+        pool.extend([
+            (PowerKind::DoubleDamage, 2),
+            (PowerKind::Bomb, 2),
+            (PowerKind::Pierce, 1),
+        ]);
+    }
     pool
+}
+
+/// Whether the power-up at `seq[row][col]` sits in a closed pocket of blocks. `seq` is
+/// bottom-up (index 0 lowest); the stack's bottom and top rows are always open.
+fn trapped(seq: &[Row], row: usize, col: usize) -> bool {
+    let open = |r: usize, c: usize| !matches!(seq[r][c], Cell::Block { .. });
+    let mut seen = vec![[false; COLS]; seq.len()];
+    let mut stack = vec![(row, col)];
+    seen[row][col] = true;
+    let mut area = 0;
+    while let Some((r, c)) = stack.pop() {
+        area += 1;
+        if r == 0 || r + 1 == seq.len() || r.abs_diff(row) >= OPEN_REACH || area >= OPEN_AREA {
+            return false;
+        }
+        for (nr, nc) in [(r - 1, c), (r + 1, c), (r, c.wrapping_sub(1)), (r, c + 1)] {
+            if nc < COLS && !seen[nr][nc] && open(nr, nc) {
+                seen[nr][nc] = true;
+                stack.push((nr, nc));
+            }
+        }
+    }
+    true
+}
+
+/// Moves every trapped power-up to the nearest empty cell a ball can reach: in its own
+/// row if possible, else the row below or above. Blocks never move.
+fn free_trapped_power_ups(seq: &mut [Row]) -> (u32, u32) {
+    let (mut moved, mut stuck) = (0, 0);
+    for row in 0..seq.len() {
+        for col in 0..COLS {
+            if !matches!(seq[row][col], Cell::Power { .. }) || !trapped(seq, row, col) {
+                continue;
+            }
+            let rows = [
+                Some(row),
+                row.checked_sub(1),
+                Some(row + 1).filter(|&r| r < seq.len()),
+            ];
+            let spot = rows.into_iter().flatten().find_map(|r| {
+                (0..COLS)
+                    .filter(|&c| seq[r][c] == Cell::Empty && !trapped(seq, r, c))
+                    .min_by_key(|&c| (c.abs_diff(col), c))
+                    .map(|c| (r, c))
+            });
+            if let Some((r, c)) = spot {
+                seq[r][c] = seq[row][col];
+                seq[row][col] = Cell::Empty;
+                moved += 1;
+            } else {
+                stuck += 1;
+            }
+        }
+    }
+    (moved, stuck)
 }
 
 fn pick_power(rng: &mut Rng, pool: &[(PowerKind, u32)]) -> PowerKind {
@@ -116,7 +193,7 @@ fn extend(a: f64, b: f64, t: f64) -> f64 {
 
 /// `extra_balls` is added when the bot could not finish a layout, so a level gets
 /// easier by giving the player more balls, never by dropping blocks below MIN_BLOCK_HP.
-fn build_script(level: u16, seed: u64, extra_balls: u16) -> LevelScript {
+fn build_script(level: u16, seed: u64, extra_balls: u16, powers: Powers) -> LevelScript {
     let mut rng = Rng::new(seed);
     let intro = level <= INTRO_LEVELS;
     let t = curve(level);
@@ -163,7 +240,7 @@ fn build_script(level: u16, seed: u64, extra_balls: u16) -> LevelScript {
     } else {
         u64::from(to_u16(lerp(10.0, 40.0, (f64::from(eq) - 7.0) / 93.0)))
     };
-    let pool = power_pool(eq);
+    let pool = power_pool(eq, level, powers);
     let shapes = [Shape::TriBl, Shape::TriBr, Shape::TriTl, Shape::TriTr];
 
     // Rows in the order they reach the player: index 0 is lowest on the board at the start.
@@ -198,6 +275,13 @@ fn build_script(level: u16, seed: u64, extra_balls: u16) -> LevelScript {
             }
         }
         seq.push(row);
+    }
+
+    if powers == Powers::Current {
+        let (moved, stuck) = free_trapped_power_ups(&mut seq);
+        if moved + stuck > 0 {
+            eprintln!("  bb {level:>3}: {moved} trapped power-up(s) moved, {stuck} could not be");
+        }
     }
 
     let mut start_rows: Vec<Row> = seq[..start_count].to_vec();
@@ -236,7 +320,7 @@ fn build_level(master: &str, level: u16) -> BbLevel {
             extra_balls += BALLS_PER_RETRY;
         }
         let seed = derive_seed(master, &["bb", &level.to_string(), &attempt.to_string()]);
-        let script = build_script(settings_level, seed, extra_balls);
+        let script = build_script(settings_level, seed, extra_balls, Powers::Original);
         let attempt_started = Instant::now();
         let Ok(run) = play_level(&script, BOT_AIMS) else {
             continue;
@@ -264,6 +348,16 @@ fn build_level(master: &str, level: u16) -> BbLevel {
             }
         } else {
             (script, run)
+        };
+        // Same blocks and balls, with today's power-ups; the bot must still win.
+        let mut current = build_script(settings_level, seed, extra_balls, Powers::Current);
+        current.start_balls = script.start_balls;
+        let (script, run) = match play_level(&current, BOT_AIMS) {
+            Ok(again) if again.won => (current, again),
+            _ => {
+                eprintln!("  bb {level:>3}: bot lost with the new power-ups; keeping the old ones");
+                (script, run)
+            }
         };
         let total_hp = script.total_hp();
         let difficulty = f64::from(run.turns)

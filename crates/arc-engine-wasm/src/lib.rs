@@ -133,7 +133,7 @@ impl BrickTurn {
         self.turn.waiting()
     }
 
-    /// Flat `[id, x, y, isClone]` per live ball.
+    /// Flat `[id, x, y, flags]` per live ball. flags: 1 clone, 2 double damage, 4 piercing.
     #[must_use]
     pub fn balls(&self) -> Vec<i32> {
         let balls = self.turn.balls();
@@ -143,7 +143,9 @@ impl BrickTurn {
                 i32::try_from(b.id).unwrap_or(i32::MAX),
                 b.x,
                 b.y,
-                i32::from(b.is_clone()),
+                i32::from(b.is_clone())
+                    | i32::from(b.damage > 1) << 1
+                    | i32::from(b.pierce > 0) << 2,
             ]);
         }
         out
@@ -157,7 +159,8 @@ impl BrickTurn {
 
     /// Flat `[kind, a, b]` per event since the last call.
     /// kind: 0 hit(cell, hp) 1 blast(cell) 2 laser(cell, power) 3 split(cell)
-    /// 4 collect(cell, amount) 5 land(x) 6 boost(cell, factor)
+    /// 4 collect(cell, amount) 5 land(x) 6 boost(cell, factor) 7 empower(cell, power)
+    /// 8 bomb(cell)
     #[wasm_bindgen(js_name = takeEvents)]
     pub fn take_events(&mut self) -> Vec<i32> {
         let mut out = Vec::new();
@@ -170,6 +173,8 @@ impl BrickTurn {
                 Event::Collect { cell, amount } => [4, i32::from(cell), i32::from(amount)],
                 Event::Land { x } => [5, x, 0],
                 Event::Boost { cell, factor } => [6, i32::from(cell), i32::from(factor)],
+                Event::Empower { cell, kind } => [7, i32::from(cell), kind as i32],
+                Event::Bomb { cell } => [8, i32::from(cell), 0],
             });
         }
         out

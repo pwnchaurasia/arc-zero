@@ -121,6 +121,8 @@ interface Layout {
 const TURRET_X = [1_100, 8_900];
 const TANK_X = 7_400;
 const ANNOUNCE_GAP_MS = 700;
+/** Touch steering: the gunner moves this many times as far as the finger slides. */
+const TOUCH_GAIN = 1.4;
 
 /**
  * The bridge seen from behind the gunner, in perspective (narrow far end, wide near
@@ -142,14 +144,23 @@ export class DeadBridgeView {
   private readonly barricade = new Graphics();
   private readonly drones: Graphics[] = [];
   private zombies = new Map<number, { s: Sprite; hp: number; flash: number }>();
-  private cages = new Map<number, { c: Container; g: Graphics; hp: Text; label: Text; last: number }>();
+  private cages = new Map<
+    number,
+    { c: Container; g: Graphics; hp: Text; label: Text; last: number; hpLast: number; flash: number }
+  >();
   private crates: { c: Container; g: Graphics; glyph: Text }[] = [];
+  /** Last seen HP and hit flash per crate, by x (crates never share a column). */
+  private crateHits = new Map<number, { hp: number; flash: number }>();
   private layout: Layout = { W: 0, H: 0, top: 0, bottom: 0, nearW: 0 };
   private acc = 0;
   private clock = 0;
   private shake = 0;
   private paused = false;
   private pointerDown = false;
+  /** Where a touch slide started: the finger's x and the aimed lane at that moment. */
+  private dragFrom: { px: number; lane: number } | null = null;
+  /** The lane last aimed at (fractional while sliding). */
+  private aimLane: number | null = null;
   private lastAnnounce = 0;
   private hud: Int32Array = new Int32Array(21);
   private destroyed = false;
@@ -172,8 +183,8 @@ export class DeadBridgeView {
     app.stage.eventMode = "static";
     app.stage.on("pointerdown", this.onPointer);
     app.stage.on("pointermove", this.onPointer);
-    app.stage.on("pointerup", () => (this.pointerDown = false));
-    app.stage.on("pointerupoutside", () => (this.pointerDown = false));
+    app.stage.on("pointerup", this.onRelease);
+    app.stage.on("pointerupoutside", this.onRelease);
     app.renderer.on("resize", this.relayout);
     app.ticker.add(this.frame);
     this.relayout();
@@ -233,16 +244,34 @@ export class DeadBridgeView {
 
   // -------------------------------------------------------------- input
 
+  private readonly onRelease = () => {
+    this.pointerDown = false;
+    this.dragFrom = null;
+  };
+
   private readonly onPointer = (e: FederatedPointerEvent) => {
     sfx.unlock();
-    if (e.type === "pointerdown") this.pointerDown = true;
-    // Mice steer just by moving; touch steers while the finger is down.
-    if (e.pointerType !== "mouse" && !this.pointerDown) return;
-    const y = this.c.gunnerY;
-    const x = this.c.bridgeW / 2 + (e.global.x - this.layout.W / 2) / this.unit(y);
+    const lanes = this.c.lanes - 1;
     const margin = 400;
-    const lane = Math.round(((x - margin) * (this.c.lanes - 1)) / (this.c.bridgeW - 2 * margin));
-    this.options.onAim(Math.max(0, Math.min(this.c.lanes - 1, lane)));
+    const toLane = (x: number) => ((x - margin) * lanes) / (this.c.bridgeW - 2 * margin);
+    if (e.pointerType === "mouse") {
+      // Mice steer just by moving: the gunner goes where the pointer is.
+      const x = this.c.bridgeW / 2 + (e.global.x - this.layout.W / 2) / this.unit(this.c.gunnerY);
+      this.aimLane = Math.round(toLane(x));
+    } else {
+      // Touch steers like a trackpad: slide anywhere and the gunner moves by as much
+      // (a little more), so the finger never has to sit on (or hide) the gunner.
+      if (e.type === "pointerdown") {
+        this.pointerDown = true;
+        this.dragFrom = { px: e.global.x, lane: this.aimLane ?? toLane(this.hud[HUD.gunnerX] ?? this.c.bridgeW / 2) };
+        return;
+      }
+      if (!this.pointerDown || !this.dragFrom) return;
+      const dx = (e.global.x - this.dragFrom.px) / this.unit(this.c.gunnerY);
+      this.aimLane = this.dragFrom.lane + toLane(margin + dx * TOUCH_GAIN);
+    }
+    this.aimLane = Math.max(0, Math.min(lanes, this.aimLane));
+    this.options.onAim(Math.round(this.aimLane));
   };
 
   // ------------------------------------------------------------ backdrop
@@ -403,7 +432,11 @@ export class DeadBridgeView {
       s.height = h;
       s.width = h * (s.texture.width / s.texture.height);
       const bob = frozen || this.still ? 0 : Math.sin(this.clock * (kind === 1 ? 14 : 8) + id) * 2.2 * this.scale(y);
-      s.position.set(this.sx(x, y), this.sy(y) + bob);
+      // The sprite is wider than the body the engine keeps on the bridge: draw it
+      // inside the rails, so nobody seems to walk off the edge.
+      const half = s.width / 2 / u;
+      const drawX = half * 2 < this.c.bridgeW ? Math.min(Math.max(x, half), this.c.bridgeW - half) : x;
+      s.position.set(this.sx(drawX, y), this.sy(y) + bob);
       s.rotation = frozen || this.still ? 0 : Math.sin(this.clock * 4 + id * 1.7) * 0.06;
       s.zIndex = y;
       s.tint = e.flash > 0 ? 0xffb4b4 : frozen ? 0x9fd8ff : 0xffffff;
@@ -430,13 +463,18 @@ export class DeadBridgeView {
     const b = this.sim.bullets();
     const g = this.bulletsG;
     g.clear();
-    for (let i = 0; i + 2 < b.length; i += 3) {
+    for (let i = 0; i + 3 < b.length; i += 4) {
       const x = b[i] ?? 0;
       const y = b[i + 1] ?? 0;
       const kind = b[i + 2] ?? 0;
       const px = this.sx(x, y);
       const py = this.sy(y);
       const s = this.scale(y);
+      if (b[i + 3]) {
+        // Past its range: a faint spark that only cages and crates still catch.
+        g.circle(px, py, 2 * s).fill({ color: kind === 5 ? 0xff9f43 : 0xffd27a, alpha: 0.35 });
+        continue;
+      }
       switch (kind) {
         case 2: // tank shell
           g.circle(px, py, 7 * s).fill({ color: 0xff9f43, alpha: 0.35 });
@@ -500,9 +538,12 @@ export class DeadBridgeView {
         label.anchor.set(0.5);
         cont.addChild(g, label, hpText);
         this.world.addChild(cont);
-        e = { c: cont, g, hp: hpText, label, last: -1 };
+        e = { c: cont, g, hp: hpText, label, last: -1, hpLast: hp, flash: 0 };
         this.cages.set(index, e);
       }
+      // Every hit shows: a quick pop and a bright flash.
+      if (hp < e.hpLast) e.flash = 4;
+      e.hpLast = hp;
       const size = 1_100 * this.unit(y);
       if (Math.abs(size - e.last) > 0.5) {
         drawCage(e.g, size);
@@ -514,7 +555,9 @@ export class DeadBridgeView {
       e.hp.text = `${Math.max(0, hp)}`;
       e.c.position.set(this.sx(x, y), this.sy(y));
       e.c.zIndex = y;
-      e.c.scale.set(1 + (this.still ? 0 : Math.sin(this.clock * 3 + index) * 0.02));
+      e.c.scale.set(1 + (this.still ? 0 : Math.sin(this.clock * 3 + index) * 0.02) + e.flash * 0.025);
+      e.c.tint = e.flash > 0 ? 0xfff2b0 : 0xffffff;
+      if (e.flash > 0) e.flash -= 1;
     }
     for (const [index, e] of this.cages) {
       if (!seen.has(index)) {
@@ -543,8 +586,13 @@ export class DeadBridgeView {
       }
       const x = c[i * 5] ?? 0;
       const y = c[i * 5 + 1] ?? 0;
+      const hp = c[i * 5 + 2] ?? 0;
       const kind = c[i * 5 + 3] ?? 0;
       const left = c[i * 5 + 4] ?? 0;
+      const hit = this.crateHits.get(x) ?? { hp, flash: 0 };
+      if (hp < hit.hp) hit.flash = 4;
+      hit.hp = hp;
+      this.crateHits.set(x, hit);
       const a = ASSISTS[kind] ?? ASSISTS[0];
       const size = 650 * this.unit(y);
       drawCrate(e.g, size, a.color);
@@ -554,10 +602,16 @@ export class DeadBridgeView {
       e.c.position.set(this.sx(x, y), this.sy(y));
       e.c.zIndex = y;
       e.c.rotation = this.still ? 0 : Math.sin(this.clock * 3 + i) * 0.08;
+      e.c.scale.set(1 + hit.flash * 0.04);
+      if (hit.flash > 0) hit.flash -= 1;
       // Crates fade out: they blink for their last two seconds.
       const blink = left < 2 * this.c.tps && Math.floor(this.clock * 8) % 2 === 0;
-      e.c.alpha = blink ? 0.35 : Math.min(1, 0.45 + left / this.c.crateTicks);
+      e.c.alpha = hit.flash > 0 ? 1 : blink ? 0.35 : Math.min(1, 0.45 + left / this.c.crateTicks);
     });
+    if (this.crateHits.size > 16) {
+      const live = new Set(Array.from({ length: n }, (_, i) => c[i * 5] ?? 0));
+      for (const x of this.crateHits.keys()) if (!live.has(x)) this.crateHits.delete(x);
+    }
   }
 
   private renderUnits(): void {

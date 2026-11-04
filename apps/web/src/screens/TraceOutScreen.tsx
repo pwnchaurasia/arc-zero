@@ -19,6 +19,35 @@ const OP_TAP = 0;
 const OP_CONTINUE = 1;
 const LIVES = 3;
 const DIRS: Record<string, string> = { "0,-1": "up", "1,0": "right", "0,1": "down", "-1,0": "left" };
+/** Praise for clean taps in a row (a blocked tap starts the count again). */
+const STREAKS: Record<number, [string, number]> = {
+  3: ["Nice!", 0x16a34a],
+  5: ["Great!", 0x0284c7],
+  8: ["Brilliant!", 0x9333ea],
+  12: ["On fire!", 0xea580c],
+};
+
+/** A droplet: filled while you still have it, an empty outline once lost. */
+function Droplet({ full }: { full: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={22}
+      height={22}
+      aria-hidden="true"
+      className={full ? "text-sky-400" : "drop-lost text-line"}
+    >
+      <path
+        d="M12 2.5S5 10.2 5 14.8a7 7 0 0 0 14 0C19 10.2 12 2.5 12 2.5Z"
+        fill={full ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      {full && <path d="M9.3 15.2a3 3 0 0 0 2.4 2.8" stroke="white" strokeOpacity="0.75" strokeWidth="1.7" fill="none" strokeLinecap="round" />}
+    </svg>
+  );
+}
 
 interface Game {
   start: ToStart;
@@ -61,6 +90,7 @@ export function TraceOutScreen({
   const view = useRef<TraceOutView | null>(null);
   const game = useRef<Game | null>(null);
   const tapRef = useRef<(line: number) => void>(() => undefined);
+  const streak = useRef(0);
   const [round, setRound] = useState(0);
   const [info, setInfo] = useState<ToStart | null>(null);
   const [lives, setLives] = useState(LIVES);
@@ -88,9 +118,13 @@ export function TraceOutScreen({
     g.done = true;
     try {
       const res = await api.to.complete(level, g.start.attempt_id, g.moves);
-      await new Promise((r) => setTimeout(r, 500));
+      // The last line slides out, then the confetti plays, then the card.
+      await new Promise((r) => setTimeout(r, 900));
       if (!game.current) return;
       sfx.win();
+      void view.current?.celebrate();
+      await new Promise((r) => setTimeout(r, 1100));
+      if (!game.current) return;
       haptic(30);
       setResult(res);
       setCoins(res.coins);
@@ -106,6 +140,7 @@ export function TraceOutScreen({
     let cancelled = false;
     let created: TraceOutView | null = null;
     setResult(null);
+    streak.current = 0;
     setOut(false);
     setError(null);
 
@@ -117,12 +152,17 @@ export function TraceOutScreen({
       const blocker = g.sim.tap(line);
       g.moves.push([OP_TAP, line]);
       if (blocker < 0) {
+        streak.current += 1;
+        const n = streak.current;
+        const cheer = STREAKS[n] ?? (n > 12 && n % 5 === 2 ? (["Unstoppable!", 0xdb2777] as [string, number]) : null);
+        if (cheer) v.cheer(cheer[0], cheer[1]);
         sfx.complete();
         haptic(8);
         void v.exit(line);
       } else {
         sfx.invalid();
         haptic(25);
+        streak.current = 0;
         void v.bump(line, blocker);
       }
       refreshUi(g);
@@ -239,7 +279,8 @@ export function TraceOutScreen({
 
   const count = me?.games.traceout.level_count ?? 0;
   const resultDetail = (r: ToComplete) => {
-    const flawless = r.mistakes === 0 ? "Flawless! " : "";
+    const theme = info?.data.theme;
+    const flawless = `${theme ? `You drew ${/^[aeiou]/.test(theme) ? "an" : "a"} ${theme}! ` : ""}${r.mistakes === 0 ? "Flawless! " : ""}`;
     if (!r.first_clear) return `${flawless}Replay: no coins this time.`;
     const parts = [`+${r.coins_earned} coins`];
     if (r.streak_bonus) parts.push(`+${r.streak_bonus} streak bonus`);
@@ -263,16 +304,21 @@ export function TraceOutScreen({
       <div className="flex items-center justify-between px-5 text-sm text-muted">
         <span className="flex items-center gap-1" aria-label={`${lives} of ${LIVES} droplets left`}>
           {Array.from({ length: LIVES }, (_, i) => (
-            <span key={i} className={i < lives ? "text-sky-400" : "text-line"} aria-hidden="true">
-              💧
-            </span>
+            // Keyed by state, so losing a droplet replays its animation.
+            <Droplet key={`${i}-${i < lives}`} full={i < lives} />
           ))}
         </span>
         <span>{info ? `${left} lines left` : " "}</span>
         {info && <span>{replay ? "Replay: no coins" : `First clear: ${info.reward} coins`}</span>}
       </div>
       <div className="relative min-h-0 flex-1">
-        <div ref={host} className="game-surface absolute inset-0" />
+        {/* touch-none: pinches zoom the board, not the page. */}
+        <div ref={host} className="game-surface absolute inset-0 touch-none" />
+        {info && info.data.width >= 18 && !result && (
+          <p className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-xs text-muted">
+            Pinch to zoom · drag to move · double-tap to fit
+          </p>
+        )}
         {out && !result && !spend && (
           <div className="absolute inset-0 z-10 grid place-items-center bg-ink/55 p-6 backdrop-blur-[2px]">
             <div className="pop-in w-full max-w-xs rounded-3xl border border-line bg-panel p-5 text-center shadow-2xl">

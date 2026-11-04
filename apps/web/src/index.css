@@ -64,8 +64,28 @@ body {
   animation: pop-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
 
+/* A droplet being lost: it swells, then shrinks to its empty outline. */
+@keyframes drop-lost {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  35% {
+    transform: scale(1.5) translateY(-3px);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.drop-lost {
+  animation: drop-lost 420ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .pop-in {
+  .pop-in,
+  .drop-lost {
     animation: none;
   }
 }

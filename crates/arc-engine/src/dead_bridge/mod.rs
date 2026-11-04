@@ -86,6 +86,13 @@ impl ZKind {
             Self::Boss => (6, 900, 40),
         }
     }
+
+    /// How close a bullet must pass to hit: the body as drawn, which is wider than the
+    /// radius used for walking (decision 2026-11-04: shots that look like hits are hits).
+    #[must_use]
+    pub const fn hit_radius(self) -> i32 {
+        self.stats().1 * 13 / 10
+    }
 }
 
 /// The gunner's weapon. Everything but the rifle comes from a cage and is temporary.
@@ -297,6 +304,9 @@ pub struct Bullet {
     splash: i32,
     /// Ticks left before it fizzles (short-range weapons); 0 = until it hits.
     life: u16,
+    /// A short-range shot past its range: it can't hurt zombies any more, but it
+    /// still breaks cages and crates, so every gun can reach every power-up.
+    pub spent: bool,
     pub kind: Shot,
 }
 
@@ -782,6 +792,7 @@ impl Sim {
             dmg,
             splash,
             life: 0,
+            spent: false,
             kind,
         }
     }
@@ -795,6 +806,7 @@ impl Sim {
             dmg,
             splash: 0,
             life: 0,
+            spent: false,
             kind,
         }
     }
@@ -1121,7 +1133,7 @@ impl Sim {
             if b.life > 0 {
                 b.life -= 1;
                 if b.life == 0 {
-                    return false;
+                    b.spent = true;
                 }
             }
             if b.y < -1_000 || b.x < -500 || b.x > BRIDGE_W + 500 {
@@ -1140,8 +1152,11 @@ impl Sim {
                     return false;
                 }
             }
+            if b.spent {
+                return true;
+            }
             let hit = self.zombies.iter().position(|z| {
-                let reach = i64::from(z.kind.stats().1 + BULLET_R);
+                let reach = i64::from(z.kind.hit_radius() + BULLET_R);
                 let (dx, dy) = (i64::from(z.x - b.x), i64::from(z.y - b.y));
                 z.hp > 0 && dx * dx + dy * dy <= reach * reach
             });
@@ -1499,6 +1514,61 @@ mod tests {
             assert!(seen_gun, "{gun:?} was never picked up");
             assert_eq!(sim.status(), Status::Won, "{gun:?}");
             assert_eq!(sim.gun(), Gun::Rifle, "{gun:?} should run out");
+        }
+    }
+
+    #[test]
+    fn short_range_guns_still_break_far_cages() {
+        // A shotgun from the first cage, then a cage parked far up the bridge, past the
+        // pellets' range: spent pellets still reach it.
+        let mut s = tiny();
+        s.spawns = vec![Spawn {
+            tick: 2_000,
+            kind: ZKind::Walker,
+            x: 5_000,
+            hp: 10,
+        }];
+        s.crates.clear();
+        s.cages = vec![
+            CageSpec {
+                tick: 0,
+                x: 5_000,
+                stop_y: 9_000,
+                hp: 20,
+                reward: Reward::Gun(Gun::Shotgun),
+            },
+            CageSpec {
+                tick: 200,
+                x: 5_000,
+                stop_y: 2_000,
+                hp: 30,
+                reward: Reward::Repair,
+            },
+        ];
+        let mut sim = Sim::new(&s).unwrap();
+        let mut opened_with = None;
+        while sim.status() == Status::Playing && opened_with.is_none() {
+            sim.step();
+            let gun = sim.gun();
+            if sim.take_events().iter().any(|e| {
+                matches!(
+                    e,
+                    Event::CageOpened {
+                        reward: Reward::Repair,
+                        ..
+                    }
+                )
+            }) {
+                opened_with = Some(gun);
+            }
+        }
+        assert_eq!(opened_with, Some(Gun::Shotgun));
+    }
+
+    #[test]
+    fn bullets_hit_zombies_as_wide_as_they_are_drawn() {
+        for kind in [ZKind::Walker, ZKind::Runner, ZKind::Brute, ZKind::Boss] {
+            assert!(kind.hit_radius() > kind.stats().1, "{kind:?}");
         }
     }
 

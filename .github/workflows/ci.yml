@@ -4,6 +4,10 @@ name: CI
 # checks passed (branch protection), and releases deploy only commits already on
 # `main`, so re-running the suite after merging or when releasing would test the
 # same code again.
+#
+# Speed: each Rust artifact (browser WASM, Python engine wheel, level generator) is
+# built once, by its own job, in parallel; the test jobs download it instead of
+# compiling Rust again. Everything else runs side by side.
 on:
   pull_request:
   workflow_dispatch:
@@ -15,7 +19,63 @@ concurrency:
   group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
+env:
+  # Not a secret: CI levels only. Production uses ARC_LEVEL_SEED from GitHub secrets.
+  CI_LEVEL_SEED: ci-only-seed-not-secret-0123456789abcdef
+
 jobs:
+  # ------------------------------------------------------------ build once
+
+  wasm:
+    name: Build browser engine (WASM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # A prebuilt binary: compiling wasm-pack from source took minutes on every run.
+      - uses: taiki-e/install-action@v2
+        with: { tool: wasm-pack@0.13.1 }
+      - run: npm run wasm
+        working-directory: apps/web
+      - uses: actions/upload-artifact@v4
+        with: { name: wasm-pkg, path: apps/web/src/wasm/pkg, retention-days: 1 }
+
+  wheel:
+    name: Build server engine (Python wheel)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v6
+      # abi3 wheel: works on every CPython >= 3.12, so one build serves every job.
+      - run: uv build --wheel crates/arc-engine-py --out-dir dist
+      - uses: actions/upload-artifact@v4
+        with: { name: engine-wheel, path: dist/*.whl, retention-days: 1 }
+
+  levelgen:
+    name: Build level generator and CI levels
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p arc-levelgen
+      # e2e only plays the first levels: 10 per game take seconds. The full 100 are
+      # checked for speed in `levels`, alongside everything else.
+      - name: Generate the e2e levels
+        run: .github/scripts/ci-levelgen.sh "$CI_LEVEL_SEED" levels --levels 10
+      - uses: actions/upload-artifact@v4
+        with: { name: levelgen, path: target/release/arc-levelgen, retention-days: 1 }
+      - uses: actions/upload-artifact@v4
+        with: { name: ci-levels, path: levels, retention-days: 1 }
+
+  # ----------------------------------------------------------------- checks
+
   engine:
     name: Rust engine
     runs-on: ubuntu-latest
@@ -27,28 +87,38 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
+
+  levels:
+    name: All levels generate quickly (${{ matrix.seed }} seed)
+    needs: levelgen
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [ci, second, random]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: levelgen, path: target/release }
+      - run: chmod +x target/release/arc-levelgen
       # Every release regenerates the levels from its secret seed, so generation must be
-      # fast for ANY seed, not just one: three seeds, each capped at 10 minutes on this
+      # fast for ANY seed: three seeds side by side, each capped at 10 minutes on this
       # 4-core runner (the deploy job has 30 minutes in total).
-      - name: Levels generate quickly for several seeds and are finishable
+      - name: Generate all 100 levels per game (max 10 min)
         run: |
-          cargo build --release -p arc-levelgen
-          for seed in ci-only-seed-not-secret-0123456789abcdef \
-                      ci-only-second-seed-not-secret-0123456789ab \
-                      "$(openssl rand -hex 32)"; do
-            start=$(date +%s)
-            if ! ARC_LEVEL_SEED="$seed" timeout 600 ./target/release/arc-levelgen --out-dir /tmp/levels 2> /tmp/levelgen.log; then
-              echo "::error::Level generation failed or took over 10 minutes (seed ${seed:0:12}...)"
-              tail -20 /tmp/levelgen.log
-              exit 1
-            fi
-            echo "seed ${seed:0:12}...: $(( $(date +%s) - start ))s, $(grep -c rejected /tmp/levelgen.log) layouts rejected"
-          done
+          case "${{ matrix.seed }}" in
+            ci) seed=$CI_LEVEL_SEED ;;
+            second) seed=ci-only-second-seed-not-secret-0123456789ab ;;
+            *) seed=$(openssl rand -hex 32) ;;
+          esac
+          .github/scripts/ci-levelgen.sh "$seed" /tmp/levels
 
   api:
     name: API
+    needs: wheel
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:17-alpine
@@ -63,31 +133,32 @@ jobs:
       run: { working-directory: apps/api }
     steps:
       - uses: actions/checkout@v4
-      - run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --frozen
-      - run: uv run ruff check . && uv run ruff format --check .
-      - run: uv run mypy src tests
-      - run: uv run pytest -q
+      - uses: actions/download-artifact@v4
+        with: { name: engine-wheel, path: dist }
+      # Everything from the lock file except the engine, which comes from the wheel.
+      # `--no-sync` below keeps uv from building the engine from source again.
+      - run: uv sync --frozen --no-install-package arc-engine && uv pip install ../../dist/*.whl
+      - run: uv run --no-sync ruff check . && uv run --no-sync ruff format --check .
+      - run: uv run --no-sync mypy src tests
+      - run: uv run --no-sync pytest -q
 
   web:
     name: Web
+    needs: wasm
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     defaults:
       run: { working-directory: apps/web }
     steps:
       - uses: actions/checkout@v4
-      - run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo install --locked wasm-pack --version 0.13.1
+      - uses: actions/download-artifact@v4
+        with: { name: wasm-pkg, path: apps/web/src/wasm/pkg }
       - uses: pnpm/action-setup@v4
         with: { package_json_file: apps/web/package.json, version: 11 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm, cache-dependency-path: apps/web/pnpm-lock.yaml }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm wasm
       - run: pnpm determinism
       - run: pnpm lint
       - run: pnpm typecheck
@@ -97,8 +168,9 @@ jobs:
   e2e:
     name: End-to-end ${{ matrix.shard }}/2 (production build, strict CSP)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
-    needs: [api, web]
+    timeout-minutes: 20
+    # Only the build jobs: e2e runs alongside the lint and unit-test jobs.
+    needs: [wasm, wheel, levelgen]
     # The tests are split across two runners; each runs its half one test at a time, so
     # the software-rendered canvases never compete for one runner's CPU.
     strategy:
@@ -126,27 +198,33 @@ jobs:
       ARC_ALLOWED_HOSTS: '["localhost","127.0.0.1"]'
     steps:
       - uses: actions/checkout@v4
-      - run: rustup show active-toolchain || rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo install --locked wasm-pack --version 0.13.1
       - uses: astral-sh/setup-uv@v6
       - uses: pnpm/action-setup@v4
         with: { package_json_file: apps/web/package.json, version: 11 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm, cache-dependency-path: apps/web/pnpm-lock.yaml }
-      - run: ARC_LEVEL_SEED=ci-only-seed-not-secret-0123456789abcdef cargo run --release -p arc-levelgen -- --out-dir /tmp/levels
+      - uses: actions/download-artifact@v4
+        with: { name: engine-wheel, path: dist }
+      - uses: actions/download-artifact@v4
+        with: { name: wasm-pkg, path: apps/web/src/wasm/pkg }
+      - uses: actions/download-artifact@v4
+        with: { name: ci-levels, path: /tmp/levels }
       - name: Start API
         working-directory: apps/api
         run: |
-          uv sync --frozen
-          uv run alembic upgrade head
-          nohup uv run uvicorn --factory arc_api.main:app --host 127.0.0.1 --port 8000 \
+          uv sync --frozen --no-install-package arc-engine
+          uv pip install ../../dist/*.whl
+          uv run --no-sync alembic upgrade head
+          nohup uv run --no-sync uvicorn --factory arc_api.main:app --host 127.0.0.1 --port 8000 \
             --no-access-log > "$RUNNER_TEMP/api.log" 2>&1 < /dev/null &
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/web/pnpm-lock.yaml') }}
       - name: Build web and start preview
         working-directory: apps/web
         run: |
           pnpm install --frozen-lockfile
-          pnpm wasm
           pnpm build
           pnpm exec playwright install --with-deps chromium
           # Pin IPv4: on the runner `localhost` may resolve to ::1 for one tool and
@@ -176,7 +254,7 @@ jobs:
     name: CI passed
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [engine, api, web, e2e]
+    needs: [wasm, wheel, levelgen, engine, levels, api, web, e2e]
     if: always()
     steps:
       - env:

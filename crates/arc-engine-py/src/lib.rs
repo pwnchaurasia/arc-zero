@@ -326,7 +326,7 @@ struct GsStep {
     state: String,
     /// What the player may see.
     view: String,
-    /// "playing", "stuck" or "ended".
+    /// "playing", "stuck", "ended" or "won" (a level).
     status: String,
     score: u32,
     lines: u32,
@@ -357,6 +357,20 @@ fn gs_step(game: &gs::Game, points: u32) -> Result<GsStep, String> {
 #[pyfunction]
 fn gs_new(seed: u64) -> PyResult<GsStep> {
     gs_step(&gs::Game::new(seed), 0).map_err(err)
+}
+
+/// Starts a level from its starting board (`cells`, 64 values; 8 = stone), dealt from
+/// `seed` at difficulty `stage`.
+#[pyfunction]
+fn gs_level(seed: u64, stage: u32, cells: Vec<u8>) -> PyResult<GsStep> {
+    let game = gs::Game::level(seed, stage, cells).map_err(err)?;
+    gs_step(&game, 0).map_err(err)
+}
+
+/// Stars for a level cleared with `placed` shapes against its `par`.
+#[pyfunction]
+fn gs_stars(placed: u32, par: u32) -> u8 {
+    gs::stars(placed, par)
 }
 
 /// Places the piece in `slot` with its top-left at `(row, col)`; deals when the tray empties.
@@ -453,6 +467,9 @@ fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(gs_place, m)?)?;
     m.add_function(wrap_pyfunction!(gs_assist, m)?)?;
     m.add_function(wrap_pyfunction!(gs_end, m)?)?;
+    m.add_function(wrap_pyfunction!(gs_level, m)?)?;
+    m.add_function(wrap_pyfunction!(gs_stars, m)?)?;
+    m.add("GS_STONE", gs::STONE)?;
     m.add("GS_MAX_RESHUFFLES", gs::MAX_RESHUFFLES)?;
     m.add("GS_MAX_BOMBS", gs::MAX_BOMBS)?;
     // Each shape's rows, bit `c` = column `c` (tests use it to find free spots).

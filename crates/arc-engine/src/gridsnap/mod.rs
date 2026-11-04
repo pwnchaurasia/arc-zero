@@ -11,6 +11,10 @@
 //! - When no shape left in the tray fits anywhere, the run is stuck: the player
 //!   can buy a reshuffle or a bomb, or end the run.
 //!
+//! Levels (decision 2026-11-04): the board starts with a pattern of "stone" blocks
+//! ([`STONE`]); clearing every one of them by filling lines through them wins the
+//! level. The deal works the same, at a fixed difficulty stage per level.
+//!
 //! The deal is the only randomness. It lives on the server ([`Game`] holds the
 //! seed); the browser only ever sees a [`Board`], so it can't see future trays.
 //! Each tray comes from its own generator, `seed` mixed with the deal number,
@@ -27,6 +31,8 @@ pub const SIZE: usize = 8;
 pub const TRAY: usize = 3;
 /// Colours a piece can have (cells store colour + 1; 0 is empty).
 pub const COLORS: u8 = 7;
+/// A level's starting block (cell value): clear them all to win.
+pub const STONE: u8 = COLORS + 1;
 /// A combo survives this many placements without a clear.
 pub const COMBO_WINDOW: u8 = 1;
 pub const COMBO_BONUS: u32 = 150;
@@ -164,6 +170,8 @@ pub enum Status {
     /// No shape in the tray fits: an assist or ending the run are the only moves.
     Stuck,
     Ended,
+    /// A level whose stones are all cleared.
+    Won,
 }
 
 /// What one placement did, for scoring and animation.
@@ -194,6 +202,9 @@ pub struct Board {
     pub status: Status,
     pub reshuffles: u8,
     pub bombs: u8,
+    /// A level: won once no [`STONE`] is left.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub goal: bool,
 }
 
 impl Board {
@@ -209,12 +220,26 @@ impl Board {
             status: Status::Playing,
             reshuffles: 0,
             bombs: 0,
+            goal: false,
+        }
+    }
+
+    /// Stones still on the board.
+    #[must_use]
+    pub fn stones(&self) -> usize {
+        self.cells.iter().filter(|c| **c == STONE).count()
+    }
+
+    /// A level ends in a win as soon as its last stone is cleared.
+    fn check_won(&mut self) {
+        if self.goal && self.stones() == 0 {
+            self.status = Status::Won;
         }
     }
 
     pub fn validate(&self) -> Result<(), EngineError> {
         let bad = |m: &str| Err(EngineError::InvalidInput(m.to_owned()));
-        if self.cells.len() != SIZE * SIZE || self.cells.iter().any(|c| *c > COLORS) {
+        if self.cells.len() != SIZE * SIZE || self.cells.iter().any(|c| *c > STONE) {
             return bad("cells");
         }
         if self
@@ -329,6 +354,7 @@ impl Board {
             }
         }
         self.score = self.score.saturating_add(points);
+        self.check_won();
         Ok(Placed {
             rows,
             cols,
@@ -342,7 +368,7 @@ impl Board {
     }
 
     fn refresh_status(&mut self) {
-        if self.status == Status::Ended {
+        if matches!(self.status, Status::Ended | Status::Won) {
             return;
         }
         let occupied = self.occupied();
@@ -475,6 +501,19 @@ pub fn full_lines(filled: u64) -> (u8, u8) {
     (rows, cols)
 }
 
+/// Stars for a level cleared with `placed` shapes, against the level's `par` (what
+/// the careful bot needed): 3 at or under par, 2 within half again, else 1.
+#[must_use]
+pub fn stars(placed: u32, par: u32) -> u8 {
+    if placed <= par {
+        3
+    } else if placed <= par + par / 2 {
+        2
+    } else {
+        1
+    }
+}
+
 /// A paid assist.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Assist {
@@ -492,6 +531,9 @@ pub struct Game {
     pub deals: u32,
     #[serde(flatten)]
     pub board: Board,
+    /// Levels deal at a fixed difficulty stage (0–100) instead of one set by the score.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixed_stage: Option<u32>,
 }
 
 const RESHUFFLE_STREAM: u64 = 1 << 40;
@@ -507,9 +549,31 @@ impl Game {
             seed,
             deals: 0,
             board: Board::empty(),
+            fixed_stage: None,
         };
         game.deal();
         game
+    }
+
+    /// A level: `cells` is its starting board (stones and coloured blocks), dealt at
+    /// difficulty `stage` (0–100).
+    pub fn level(seed: u64, stage: u32, cells: Vec<u8>) -> Result<Self, EngineError> {
+        let mut board = Board::empty();
+        board.cells = cells;
+        board.goal = true;
+        board.validate()?;
+        let (rows, cols) = full_lines(board.occupied());
+        if rows != 0 || cols != 0 || board.stones() == 0 {
+            return Err(EngineError::InvalidInput("level board".into()));
+        }
+        let mut game = Self {
+            seed,
+            deals: 0,
+            board,
+            fixed_stage: Some(stage.min(100)),
+        };
+        game.deal();
+        Ok(game)
     }
 
     pub fn validate(&self) -> Result<(), EngineError> {
@@ -519,7 +583,8 @@ impl Game {
     /// 0 at score 0, 100 at [`HARD_SCORE`] and above.
     #[must_use]
     pub fn stage(&self) -> u32 {
-        (self.board.score.min(HARD_SCORE) * 100) / HARD_SCORE
+        self.fixed_stage
+            .unwrap_or((self.board.score.min(HARD_SCORE) * 100) / HARD_SCORE)
     }
 
     fn weight(def: &ShapeDef, stage: u32) -> u32 {
@@ -574,7 +639,10 @@ impl Game {
         let stage = self.stage();
         let occupied = self.board.occupied();
         let help = HELP_START - (HELP_START - HELP_END) * u64::from(stage) / 100;
-        let helped = rescue || rng.chance(help, 100);
+        // Levels always deal a tray that can be placed: losing one should come from how
+        // the stones were played, not from a run of unlucky shapes.
+        // (Endless draws exactly as before: the help roll only happens without a rescue.)
+        let helped = rescue || self.fixed_stage.is_some() || rng.chance(help, 100);
         let mut shapes = Self::candidates(rng, stage, occupied, n, helped);
         if helped {
             for _ in 0..REDRAWS {
@@ -607,6 +675,9 @@ impl Game {
     /// Places a piece, then deals a new tray if that was the last one.
     pub fn place(&mut self, slot: usize, row: u8, col: u8) -> Result<Placed, EngineError> {
         let placed = self.board.place(slot, row, col)?;
+        if self.board.status == Status::Won {
+            return Ok(placed);
+        }
         if self.board.tray_empty() {
             self.deal();
         } else {
@@ -616,7 +687,7 @@ impl Game {
     }
 
     pub fn assist(&mut self, assist: Assist) -> Result<(), EngineError> {
-        if self.board.status == Status::Ended {
+        if matches!(self.board.status, Status::Ended | Status::Won) {
             return Err(EngineError::GameOver);
         }
         match assist {
@@ -655,13 +726,17 @@ impl Game {
             }
         }
         self.board.status = Status::Playing;
+        self.board.check_won();
         self.board.refresh_status();
         Ok(())
     }
 
-    /// Ends the run (the player gave up, or was stuck and chose not to pay).
+    /// Ends the run (the player gave up, or was stuck and chose not to pay). A won
+    /// level stays won.
     pub fn end(&mut self) {
-        self.board.status = Status::Ended;
+        if self.board.status != Status::Won {
+            self.board.status = Status::Ended;
+        }
     }
 }
 
@@ -788,6 +863,70 @@ mod tests {
         let b = bot::play(7, 400);
         assert_eq!(a, b);
         assert_ne!(Game::new(7).board.tray, Game::new(8).board.tray);
+    }
+
+    /// A level with stones on the bottom row except its last two cells.
+    fn level_game() -> Game {
+        let mut cells = vec![0; SIZE * SIZE];
+        for c in 0..SIZE - 2 {
+            cells[7 * SIZE + c] = STONE;
+        }
+        Game::level(7, 0, cells).unwrap()
+    }
+
+    #[test]
+    fn levels_are_won_when_the_last_stone_clears() {
+        let mut g = level_game();
+        assert!(g.board.goal);
+        assert_eq!(g.board.stones(), 6);
+        assert_eq!(g.stage(), 0);
+        // Finish the bottom row with a 1-by-2 bar (shape 1) placed straight in the tray.
+        g.board.tray[0] = Some(Piece { shape: 1, color: 0 });
+        assert_eq!(width(1), 2);
+        g.place(0, 7, 6).unwrap();
+        assert_eq!(g.board.stones(), 0);
+        assert_eq!(g.board.status, Status::Won);
+        // Won is final: no more moves, assists or dealing, and ending keeps the win.
+        let deals = g.deals;
+        assert!(g.place(1, 0, 0).is_err());
+        assert!(g.assist(Assist::Reshuffle).is_err());
+        g.end();
+        assert_eq!(g.board.status, Status::Won);
+        assert_eq!(g.deals, deals);
+    }
+
+    #[test]
+    fn a_bomb_on_the_last_stones_wins_too() {
+        let mut cells = vec![0; SIZE * SIZE];
+        cells[0] = STONE;
+        let mut g = Game::level(3, 50, cells).unwrap();
+        assert_eq!(g.stage(), 50);
+        g.assist(Assist::Bomb { row: 0, col: 0 }).unwrap();
+        assert_eq!(g.board.status, Status::Won);
+    }
+
+    #[test]
+    fn level_boards_are_checked() {
+        let none = vec![0; SIZE * SIZE];
+        assert!(Game::level(1, 0, none).is_err(), "no stones");
+        let mut full = vec![0; SIZE * SIZE];
+        full[..SIZE].fill(STONE);
+        assert!(Game::level(1, 0, full).is_err(), "a full row");
+        let mut bad = vec![0; SIZE * SIZE];
+        bad[0] = STONE + 1;
+        assert!(Game::level(1, 0, bad).is_err(), "unknown cell");
+        // Runs never have a goal, so they never win.
+        assert!(!Game::new(1).board.goal);
+    }
+
+    #[test]
+    fn stars_follow_the_par() {
+        assert_eq!(stars(10, 10), 3);
+        assert_eq!(stars(15, 10), 2);
+        assert_eq!(stars(16, 10), 1);
+        assert_eq!(stars(2, 2), 3);
+        assert_eq!(stars(3, 2), 2);
+        assert_eq!(stars(4, 2), 1);
     }
 
     #[test]

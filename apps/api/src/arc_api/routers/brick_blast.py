@@ -109,7 +109,14 @@ async def start(
     await store.put_json(
         state.redis,
         _run_key(run_id),
-        {"owner": who.owner, "level": level, "state": state_json, "last_turn_ms": 0, "spent": 0},
+        {
+            "owner": who.owner,
+            "level": level,
+            "state": state_json,
+            "last_turn_ms": 0,
+            "spent": 0,
+            "started_ms": int(time.time() * 1000),
+        },
     )
     await analytics.record(db, state, who, "start", GAME, level)
     return StartOut(
@@ -172,6 +179,7 @@ async def turn(
                 int(run["level"]),
                 stars=result.stars or None,
                 detail=f"turns:{result.turn}",
+                started_ms=run.get("started_ms"),
             )
         return out
 

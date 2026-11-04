@@ -242,5 +242,6 @@ async def complete(
             stars=stars,
             coins=paid.earned + paid.streak_bonus,
             detail=f"assists:{used}",
+            started_ms=attempt["issued_ms"],
         )
         return out

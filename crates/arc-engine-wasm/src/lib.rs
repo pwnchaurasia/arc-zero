@@ -484,14 +484,15 @@ impl DeadBridge {
         out
     }
 
-    /// Flat `[x, y, kind]` per bullet; kind 0 rifle, 1 turret, 2 tank shell, 3 pellet,
-    /// 4 minigun, 5 flame, 6 rocket, 7 mech.
+    /// Flat `[x, y, kind, spent]` per bullet; kind 0 rifle, 1 turret, 2 tank shell,
+    /// 3 pellet, 4 minigun, 5 flame, 6 rocket, 7 mech. `spent` 1: past its range (only
+    /// cages and crates still catch it).
     #[must_use]
     pub fn bullets(&self) -> Vec<i32> {
         self.sim
             .bullets()
             .iter()
-            .flat_map(|b| [b.x, b.y, b.kind as i32])
+            .flat_map(|b| [b.x, b.y, b.kind as i32, i32::from(b.spent)])
             .collect()
     }
 
@@ -711,14 +712,27 @@ impl GridSnap {
         self.board.combo
     }
 
-    /// 0 playing, 1 stuck, 2 ended.
+    /// 0 playing, 1 stuck, 2 ended, 3 won (a level).
     #[must_use]
     pub fn status(&self) -> u8 {
         match self.board.status {
             gs::Status::Playing => 0,
             gs::Status::Stuck => 1,
             gs::Status::Ended => 2,
+            gs::Status::Won => 3,
         }
+    }
+
+    /// Shapes placed so far.
+    #[must_use]
+    pub fn placed(&self) -> u32 {
+        self.board.placed
+    }
+
+    /// Stones still to clear on a level (0 in endless mode).
+    #[must_use]
+    pub fn stones(&self) -> usize {
+        self.board.stones()
     }
 }
 

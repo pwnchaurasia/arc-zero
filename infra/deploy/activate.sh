@@ -11,7 +11,7 @@ set -euo pipefail
 dir=${1:?deploy dir} prefix=${2:?image prefix} tag=${3:?image tag}
 cd "$dir"
 
-LEVEL_FILES="water-sort.json brick-blast.json metro-jam.json dead-bridge.json traceout.json"
+LEVEL_FILES="water-sort.json brick-blast.json metro-jam.json dead-bridge.json traceout.json gridsnap.json"
 for f in api.env redis_password $LEVEL_FILES; do
   [ -s "secrets.new/$f" ] || { echo "missing secrets.new/$f" >&2; exit 1; }
 done

@@ -5,19 +5,50 @@
 //! outline, and room for the big shapes. It plays about as well as a careful
 //! human, so its scores set the difficulty curve.
 
-use super::{openness, Board, Game, Status, SIZE, TRAY};
+use super::{openness, Board, Game, Status, SIZE, STONE, TRAY};
+
+/// Cells in rows and columns that still hold a stone: filling them works towards
+/// clearing it.
+fn stone_lines(board: &Board) -> i64 {
+    let mut total = 0;
+    for i in 0..SIZE {
+        let row = &board.cells[i * SIZE..(i + 1) * SIZE];
+        if row.contains(&STONE) {
+            total += row.iter().filter(|c| **c != 0).count();
+        }
+        let col: Vec<u8> = (0..SIZE).map(|r| board.cells[r * SIZE + i]).collect();
+        if col.contains(&STONE) {
+            total += col.iter().filter(|c| **c != 0).count();
+        }
+    }
+    i64::try_from(total).unwrap_or(0)
+}
 
 fn after(board: &Board, slot: usize, row: u8, col: u8) -> Option<(i64, u64)> {
     let mut b = board.clone();
     let placed = b.place(slot, row, col).ok()?;
     let occupied = b.occupied();
-    Some((i64::from(placed.points) + openness(occupied), occupied))
+    let mut value = i64::from(placed.points) + openness(occupied);
+    if b.goal {
+        // On a level, clearing stones matters most, then lining up to clear them.
+        let cleared = board.stones() - b.stones();
+        value += 400 * i64::try_from(cleared).unwrap_or(0) + 12 * stone_lines(&b);
+        if b.status == Status::Won {
+            value += 1_000_000;
+        }
+    }
+    Some((value, occupied))
 }
 
 /// The best `(slot, row, col)` for the current tray, if any shape fits.
 #[must_use]
 pub fn best_move(board: &Board) -> Option<(usize, u8, u8)> {
-    let mut best: Option<(i64, (usize, u8, u8))> = None;
+    ranked_moves(board).first().map(|(_, m)| *m)
+}
+
+/// Every legal move with its value, best first.
+fn ranked_moves(board: &Board) -> Vec<(i64, (usize, u8, u8))> {
+    let mut moves = Vec::new();
     #[allow(clippy::cast_possible_truncation)]
     for slot in 0..TRAY {
         if board.tray[slot].is_none() {
@@ -29,20 +60,50 @@ pub fn best_move(board: &Board) -> Option<(usize, u8, u8)> {
                     continue;
                 }
                 if let Some((value, _)) = after(board, slot, row, col) {
-                    if best.is_none_or(|(v, _)| value > v) {
-                        best = Some((value, (slot, row, col)));
-                    }
+                    moves.push((value, (slot, row, col)));
                 }
             }
         }
     }
-    best.map(|(_, m)| m)
+    // Stable: equal values keep slot/row/col order, so the bot is deterministic.
+    moves.sort_by_key(|(v, _)| std::cmp::Reverse(*v));
+    moves
+}
+
+/// Like [`play_from`], but plays like a person who doesn't always find the best move:
+/// one time in three it takes one of the next few good ones instead. Different `seed`s
+/// play differently, so they also see different trays (the deal depends on the board).
+#[must_use]
+pub fn play_like_a_person(mut game: Game, max: u32, seed: u64) -> Game {
+    let mut rng = crate::rng::Rng::new(seed);
+    while game.board.status == Status::Playing && game.board.placed < max {
+        let moves = ranked_moves(&game.board);
+        if moves.is_empty() {
+            break;
+        }
+        let pick = if rng.chance(1, 3) {
+            usize::try_from(rng.below(moves.len().min(4) as u64)).unwrap_or(0)
+        } else {
+            0
+        };
+        let (slot, row, col) = moves[pick].1;
+        if game.place(slot, row, col).is_err() {
+            break;
+        }
+    }
+    game
 }
 
 /// Plays a run until it is stuck or `max` placements were made.
 #[must_use]
 pub fn play(seed: u64, max: u32) -> Game {
-    let mut game = Game::new(seed);
+    play_from(Game::new(seed), max)
+}
+
+/// Plays `game` (a run or a level) until it is won, stuck, or `max` placements
+/// were made.
+#[must_use]
+pub fn play_from(mut game: Game, max: u32) -> Game {
     while game.board.status == Status::Playing && game.board.placed < max {
         let Some((slot, row, col)) = best_move(&game.board) else {
             break;

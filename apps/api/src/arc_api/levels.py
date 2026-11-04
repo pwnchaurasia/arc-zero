@@ -14,13 +14,14 @@ from typing import Any, Final, Literal
 
 import arc_engine
 
-GameId = Literal["water-sort", "brick-blast", "metro-jam", "dead-bridge", "traceout"]
+GameId = Literal["water-sort", "brick-blast", "metro-jam", "dead-bridge", "traceout", "gridsnap"]
 GAME_IDS: Final[tuple[GameId, ...]] = (
     "water-sort",
     "brick-blast",
     "metro-jam",
     "dead-bridge",
     "traceout",
+    "gridsnap",
 )
 SUPPORTED_VERSION = 2
 
@@ -85,12 +86,28 @@ class ToLevel:
 
 
 @dataclass(frozen=True, slots=True)
+class GsLevel:
+    level: int
+    # The deal's seed: server-only (it decides every tray).
+    seed: int
+    stage: int
+    # Starting board: 64 cells, 0 empty, 1-7 a coloured block, 8 a stone. Public.
+    cells: tuple[int, ...]
+    # Shapes the bot needed: 3 stars at or under this.
+    par: int
+
+    def new_game(self) -> Any:
+        return arc_engine.gs_level(self.seed, self.stage, list(self.cells))
+
+
+@dataclass(frozen=True, slots=True)
 class Levels:
     water_sort: dict[int, WsLevel]
     brick_blast: dict[int, BbLevel]
     metro_jam: dict[int, MjLevel]
     dead_bridge: dict[int, DbLevel]
     traceout: dict[int, ToLevel]
+    gridsnap: dict[int, GsLevel]
 
     def count(self, game: GameId) -> int:
         if game == "water-sort":
@@ -101,6 +118,8 @@ class Levels:
             return len(self.metro_jam)
         if game == "traceout":
             return len(self.traceout)
+        if game == "gridsnap":
+            return len(self.gridsnap)
         return len(self.dead_bridge)
 
 
@@ -165,9 +184,24 @@ def load(directory: Path) -> Levels:
         arc_engine.to_validate(level_json)
         to[int(item["level"])] = ToLevel(level=int(item["level"]), level_json=level_json)
 
+    gs: dict[int, GsLevel] = {}
+    for item in _read_game(directory, "gridsnap"):
+        grid = GsLevel(
+            level=int(item["level"]),
+            seed=int(item["seed"]),
+            stage=int(item["stage"]),
+            cells=tuple(int(c) for c in item["cells"]),
+            par=int(item["par"]),
+        )
+        grid.new_game()  # validates the board through the engine
+        gs[grid.level] = grid
+
     _contiguous(ws, "water_sort")
     _contiguous(bb, "brick_blast")
     _contiguous(mj, "metro_jam")
     _contiguous(db, "dead_bridge")
     _contiguous(to, "traceout")
-    return Levels(water_sort=ws, brick_blast=bb, metro_jam=mj, dead_bridge=db, traceout=to)
+    _contiguous(gs, "gridsnap")
+    return Levels(
+        water_sort=ws, brick_blast=bb, metro_jam=mj, dead_bridge=db, traceout=to, gridsnap=gs
+    )

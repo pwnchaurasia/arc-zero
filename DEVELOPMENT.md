@@ -94,14 +94,30 @@ your branch ──PR──▶ CI (Rust, API, web, e2e) ──"CI passed"──�
 
 ## Analytics (first-party, SQL only)
 
-Every level start, clear, Brick Blast loss, hint, assist purchase and sign-up adds a row
-to `play_events`. Nothing is sent anywhere else. `who` is a keyed one-way hash of the
+Every level start, clear, loss, hint, assist purchase, GridSnap endless game end and
+sign-up adds a row to `play_events`. Nothing is sent anywhere else. Clears, losses and
+endless ends also carry `seconds`: how long that level or game took, by the server's clock
+(levels left without finishing have no end row, so they don't count towards play time). `who` is a keyed one-way hash of the
 player or guest id: it counts distinct players but can't be turned back into an account.
 `signed_in` tells guests from saved players.
 
 Connect with `psql` using the production `ARC_DATABASE_URL` (or your local dev database) and run:
 
 ```sql
+-- Most popular games: plays, players and total play time (last 30 days)
+SELECT game_id,
+       count(*) FILTER (WHERE kind = 'start')            AS plays,
+       count(DISTINCT who)                               AS players,
+       round(sum(seconds) / 3600.0, 1)                   AS hours_played,
+       round(avg(seconds) FILTER (WHERE kind = 'clear')) AS avg_seconds_per_clear
+FROM play_events WHERE day > current_date - 30 AND game_id IS NOT NULL
+GROUP BY game_id ORDER BY plays DESC;
+
+-- Play time per game per day (last 14 days)
+SELECT day, game_id, round(sum(seconds) / 60.0) AS minutes
+FROM play_events WHERE day > current_date - 14 AND seconds IS NOT NULL
+GROUP BY day, game_id ORDER BY day DESC, minutes DESC;
+
 -- Players per game per day (last 14 days)
 SELECT day, game_id, count(DISTINCT who) AS players, count(*) FILTER (WHERE kind = 'start') AS starts
 FROM play_events WHERE day > current_date - 14 AND game_id IS NOT NULL

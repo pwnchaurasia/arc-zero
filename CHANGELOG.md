@@ -5,7 +5,98 @@ the newest is at the top.
 
 ## Unreleased
 
+### TraceOut: much bigger and more tangled from level 5
+- Boards grow to 34 × 48 with longer, twistier lines: across levels 5–100 the "clear
+  this first" chains are ~60% deeper and there are ~85% more lines than before.
+- Pinch to zoom, drag to move around, double-tap the paper to see the whole board again
+  (mouse wheel zooms on a computer). Taps register on release, so a drag never taps.
+
+### GridSnap: every level can be cleared
+- Level trays always fit somewhere: losing comes from how you play the stones, not
+  from unlucky shapes. Each level must be cleared by most of 10 simulated players who
+  play differently (not one lucky line), and the 3-star target is their median.
+
+### TraceOut: every level is a picture
+- From level 4 the lines are packed into a picture (91–97% of it covered): heart, apple,
+  house, ghost, mushroom, fish, bell, cat, cup, diamond, rabbit, tree, paw, butterfly,
+  crown, moon, leaf, rocket, star, umbrella, then round again on bigger boards. Bold
+  shapes come first; detailed ones once boards are big enough to draw them.
+- Boards grow to 25 × 36 so pictures have detail; the paper shows the picture's outline
+  faintly, and a clear says what you drew ("You drew a rabbit!"). Levels 1–3 stay plain
+  warm-ups.
+
+### Win cards wait for the celebration
+- GridSnap, Brick Blast and TraceOut show the result card only after the winning move's
+  animation and the celebration have played (about 1.5 s), instead of covering them.
+  Brick Blast gets a "Level clear!" banner and bursts.
+- GridSnap's "No room!" card also waits (about 1 s) for the last shape to land and its
+  lines to clear.
+
+### MetroJam: clearer boarding
+- The waiting commuters stand in one straight line (bigger, front on the left) instead
+  of a crowded loop. Coloured pills group them: "NEXT 6" over the first group, then the
+  following groups; "+N" counts the rest.
+- Parked cars show a dot per seat that fills as each commuter walks over and gets in,
+  and "Full!" when it leaves.
+- The bay that takes the next commuter glows, and so do the cars in the lot of that
+  colour, so it's clear which car to send.
+
+### Dead Bridge
+- Steering by touch works like a trackpad: slide a finger anywhere and the gunner
+  moves by as much (a little more). No need to hold the gunner under your finger.
+  The mouse still steers by pointing.
+- Zombies are drawn inside the rails; the big ones no longer hang off the bridge.
+- Shots that look like hits are hits: bullets hit a zombie anywhere on its drawn body.
+- Shotgun pellets and flames past their range still break gold cages (Tank, Turret…)
+  and crates, so every power-up can be reached with any gun; they can't hurt zombies
+  that far away. Cages and crates flash on every hit.
+
+### Water Sort
+- Bottles are glass tubes: round bottom, lip, highlights and a shadow; the liquid has
+  depth and a lit surface.
+- Pouring: the bottle lifts, glides over in an arc while tipping, a curved stream
+  flows with small splashes, the source drains as the target fills, then it settles
+  back.
+
+### GridSnap: 100 levels (Endless stays)
+- GridSnap opens a level list now, with **Endless** (the game so far, best score and
+  leaderboards unchanged) at the top.
+- Each level starts with grey **stones** on the board; clear every one of them (fill a row
+  or column through it) to win and unlock the next level. Blocks you place don't need
+  clearing. Levels 1–3 line the stones up; later levels add more stones, clutter and
+  harder shapes.
+- No room for any shape: Reshuffle (40) or Bomb (60) as before, with the confirmation,
+  or restart the level for free. Coins spent come off that level's first-clear reward.
+- Stars by shapes used: 3 at or under the level's target (shown at the top), 2 within
+  half again, 1 otherwise. Usual first-clear coins; the server checks every placement
+  and decides the win.
+
+### TraceOut
+- The droplets at the top now empty when you lose one (the emoji couldn't change colour),
+  with a small pop.
+- More life: sparkles where a line leaves the board, a red burst and a shudder on a
+  blocked tap, "Nice!" / "Great!" / "Brilliant!" / "On fire!" for clean taps in a row,
+  and confetti when a level is cleared.
+
+### Analytics
+- Clears, losses and endless game ends record how long they took (`play_events.seconds`,
+  server clock), so play time per game can be queried. DEVELOPMENT.md has the queries.
+
+### TraceOut: harder, more tangled levels
+- Lines are long and winding now (up to 20 cells, several turns each) and packed tightly,
+  so they wrap around each other instead of sitting in open space. Boards grow faster,
+  up to 16 × 23.
+- Across levels 4–100: the "clear this first" chains are ~45% deeper, lines are ~85%
+  longer, and only about a quarter of the lines can leave at the start (was 44%).
+  Level 1 is still a warm-up; levels 2–3 step up gently.
+- Progress and stars on already-cleared levels are kept; the levels themselves change.
+
 ### Development
+- CI is faster: the browser engine, the server engine and the level generator are each
+  built once, in parallel, and the test jobs reuse them instead of compiling Rust again;
+  wasm-pack is downloaded prebuilt; e2e plays 10 levels per game (generated in seconds)
+  and no longer waits for the lint and unit-test jobs; the 100-level speed check runs its
+  three seeds side by side.
 - `make local-up` runs an always-on copy of the arcade in Docker on port 5173 for
   friends through ngrok, with its own database; `make dev` moved to port 5174.
 
@@ -71,7 +162,10 @@ the newest is at the top.
   the new placement, so they stay as they were).
 
 ### Upgrade notes
-- Database migration `0004` (GridSnap scores). The release workflow runs it.
+- Database migrations `0004` (GridSnap scores) and `0005` (play time). The release
+  workflow runs them.
+- New level file `gridsnap.json` (GridSnap levels): the release workflow, `activate.sh`
+  and both compose files ship it.
 
 ## Unreleased (planned as 26.11.01)
 

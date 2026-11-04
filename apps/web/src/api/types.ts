@@ -1,4 +1,4 @@
-export type GameId = "water-sort" | "brick-blast" | "metro-jam" | "dead-bridge" | "traceout";
+export type GameId = "water-sort" | "brick-blast" | "metro-jam" | "dead-bridge" | "traceout" | "gridsnap";
 
 export interface GameProgress {
   unlocked_level: number;
@@ -232,7 +232,7 @@ export interface DbComplete extends LevelWin {
 }
 
 export type GsAssist = "reshuffle" | "bomb";
-export type GsStatus = "playing" | "stuck" | "ended";
+export type GsStatus = "playing" | "stuck" | "ended" | "won";
 
 export interface GsPiece {
   shape: number;
@@ -241,7 +241,7 @@ export interface GsPiece {
 
 /** What the player sees of a GridSnap game (the deal's seed stays on the server). */
 export interface GsView {
-  /** 64 cells, row by row: 0 empty, else colour + 1. */
+  /** 64 cells, row by row: 0 empty, 1-7 colour + 1, 8 a level's stone. */
   cells: number[];
   tray: (GsPiece | null)[];
   score: number;
@@ -252,6 +252,8 @@ export interface GsView {
   status: GsStatus;
   reshuffles: number;
   bombs: number;
+  /** A level: won once every stone is cleared. */
+  goal?: boolean;
 }
 
 export interface GsFinal {
@@ -281,6 +283,32 @@ export interface GsStep {
   view: GsView;
   points: number;
   coins: number | null;
+  /** Set when this move cleared a level's last stone. */
+  result?: GsLevelResult | null;
+}
+
+export interface GsLevelStart {
+  run_id: string;
+  seq: number;
+  level: number;
+  view: GsView;
+  /** Shapes for 3 stars; up to half again for 2. */
+  par: number;
+  prices: Record<GsAssist, number>;
+  reward: number;
+  coins: number;
+}
+
+export interface GsLevelResult extends LevelWin {
+  level: number;
+  stars: number;
+  placed: number;
+  par: number;
+  best_stars: number;
+  first_clear: boolean;
+  coins_earned: number;
+  streak_bonus: number;
+  coins: number;
 }
 
 export type GsPeriod = "week" | "month" | "all";

@@ -107,6 +107,14 @@ def to_level() -> dict[str, Any]:
     }
 
 
+def gs_level() -> dict[str, Any]:
+    """Seven stones on the bottom row: the first tray can finish it (seed 3)."""
+    cells = [0] * 64
+    for col in range(7):
+        cells[56 + col] = arc_engine.GS_STONE
+    return {"seed": 3, "stage": 0, "cells": cells, "par": 1}
+
+
 def make_levels(path: Path) -> None:
     ws = []
     for level in range(1, 6):
@@ -127,12 +135,14 @@ def make_levels(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
     db = [{"level": level, "script": db_script()} for level in range(1, 6)]
     to = [{"level": level, "data": to_level()} for level in range(1, 6)]
+    gs = [{"level": level, **gs_level()} for level in range(1, 6)]
     for game, levels in (
         ("water-sort", ws),
         ("brick-blast", bb),
         ("metro-jam", mj),
         ("dead-bridge", db),
         ("traceout", to),
+        ("gridsnap", gs),
     ):
         (path / f"{game}.json").write_text(
             json.dumps({"version": 2, "game": game, "levels": levels})

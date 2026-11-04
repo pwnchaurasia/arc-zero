@@ -194,6 +194,17 @@ export class BrickBlastView {
     this.drawPicker();
   }
 
+  /** The level is cleared: a banner and bursts across the board. */
+  async celebrate(): Promise<void> {
+    this.announce("Level clear!", 0xfde047);
+    if (prefersReducedMotion()) return;
+    const cells = this.c.cols * this.c.playRows;
+    for (let wave = 0; wave < 3 && !this.destroyed; wave++) {
+      for (let k = 0; k < 5; k++) this.burst(Math.floor(Math.random() * cells));
+      await tween(this.app, 220, () => undefined);
+    }
+  }
+
   setAimEnabled(on: boolean): void {
     this.aimEnabled = on;
     if (!on) {

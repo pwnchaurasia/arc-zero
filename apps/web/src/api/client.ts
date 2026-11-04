@@ -12,6 +12,7 @@ import type {
   GsAssist,
   GsFinal,
   GsLeaderboard,
+  GsLevelStart,
   GsPeriod,
   GsStart,
   GsStep,
@@ -208,6 +209,7 @@ export const api = {
     /** The open game to continue, or undefined when there is none. */
     current: () => request<GsStart | undefined>("GET", "/games/gridsnap/runs/current"),
     start: () => request<GsStart>("POST", "/games/gridsnap/runs/start"),
+    startLevel: (level: number) => request<GsLevelStart>("POST", `${game("gridsnap")}/levels/${level}/start`),
     place: (runId: string, seq: number, slot: number, row: number, col: number) =>
       request<GsStep>("POST", `/games/gridsnap/runs/${runId}/place`, { seq, slot, row, col }),
     assist: (runId: string, seq: number, kind: GsAssist, price: number, row = 0, col = 0) =>

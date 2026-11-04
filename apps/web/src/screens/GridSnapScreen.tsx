@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
-import type { GsAssist, GsFinal, GsLeaderboard, GsPeriod, GsStart, GsView } from "../api/types";
+import type {
+  GsAssist,
+  GsFinal,
+  GsLeaderboard,
+  GsLevelResult,
+  GsLevelStart,
+  GsPeriod,
+  GsStart,
+  GsView,
+} from "../api/types";
 import { engine, loadEngine } from "../engine/wasm";
 import { haptic, sfx } from "../feel/audio";
 import { GridSnapView, shapeSize } from "../games/gridsnap/GridSnapView";
@@ -10,6 +19,7 @@ import { CoinChip } from "../ui/CoinChip";
 import { BombIcon, CrownIcon, FlagIcon, RestartIcon, ShuffleIcon, TrophyIcon } from "../ui/icons";
 import { Button, IconButton, Modal, TopBar } from "../ui/kit";
 import { ConfirmSpend, type SpendRequest } from "./ConfirmSpend";
+import { ResultCard } from "./ResultCard";
 import { useToast } from "./useToast";
 
 type Sim = InstanceType<typeof engine.GridSnap>;
@@ -46,6 +56,8 @@ interface Run {
   generation: number;
   queue: Promise<void>;
   prices: GsStart["prices"];
+  /** Coins spent on help in this game (a level's reward shrinks by this much). */
+  spent: number;
 }
 
 function tray(sim: Sim): ({ shape: number; color: number } | null)[] {
@@ -62,8 +74,27 @@ function firstSpot(sim: Sim, slot: number): [number, number] | null {
   return null;
 }
 
-export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; onCheckpoint: () => void }) {
+/**
+ * Endless GridSnap, or one of its levels when `level` is set: the board starts with
+ * stones, and clearing all of them wins the level.
+ */
+export function GridSnapScreen({
+  level,
+  onBack,
+  onCheckpoint,
+  onLevel,
+}: {
+  level?: number;
+  onBack: () => void;
+  onCheckpoint: () => void;
+  onLevel?: (level: number) => void;
+}) {
   const { me, refresh } = useSession();
+  const [info, setInfo] = useState<GsLevelStart | null>(null);
+  const [stones, setStones] = useState(0);
+  const [placed, setPlaced] = useState(0);
+  const [result, setResult] = useState<GsLevelResult | null>(null);
+  const replay = level !== undefined && me ? me.games.gridsnap.stars[String(level)] !== undefined : false;
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<GridSnapView | null>(null);
   const run = useRef<Run | null>(null);
@@ -95,10 +126,24 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
   const syncUi = (r: Run) => {
     setScore(r.sim.score());
     setCombo(r.sim.combo());
+    setStones(r.sim.stones());
+    setPlaced(r.sim.placed());
     const empty = tray(r.sim).every((p) => p === null);
     setWaiting(empty);
     setStuck(r.pending === 0 && r.view.status === "stuck");
-    view.current?.setLocked(empty || (r.pending === 0 && r.view.status !== "playing"));
+    // A won level stays locked even before the server confirms it.
+    view.current?.setLocked(empty || r.sim.status() === 3 || (r.pending === 0 && r.view.status !== "playing"));
+  };
+
+  /** The server confirmed a level's last stone: celebrate and show the result. */
+  const won = (res: GsLevelResult) => {
+    setResult(res);
+    setCoins(res.coins);
+    sfx.win();
+    haptic(30);
+    void view.current?.celebrate();
+    void refresh();
+    if (res.registration_required) onCheckpoint();
   };
 
   /** Makes the server's board the one on screen. */
@@ -136,6 +181,7 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
           r.pending -= 1;
           if (r.pending === 0) adopt(r, res.view, true);
           else r.view = res.view;
+          if (res.result) won(res.result);
           return;
         } catch (e) {
           if (resync(r, e)) {
@@ -176,7 +222,7 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
     send(r, slot, row, col);
   };
 
-  const begin = async (start: GsStart) => {
+  const begin = async (start: GsStart | GsLevelStart) => {
     const old = run.current;
     old?.sim.free();
     const sim = new engine.GridSnap(JSON.stringify(start.view));
@@ -189,15 +235,34 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
       generation: 0,
       queue: Promise.resolve(),
       prices: start.prices,
+      spent: 0,
     };
     run.current = r;
-    setBest(start.best);
     setCoins(start.coins);
     setPrices(start.prices);
     setFinal(null);
+    setResult(null);
     view.current?.setState(start.view.cells, start.view.tray, true);
     syncUi(r);
-    if (start.previous) showToast(`Your last game was saved: ${start.previous.score} points.`);
+    if ("level" in start) {
+      setInfo(start);
+    } else {
+      setBest(start.best);
+      if (start.previous) showToast(`Your last game was saved: ${start.previous.score} points.`);
+    }
+  };
+
+  /** A level's fresh try (the one being left is closed, so it counts as not cleared). */
+  const retry = async () => {
+    if (level === undefined) return;
+    const old = run.current;
+    try {
+      await old?.queue;
+      if (old && old.sim.status() !== 3) void api.gs.end(old.id).catch(() => undefined);
+      await begin(await api.gs.startLevel(level));
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "Could not restart the level.");
+    }
   };
 
   useEffect(() => {
@@ -207,8 +272,9 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
     setError(null);
     (async () => {
       await loadEngine();
-      // Continue an open game; otherwise start one.
-      const start = (await api.gs.current()) ?? (await api.gs.start());
+      // A level always starts fresh; endless continues an open game, else starts one.
+      const start =
+        level !== undefined ? await api.gs.startLevel(level) : ((await api.gs.current()) ?? (await api.gs.start()));
       if (cancelled || !host.current) return;
       created = await GridSnapView.create(host.current, {
         rules: {
@@ -248,7 +314,7 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
     const onKey = (e: KeyboardEvent) => {
       const r = run.current;
       const v = view.current;
-      if (!r || !v || final || spend || picking) return;
+      if (!r || !v || final || result || spend || picking) return;
       const g = keyGhost.current;
       if (e.key >= "1" && e.key <= "3") {
         const slot = Number(e.key) - 1;
@@ -278,7 +344,7 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [final, spend, picking]);
+  }, [final, result, spend, picking]);
 
   const ask = (kind: GsAssist, at: [number, number] = [0, 0]) => {
     const r = run.current;
@@ -290,9 +356,10 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
       what: ASSISTS[kind].what,
       price: r.prices[kind],
       balance: coinsRef.current ?? 0,
-      reward: null,
-      spent: 0,
-      terms: TERMS,
+      // On a level, help comes off the first-clear reward like in the other games.
+      reward: info && !replay ? info.reward : null,
+      spent: r.spent,
+      terms: level === undefined ? TERMS : undefined,
     });
   };
 
@@ -328,6 +395,7 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
       const [row, col] = spend.at;
       const res = await api.gs.assist(r.id, r.seq, spend.kind, spend.price, row, col);
       r.seq = res.seq;
+      r.spent += spend.price;
       if (res.coins !== null) setCoins(res.coins);
       void refresh();
       sfx.complete();
@@ -337,6 +405,7 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
       } else {
         adopt(r, res.view, true);
       }
+      if (res.result) won(res.result);
     } catch (e) {
       if (!resync(r, e)) showToast(e instanceof ApiError ? e.message : "Could not buy that right now.");
     } finally {
@@ -396,20 +465,43 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
   return (
     <div className="relative flex h-full flex-col">
       <TopBar
-        title="GridSnap"
+        title={level === undefined ? "GridSnap" : `Level ${level}`}
         onBack={onBack}
         right={
           <div className="flex items-center gap-2">
             <CoinChip balance={coins} />
-            <IconButton label="Leaderboards" onClick={() => void openBoard("week")}>
-              <TrophyIcon />
-            </IconButton>
-            <IconButton label="New game" onClick={onNewGame} disabled={!ready}>
-              <RestartIcon />
-            </IconButton>
+            {level === undefined ? (
+              <>
+                <IconButton label="Leaderboards" onClick={() => void openBoard("week")}>
+                  <TrophyIcon />
+                </IconButton>
+                <IconButton label="New game" onClick={onNewGame} disabled={!ready}>
+                  <RestartIcon />
+                </IconButton>
+              </>
+            ) : (
+              <IconButton label="Restart level" onClick={() => void retry()} disabled={!ready}>
+                <RestartIcon />
+              </IconButton>
+            )}
           </div>
         }
       />
+      {level !== undefined ? (
+        <div className="flex items-end justify-between px-5">
+          <span className="text-sm text-muted">
+            Shapes <span className="font-bold text-white tabular-nums">{placed}</span>
+            {info ? ` / ${info.par}` : ""}
+          </span>
+          <span className="flex flex-col items-center leading-none" aria-live="polite" aria-label={`${stones} stones left`}>
+            <span className="text-4xl font-black tabular-nums">{stones}</span>
+            <span className="mt-1 text-[11px] uppercase tracking-wider text-muted">stones left</span>
+          </span>
+          <span className="text-right text-sm text-muted">
+            {info ? (replay ? "Replay" : `First clear: ${info.reward}`) : ""}
+          </span>
+        </div>
+      ) : (
       <div className="flex items-end justify-between px-5">
         <span className="flex items-center gap-1.5 text-sm font-bold text-gold">
           <CrownIcon size={18} />
@@ -420,13 +512,18 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
         </span>
         <span className="min-w-12 text-right text-sm font-bold text-sky-300">{combo >= 2 ? `×${combo}` : ""}</span>
       </div>
+      )}
       <div className="relative min-h-0 flex-1">
         <div ref={host} className="game-surface absolute inset-0 touch-none" />
-        {stuck && !final && !spend && !picking && (
+        {stuck && !final && !result && !spend && !picking && (
           <div className="absolute inset-0 z-10 grid place-items-center bg-ink/55 p-6 backdrop-blur-[2px]">
             <div className="pop-in w-full max-w-xs rounded-3xl border border-line bg-panel p-5 text-center shadow-2xl">
               <h2 className="text-2xl font-black">No room!</h2>
-              <p className="mt-1 mb-4 text-sm text-muted">None of your shapes fit. Use coins to keep going, or end the game.</p>
+              <p className="mt-1 mb-4 text-sm text-muted">
+                {level === undefined
+                  ? "None of your shapes fit. Use coins to keep going, or end the game."
+                  : "None of your shapes fit. Use coins to keep going, or try the level again."}
+              </p>
               <div className="grid gap-3">
                 <Button onClick={() => onAssist("reshuffle")} disabled={assistsUsed("reshuffle") >= 3}>
                   <ShuffleIcon size={18} /> Reshuffle · {prices?.reshuffle ?? "…"}
@@ -434,9 +531,15 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
                 <Button variant="secondary" onClick={() => onAssist("bomb")} disabled={assistsUsed("bomb") >= 3}>
                   <BombIcon size={18} /> Bomb · {prices?.bomb ?? "…"}
                 </Button>
-                <Button variant="ghost" onClick={() => void endGame()}>
-                  End game
-                </Button>
+                {level === undefined ? (
+                  <Button variant="ghost" onClick={() => void endGame()}>
+                    End game
+                  </Button>
+                ) : (
+                  <Button variant="ghost" onClick={() => void retry()}>
+                    Try again
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -473,7 +576,7 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
             <button
               key={kind}
               type="button"
-              disabled={!ready || !!final || picking}
+              disabled={!ready || !!final || !!result || picking}
               onClick={() => onAssist(kind)}
               className="flex min-h-14 min-w-24 flex-col items-center justify-center rounded-2xl border border-line bg-panel-2 px-3 py-1.5 text-xs font-semibold transition hover:bg-line active:scale-95 disabled:opacity-40"
             >
@@ -485,13 +588,13 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
         })}
         <button
           type="button"
-          disabled={!ready || !!final}
-          onClick={() => setConfirmEnd("end")}
+          disabled={!ready || !!final || !!result}
+          onClick={() => (level === undefined ? setConfirmEnd("end") : void retry())}
           className="flex min-h-14 min-w-24 flex-col items-center justify-center rounded-2xl border border-line bg-panel-2 px-3 py-1.5 text-xs font-semibold transition hover:bg-line active:scale-95 disabled:opacity-40"
         >
-          <FlagIcon size={20} />
-          <span>End game</span>
-          <span className="text-[11px] text-muted">save score</span>
+          {level === undefined ? <FlagIcon size={20} /> : <RestartIcon size={20} />}
+          <span>{level === undefined ? "End game" : "Restart"}</span>
+          <span className="text-[11px] text-muted">{level === undefined ? "save score" : "free"}</span>
         </button>
       </div>
       {error && (
@@ -579,7 +682,24 @@ export function GridSnapScreen({ onBack, onCheckpoint }: { onBack: () => void; o
         </div>
       </Modal>
 
-      {final && (
+      {result && level !== undefined && (
+        <ResultCard
+          won
+          stars={result.stars}
+          detail={[
+            `${result.placed} shapes (3 stars: ${result.par} or fewer)`,
+            result.coins_earned + result.streak_bonus > 0 ? `+${result.coins_earned + result.streak_bonus} coins` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+          hasNext={level < (me?.games.gridsnap.level_count ?? 0) && result.unlocked_level > level}
+          onNext={() => onLevel?.(level + 1)}
+          onRetry={() => void retry()}
+          onLevels={onBack}
+        />
+      )}
+
+      {final && level === undefined && (
         <div className="absolute inset-0 z-20 grid place-items-center bg-ink/70 p-6 backdrop-blur-sm">
           <div className="pop-in w-full max-w-sm rounded-3xl border border-line bg-panel p-6 text-center">
             <h2 className="text-3xl font-black">{final.new_best ? "New best!" : "Game over"}</h2>

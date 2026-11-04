@@ -5,6 +5,30 @@ the newest is at the top.
 
 ## Unreleased
 
+### GridSnap: 100 levels (Endless stays)
+- GridSnap opens a level list now, with **Endless** (the game so far, best score and
+  leaderboards unchanged) at the top.
+- Each level starts with grey **stones** on the board; clear every one of them (fill a row
+  or column through it) to win and unlock the next level. Blocks you place don't need
+  clearing. Levels 1–3 line the stones up; later levels add more stones, clutter and
+  harder shapes.
+- No room for any shape: Reshuffle (40) or Bomb (60) as before, with the confirmation,
+  or restart the level for free. Coins spent come off that level's first-clear reward.
+- Stars by shapes used: 3 at or under the level's target (shown at the top), 2 within
+  half again, 1 otherwise. Usual first-clear coins; the server checks every placement
+  and decides the win.
+
+### TraceOut
+- The droplets at the top now empty when you lose one (the emoji couldn't change colour),
+  with a small pop.
+- More life: sparkles where a line leaves the board, a red burst and a shudder on a
+  blocked tap, "Nice!" / "Great!" / "Brilliant!" / "On fire!" for clean taps in a row,
+  and confetti when a level is cleared.
+
+### Analytics
+- Clears, losses and endless game ends record how long they took (`play_events.seconds`,
+  server clock), so play time per game can be queried. DEVELOPMENT.md has the queries.
+
 ### TraceOut: harder, more tangled levels
 - Lines are long and winding now (up to 20 cells, several turns each) and packed tightly,
   so they wrap around each other instead of sitting in open space. Boards grow faster,
@@ -85,7 +109,10 @@ the newest is at the top.
   the new placement, so they stay as they were).
 
 ### Upgrade notes
-- Database migration `0004` (GridSnap scores). The release workflow runs it.
+- Database migrations `0004` (GridSnap scores) and `0005` (play time). The release
+  workflow runs them.
+- New level file `gridsnap.json` (GridSnap levels): the release workflow, `activate.sh`
+  and both compose files ship it.
 
 ## Unreleased (planned as 26.11.01)
 

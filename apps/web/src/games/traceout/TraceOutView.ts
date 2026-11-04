@@ -1,4 +1,4 @@
-import { Application, Container, type FederatedPointerEvent, Graphics } from "pixi.js";
+import { Application, Container, type FederatedPointerEvent, Graphics, Text } from "pixi.js";
 
 import type { ToLevelData } from "../../api/types";
 import { createPixi, prefersReducedMotion, tween } from "../pixi";
@@ -9,6 +9,8 @@ const DOT = 0xe2d3bb;
 const INK = 0x3d2616;
 const BLOCKED = 0xdc2626;
 const HINT = 0xd97706;
+/** Sparkles where a line leaves the board. */
+const SPARKS = [0xfbbf24, 0xf59e0b, 0x84cc16, 0x38bdf8, 0xf472b6];
 
 export interface TraceOutViewOptions {
   onTap: (line: number) => void;
@@ -23,6 +25,8 @@ type Pt = [number, number];
 export class TraceOutView {
   private readonly paper = new Graphics();
   private readonly layer = new Container();
+  private readonly fx = new Container();
+  private particles: { g: Graphics; vx: number; vy: number; life: number; fall: number }[] = [];
   private lines: (Graphics | null)[] = [];
   private present: boolean[];
   private cell = 0;
@@ -38,7 +42,8 @@ export class TraceOutView {
     private readonly options: TraceOutViewOptions,
   ) {
     this.present = level.lines.map(() => true);
-    app.stage.addChild(this.paper, this.layer);
+    app.stage.addChild(this.paper, this.layer, this.fx);
+    app.ticker.add(this.animate);
     app.stage.eventMode = "static";
     app.stage.hitArea = app.screen;
     app.stage.on("pointerdown", this.onDown);
@@ -52,6 +57,7 @@ export class TraceOutView {
 
   destroy(): void {
     this.destroyed = true;
+    this.app.ticker.remove(this.animate);
     this.app.renderer.off("resize", this.layout);
     this.app.destroy({ removeView: true }, { children: true });
   }
@@ -73,12 +79,24 @@ export class TraceOutView {
     const path = this.exitPath(i);
     const len = line.cells.length - 1;
     const travel = path.length - 1 - len;
+    // Where the arrow crosses the paper's edge: a burst of sparkles when it gets there.
+    const edge = this.edgeOf(i);
+    let sparkled = false;
     await tween(this.app, this.fast ? 0 : Math.min(700, 220 + travel * 22), (t) => {
       if (g.destroyed) return;
       g.clear();
-      this.stroke(g, slice(path, t * travel, t * travel + len), INK, 1);
+      const part = slice(path, t * travel, t * travel + len);
+      // A soft golden trail behind the moving line.
+      this.stroke(g, part, 0xfbbf24, 0.25 * (1 - t), 2.2);
+      this.stroke(g, part, INK, 1);
       g.alpha = t < 0.8 ? 1 : 1 - (t - 0.8) / 0.2;
+      const head = part[part.length - 1];
+      if (!sparkled && head && Math.hypot(head[0] - edge[0], head[1] - edge[1]) < this.cell * 0.6) {
+        sparkled = true;
+        this.burst(edge[0], edge[1], SPARKS, 12);
+      }
     });
+    if (!sparkled) this.burst(edge[0], edge[1], SPARKS, 12);
     this.busy.delete(i);
     if (!g.destroyed) g.visible = false;
   }
@@ -93,12 +111,19 @@ export class TraceOutView {
     const [dx, dy] = dirOf(line.cells);
     other?.clear();
     if (other) this.stroke(other, this.centres(by), BLOCKED, 1);
+    const pts = this.centres(i);
+    const [hx, hy] = pts[pts.length - 1] ?? [0, 0];
+    this.burst(hx + dx * this.cell * 0.5, hy + dy * this.cell * 0.5, [BLOCKED, 0xfca5a5], 8);
     await tween(this.app, this.fast ? 0 : 320, (t) => {
       if (g.destroyed) return;
       const k = Math.sin(t * Math.PI) * this.cell * 0.35;
       g.clear();
-      this.stroke(g, this.centres(i).map(([x, y]) => [x + dx * k, y + dy * k] as Pt), BLOCKED, 1);
+      this.stroke(g, pts.map(([x, y]) => [x + dx * k, y + dy * k] as Pt), BLOCKED, 1);
+      // The whole board shudders.
+      const shake = this.fast ? 0 : Math.sin(t * Math.PI * 8) * (1 - t) * 4;
+      this.layer.x = this.paper.x = shake;
     });
+    this.layer.x = this.paper.x = 0;
     this.busy.delete(i);
     if (!this.destroyed) this.drawLines();
   }
@@ -115,6 +140,73 @@ export class TraceOutView {
     });
     if (!this.destroyed && this.present[i]) this.drawLines();
   }
+
+  /** Praise for a streak of clean taps, floating up from the top of the paper. */
+  cheer(text: string, color: number): void {
+    const t = new Text({
+      text,
+      style: { fontSize: 30, fill: color, fontWeight: "900", stroke: { color: 0xffffff, width: 5 } },
+    });
+    t.anchor.set(0.5);
+    const x = this.app.screen.width / 2;
+    const y = this.oy + this.cell * 1.5;
+    t.position.set(x, y);
+    this.fx.addChild(t);
+    void tween(this.app, this.fast ? 400 : 1000, (k) => {
+      if (t.destroyed) return;
+      t.y = y - 36 * k;
+      t.scale.set(k < 0.15 ? 0.6 + (k / 0.15) * 0.5 : 1.1 - Math.min(0.1, (k - 0.15) * 0.4));
+      t.alpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+    }).then(() => t.destroy());
+  }
+
+  /** Level clear: confetti over the paper. */
+  async celebrate(): Promise<void> {
+    if (this.fast) return;
+    const w = this.cell * this.level.width;
+    const h = this.cell * this.level.height;
+    for (let wave = 0; wave < 4 && !this.destroyed; wave++) {
+      for (let k = 0; k < 5; k++) {
+        this.burst(this.ox + Math.random() * w, this.oy + Math.random() * h * 0.7, SPARKS, 10);
+      }
+      await tween(this.app, 160, () => undefined);
+    }
+  }
+
+  // ---------------------------------------------------------------- effects
+
+  private burst(x: number, y: number, colors: number[], n: number): void {
+    if (this.fast || this.destroyed) return;
+    const size = Math.max(3, this.cell * 0.14);
+    for (let k = 0; k < n; k++) {
+      const color = colors[k % colors.length] ?? 0xffffff;
+      const g = new Graphics();
+      if (k % 3 === 0) g.circle(0, 0, size * 0.55).fill(color);
+      else g.rect(-size / 2, -size / 4, size, size / 2).fill(color);
+      g.position.set(x, y);
+      const a = Math.random() * Math.PI * 2;
+      const v = 1.5 + Math.random() * 3.5;
+      this.fx.addChild(g);
+      this.particles.push({ g, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 1.5, life: 1, fall: 0.12 });
+    }
+  }
+
+  private readonly animate = () => {
+    const dt = this.app.ticker.deltaTime;
+    this.particles = this.particles.filter((p) => {
+      p.life -= 0.025 * dt;
+      if (p.life <= 0 || p.g.destroyed) {
+        p.g.destroy();
+        return false;
+      }
+      p.vy += p.fall * dt;
+      p.g.x += p.vx * dt;
+      p.g.y += p.vy * dt;
+      p.g.alpha = Math.min(1, p.life * 1.5);
+      p.g.rotation += 0.15 * dt;
+      return true;
+    });
+  };
 
   // ---------------------------------------------------------------- layout
 
@@ -167,10 +259,23 @@ export class TraceOutView {
     return pts;
   }
 
-  /** A thick rounded polyline with an arrowhead at its end. */
-  private stroke(g: Graphics, pts: Pt[], color: number, alpha: number): void {
+  /** Where line `i` crosses the paper's edge on its way out. */
+  private edgeOf(i: number): Pt {
+    const line = this.level.lines[i];
+    const pts = this.centres(i);
+    const [hx, hy] = pts[pts.length - 1] ?? [0, 0];
+    if (!line) return [hx, hy];
+    const [dx, dy] = dirOf(line.cells);
+    const m = this.cell * 0.4;
+    const x = dx > 0 ? this.ox + this.cell * this.level.width + m : dx < 0 ? this.ox - m : hx;
+    const y = dy > 0 ? this.oy + this.cell * this.level.height + m : dy < 0 ? this.oy - m : hy;
+    return [x, y];
+  }
+
+  /** A thick rounded polyline with an arrowhead at its end (`widen` for glows). */
+  private stroke(g: Graphics, pts: Pt[], color: number, alpha: number, widen = 1): void {
     if (pts.length < 2) return;
-    const w = Math.max(3, this.cell * 0.22);
+    const w = Math.max(3, this.cell * 0.22) * widen;
     const [x0, y0] = pts[0] ?? [0, 0];
     g.moveTo(x0, y0);
     for (const [x, y] of pts.slice(1)) g.lineTo(x, y);

@@ -16,6 +16,14 @@ const LIFT_SETTLE_MS = 90;
 
 /** Block colours, index = engine colour id. */
 export const GS_COLORS = [0xef4444, 0xf97316, 0xfacc15, 0x22c55e, 0x0ea5e9, 0x8b5cf6, 0x14b8a6];
+/** Cell value of a level's stone (see the engine's `STONE`). */
+export const GS_STONE = 8;
+const STONE_COLOR = 0x64748b;
+
+/** Colour of a board cell value (1-7 a piece colour, 8 a stone). */
+function cellColor(v: number): number {
+  return v === GS_STONE ? STONE_COLOR : (GS_COLORS[v - 1] ?? 0xffffff);
+}
 const BOARD = 0x0c1533;
 const BOARD_EDGE = 0x2b3d82;
 const SLOT = 0x16224d;
@@ -81,6 +89,15 @@ function drawBlock(g: Graphics, x: number, y: number, s: number, color: number):
   const i = Math.max(1, s * 0.04);
   drawBevelled(g, [x + i, y + i, x + s - i, y + i, x + s - i, y + s - i, x + i, y + s - i], color, Math.max(1, s * 0.04));
   g.roundRect(x + s * 0.2, y + s * 0.16, s * 0.28, s * 0.1, s * 0.05).fill({ color: 0xffffff, alpha: 0.35 });
+}
+
+/** A level's stone: slate grey with a gem, so it reads as "clear me" at a glance. */
+function drawStone(g: Graphics, x: number, y: number, s: number): void {
+  drawBlock(g, x, y, s, STONE_COLOR);
+  const cx = x + s / 2;
+  const cy = y + s / 2;
+  const r = s * 0.2;
+  g.poly([cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy]).fill(0xe2e8f0).stroke({ width: Math.max(1, s * 0.03), color: 0x334155 });
 }
 
 /**
@@ -207,7 +224,8 @@ export class GridSnapView {
         const x = this.bx + c * this.cell;
         const y = this.by + r * this.cell;
         flash.rect(x, y, this.cell, this.cell).fill({ color: 0xffffff, alpha: 0.85 });
-        this.burst(x + this.cell / 2, y + this.cell / 2, GS_COLORS[(this.cells[i] || 1) - 1] ?? 0xffffff);
+        this.burst(x + this.cell / 2, y + this.cell / 2, cellColor(this.cells[i] || 1));
+        if (this.cells[i] === GS_STONE) this.burst(x + this.cell / 2, y + this.cell / 2, 0xe2e8f0);
       }
       const praise =
         lines >= 4 ? "Unbelievable!" : lines === 3 ? "Amazing!" : lines === 2 ? "Great!" : result.combo >= 2 ? "Nice!" : null;
@@ -235,7 +253,7 @@ export class GridSnapView {
     for (let r = r0; r < r0 + 3; r++) {
       for (let c = c0; c < c0 + 3; c++) {
         const v = this.cells[r * SIZE + c] ?? 0;
-        if (v) this.burst(this.bx + (c + 0.5) * this.cell, this.by + (r + 0.5) * this.cell, GS_COLORS[v - 1] ?? 0xffffff);
+        if (v) this.burst(this.bx + (c + 0.5) * this.cell, this.by + (r + 0.5) * this.cell, cellColor(v));
       }
     }
     await tween(this.app, this.fast ? 0 : 320, (t) => {
@@ -302,7 +320,8 @@ export class GridSnapView {
       if (!v) return;
       const x = this.bx + (i % SIZE) * this.cell;
       const y = this.by + Math.floor(i / SIZE) * this.cell;
-      drawBlock(g, x, y, this.cell, GS_COLORS[v - 1] ?? 0xffffff);
+      if (v === GS_STONE) drawStone(g, x, y, this.cell);
+      else drawBlock(g, x, y, this.cell, cellColor(v));
     });
   }
 
@@ -513,6 +532,20 @@ export class GridSnapView {
   }
 
   // ---------------------------------------------------------------- effects
+
+  /** A cleared level: fireworks over the board and a banner. */
+  async celebrate(): Promise<void> {
+    this.popup("Level clear!", this.bx + 4 * this.cell, this.by + 3.6 * this.cell, 0xfde047, 34);
+    if (this.fast) return;
+    for (let wave = 0; wave < 3 && !this.destroyed; wave++) {
+      for (let k = 0; k < 6; k++) {
+        const x = this.bx + (0.5 + Math.random() * 7) * this.cell;
+        const y = this.by + (0.5 + Math.random() * 7) * this.cell;
+        this.burst(x, y, GS_COLORS[(wave * 6 + k) % GS_COLORS.length] ?? 0xffffff);
+      }
+      await tween(this.app, 180, () => undefined);
+    }
+  }
 
   private burst(x: number, y: number, color: number): void {
     if (this.fast) return;

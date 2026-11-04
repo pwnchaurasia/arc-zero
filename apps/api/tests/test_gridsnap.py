@@ -241,3 +241,83 @@ async def test_leaderboards_show_names_and_skip_assisted_runs(app_client: AsyncC
     board = (await app_client.get(f"{GS}/leaderboard")).json()
     assert board["signed_in"] is False and board["you"] is None
     assert board["entries"][0]["you"] is False
+
+
+# ------------------------------------------------------------------------- levels
+
+
+def _winning_move(start: dict[str, Any]) -> tuple[int, int, int]:
+    """A placement that clears the fixture level's bottom row of stones."""
+    stones = {i for i, c in enumerate(start["view"]["cells"]) if c == arc_engine.GS_STONE}
+    taken = {i for i, c in enumerate(start["view"]["cells"]) if c}
+    for slot, piece in enumerate(start["view"]["tray"]):
+        for row in range(8):
+            for col in range(8):
+                cells = _cells(piece["shape"], row, col)
+                if cells and not cells & taken and set(range(56, 64)) <= cells | stones:
+                    return slot, row, col
+    raise AssertionError("the fixture's first tray cannot finish the row")
+
+
+async def test_a_level_is_won_when_its_stones_clear(app_client: AsyncClient) -> None:
+    r = await app_client.post(f"{GS}/levels/1/start")
+    assert r.status_code == 200, r.text
+    start = r.json()
+    assert start["level"] == 1 and start["par"] == 1
+    assert start["view"]["goal"] is True
+    assert start["view"]["cells"].count(arc_engine.GS_STONE) == 7
+    assert "seed" not in start["view"], "the deal's seed never leaves the server"
+    headers = _headers(start)
+
+    slot, row, col = _winning_move(start)
+    r = await app_client.post(
+        f"{GS}/runs/{start['run_id']}/place",
+        json={"seq": 0, "slot": slot, "row": row, "col": col},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["view"]["status"] == "won"
+    result = body["result"]
+    assert result["stars"] == 3 and result["placed"] == 1
+    assert result["first_clear"] is True and result["coins_earned"] > 0
+    assert result["unlocked_level"] == 2
+    headers = {"x-guest-ticket": result["guest_ticket"]}
+
+    # The level is over: no more moves, and a replay of it pays nothing.
+    r = await app_client.post(
+        f"{GS}/runs/{start['run_id']}/place",
+        json={"seq": 1, "slot": 1, "row": 0, "col": 0},
+        headers=headers,
+    )
+    assert r.status_code == 409
+    r = await app_client.post(f"{GS}/levels/1/start", headers=headers)
+    again = r.json()
+    slot, row, col = _winning_move(again)
+    r = await app_client.post(
+        f"{GS}/runs/{again['run_id']}/place",
+        json={"seq": 0, "slot": slot, "row": row, "col": col},
+        headers=headers,
+    )
+    assert r.json()["result"]["coins_earned"] == 0
+
+    # Progress shows up like every other game's.
+    r = await app_client.get("/api/v1/me", headers=headers)
+    assert r.json()["games"]["gridsnap"]["stars"] == {"1": 3}
+
+
+async def test_levels_unlock_in_order_and_give_up_records_nothing(app_client: AsyncClient) -> None:
+    r = await app_client.post(f"{GS}/levels/2/start")
+    assert r.status_code == 403
+    assert r.json()["error"]["code"] == "level_locked"
+
+    start = (await app_client.post(f"{GS}/levels/1/start")).json()
+    headers = _headers(start)
+    r = await app_client.post(f"{GS}/runs/{start['run_id']}/end", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["coins_earned"] == 0
+    r = await app_client.get("/api/v1/me", headers=headers)
+    assert r.json()["games"]["gridsnap"]["stars"] == {}
+    # A level try never becomes the endless game to resume.
+    r = await app_client.get(f"{GS}/runs/current", headers=headers)
+    assert r.status_code == 204

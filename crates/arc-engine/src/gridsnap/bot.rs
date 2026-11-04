@@ -5,13 +5,39 @@
 //! outline, and room for the big shapes. It plays about as well as a careful
 //! human, so its scores set the difficulty curve.
 
-use super::{openness, Board, Game, Status, SIZE, TRAY};
+use super::{openness, Board, Game, Status, SIZE, STONE, TRAY};
+
+/// Cells in rows and columns that still hold a stone: filling them works towards
+/// clearing it.
+fn stone_lines(board: &Board) -> i64 {
+    let mut total = 0;
+    for i in 0..SIZE {
+        let row = &board.cells[i * SIZE..(i + 1) * SIZE];
+        if row.contains(&STONE) {
+            total += row.iter().filter(|c| **c != 0).count();
+        }
+        let col: Vec<u8> = (0..SIZE).map(|r| board.cells[r * SIZE + i]).collect();
+        if col.contains(&STONE) {
+            total += col.iter().filter(|c| **c != 0).count();
+        }
+    }
+    i64::try_from(total).unwrap_or(0)
+}
 
 fn after(board: &Board, slot: usize, row: u8, col: u8) -> Option<(i64, u64)> {
     let mut b = board.clone();
     let placed = b.place(slot, row, col).ok()?;
     let occupied = b.occupied();
-    Some((i64::from(placed.points) + openness(occupied), occupied))
+    let mut value = i64::from(placed.points) + openness(occupied);
+    if b.goal {
+        // On a level, clearing stones matters most, then lining up to clear them.
+        let cleared = board.stones() - b.stones();
+        value += 400 * i64::try_from(cleared).unwrap_or(0) + 12 * stone_lines(&b);
+        if b.status == Status::Won {
+            value += 1_000_000;
+        }
+    }
+    Some((value, occupied))
 }
 
 /// The best `(slot, row, col)` for the current tray, if any shape fits.
@@ -42,7 +68,13 @@ pub fn best_move(board: &Board) -> Option<(usize, u8, u8)> {
 /// Plays a run until it is stuck or `max` placements were made.
 #[must_use]
 pub fn play(seed: u64, max: u32) -> Game {
-    let mut game = Game::new(seed);
+    play_from(Game::new(seed), max)
+}
+
+/// Plays `game` (a run or a level) until it is won, stuck, or `max` placements
+/// were made.
+#[must_use]
+pub fn play_from(mut game: Game, max: u32) -> Game {
     while game.board.status == Status::Playing && game.board.placed < max {
         let Some((slot, row, col)) = best_move(&game.board) else {
             break;

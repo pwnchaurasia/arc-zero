@@ -163,6 +163,7 @@ test("a guest plays GridSnap by keyboard and by drag, then ends the game", async
   await page.goto("/");
   const opened = page.waitForResponse((r) => r.url().includes("/gridsnap/runs/") && r.request().method() !== "OPTIONS");
   await page.getByRole("heading", { name: "GridSnap" }).click();
+  await page.getByRole("button", { name: /^Endless/ }).click();
   await opened;
   await page.waitForTimeout(600);
 
@@ -242,5 +243,25 @@ test("a guest clears TraceOut level 1 without a mistake", async ({ page }) => {
   expect(result.unlocked_level).toBe(2);
   await expect(page.getByText("Level clear!")).toBeVisible();
   await expect(page.getByText(/Flawless!/)).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("a GridSnap level starts with stones to clear and takes a shape", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/");
+  await page.getByRole("heading", { name: "GridSnap" }).click();
+  const started = page.waitForResponse((r) => r.url().includes("/gridsnap/levels/1/start"));
+  await page.getByRole("button", { name: "Level 1", exact: true }).click();
+  const start = (await (await started).json()) as { view: { cells: number[] }; par: number };
+  const stones = start.view.cells.filter((c) => c === 8).length;
+  expect(stones).toBeGreaterThan(0);
+  await expect(page.getByLabel(`${stones} stones left`)).toBeVisible();
+  await page.waitForTimeout(600);
+
+  const placed = page.waitForResponse((r) => r.url().includes("/place"));
+  await page.keyboard.press("1");
+  await page.keyboard.press("Enter");
+  expect((await placed).status()).toBe(200);
+  await expect(page.getByText(`Shapes 1 / ${start.par}`)).toBeVisible();
   expect(errors).toEqual([]);
 });

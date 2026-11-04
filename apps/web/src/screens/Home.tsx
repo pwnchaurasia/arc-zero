@@ -10,7 +10,7 @@ import { GameLogo } from "./GameLogo";
  * Games on the home screen. Set `image` to a square logo in public/games/
  * (e.g. "/games/water-sort.webp") to replace the drawn placeholder.
  */
-export const GAMES: { id: GameId | "gridsnap"; name: string; tagline: string; image?: string }[] = [
+export const GAMES: { id: GameId; name: string; tagline: string; image?: string }[] = [
   {
     id: "water-sort",
     name: "Water Sort",
@@ -55,7 +55,7 @@ export function Home({
   onCheckpoint,
   onIosInstall,
 }: {
-  onOpen: (game: GameId | "gridsnap") => void;
+  onOpen: (game: GameId) => void;
   onSettings: () => void;
   onCheckpoint: () => void;
   onIosInstall: () => void;
@@ -126,7 +126,7 @@ export function Home({
       {/* 2 tiles per row on phones, up to 5 on a laptop. */}
       <main className="grid grid-cols-2 gap-4 p-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
         {GAMES.map((g) => {
-          const progress = g.id === "gridsnap" ? undefined : me?.games[g.id];
+          const progress = me?.games[g.id];
           const cleared = progress ? Object.keys(progress.stars).length : 0;
           const stars = progress ? Object.values(progress.stars).reduce((a, b) => a + b, 0) : 0;
           const total = progress?.level_count ?? 100;
@@ -146,20 +146,17 @@ export function Home({
                 <h2 className="text-base font-extrabold leading-tight sm:text-lg">{g.name}</h2>
                 <p className="mt-1 line-clamp-2 text-xs text-muted">{g.tagline}</p>
                 <div className="mt-auto pt-3">
-                  {g.id === "gridsnap" ? (
-                    <p className="text-xs text-muted">Best score: {me?.gridsnap_best ?? 0}</p>
-                  ) : (
-                    <>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-ink/60">
-                        <div
-                          className="h-full rounded-full bg-accent transition-all"
-                          style={{ width: `${(cleared / total) * 100}%` }}
-                        />
-                      </div>
-                      <p className="mt-1.5 text-xs text-muted">
-                        {cleared}/{total} levels · {stars} ★
-                      </p>
-                    </>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-ink/60">
+                    <div
+                      className="h-full rounded-full bg-accent transition-all"
+                      style={{ width: `${(cleared / total) * 100}%` }}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-xs text-muted">
+                    {cleared}/{total} levels · {stars} ★
+                  </p>
+                  {g.id === "gridsnap" && (
+                    <p className="text-xs text-muted">Endless best: {me?.gridsnap_best ?? 0}</p>
                   )}
                 </div>
               </div>

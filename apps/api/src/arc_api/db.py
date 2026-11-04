@@ -173,7 +173,7 @@ class PlayEvent(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     day: Mapped[date] = mapped_column(Date, server_default=text("CURRENT_DATE"), nullable=False)
-    # start | clear | lost | hint | assist | register
+    # start | clear | lost | end | hint | assist | register
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
     game_id: Mapped[str | None] = mapped_column(String(32))
     level: Mapped[int | None] = mapped_column(Integer)
@@ -182,6 +182,8 @@ class PlayEvent(Base):
     stars: Mapped[int | None] = mapped_column(SmallInteger)
     coins: Mapped[int | None] = mapped_column(Integer)
     detail: Mapped[str | None] = mapped_column(String(32))
+    # Start to clear / loss / end, in seconds (server clock); null for other events.
+    seconds: Mapped[int | None] = mapped_column(Integer)
 
 
 def make_engine(url: str, pool_size: int, max_overflow: int) -> AsyncEngine:

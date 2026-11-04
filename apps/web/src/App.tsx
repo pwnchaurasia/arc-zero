@@ -91,7 +91,7 @@ export function App() {
     <NavContext value={nav}>
       {route.name === "home" && (
         <Home
-          onOpen={(game) => go(game === "gridsnap" ? { name: "gridsnap" } : { name: "levels", game })}
+          onOpen={(game) => go({ name: "levels", game })}
           onSettings={() => setModal("settings")}
           onCheckpoint={openCheckpoint}
           onIosInstall={() => setModal("ios-install")}
@@ -102,12 +102,22 @@ export function App() {
           game={route.game}
           onBack={back}
           onPlay={(level) => go({ name: "play", game: route.game, level })}
+          onEndless={() => go({ name: "gridsnap" })}
           onCheckpoint={openCheckpoint}
         />
       )}
       <Suspense fallback={<Loading />}>
       {route.name === "coins" && <CoinsScreen onBack={back} />}
       {route.name === "gridsnap" && <GridSnapScreen onBack={back} onCheckpoint={openCheckpoint} />}
+      {route.name === "play" && route.game === "gridsnap" && (
+        <GridSnapScreen
+          key={`gs-${route.level}`}
+          level={route.level}
+          onBack={back}
+          onLevel={(level) => replaceLevel("gridsnap", level)}
+          onCheckpoint={openCheckpoint}
+        />
+      )}
       {route.name === "play" && route.game === "dead-bridge" && (
         <DeadBridgeScreen
           key={`db-${route.level}`}

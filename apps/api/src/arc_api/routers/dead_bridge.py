@@ -201,7 +201,14 @@ async def complete(
             raise ApiError(422, "too_fast", "That was faster than real time.")
         if result.status != "won":
             await analytics.record(
-                db, state, who, "lost", GAME, level, detail=f"kills:{result.kills}"
+                db,
+                state,
+                who,
+                "lost",
+                GAME,
+                level,
+                detail=f"kills:{result.kills}",
+                started_ms=attempt["issued_ms"],
             )
             raise ApiError(422, "not_won", "The horde broke through.")
 
@@ -236,5 +243,6 @@ async def complete(
             stars=result.stars,
             coins=paid.earned + paid.streak_bonus,
             detail=f"kills:{result.kills}",
+            started_ms=attempt["issued_ms"],
         )
         return out

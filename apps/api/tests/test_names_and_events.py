@@ -12,7 +12,7 @@ async def _events() -> list[asyncpg.Record]:
     conn = await asyncpg.connect(TEST_DB_URL)
     try:
         rows: list[asyncpg.Record] = await conn.fetch(
-            "SELECT kind, game_id, level, who, signed_in FROM play_events ORDER BY id"
+            "SELECT kind, game_id, level, who, signed_in, seconds FROM play_events ORDER BY id"
         )
         return rows
     finally:
@@ -69,3 +69,6 @@ async def test_plays_are_counted_without_storing_ids(app_client: AsyncClient) ->
     assert rows[0]["who"] == rows[1]["who"]
     assert len(rows[0]["who"]) == 16 and not rows[0]["signed_in"]
     assert rows[0]["who"] not in ticket
+    # Play time on the finishing event only (this test is quick: 0 seconds).
+    assert rows[0]["seconds"] is None
+    assert rows[1]["seconds"] is not None and 0 <= rows[1]["seconds"] < 60

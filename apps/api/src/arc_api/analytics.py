@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import time
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,7 +36,13 @@ async def record(
     stars: int | None = None,
     coins: int | None = None,
     detail: str | None = None,
+    started_ms: int | None = None,
 ) -> None:
+    """Records one event. `started_ms` (when the level or run began, server clock)
+    adds how long it took, for clears, losses and ends."""
+    seconds = None
+    if started_ms:
+        seconds = max(0, int(time.time() * 1000 - started_ms) // 1000)
     try:
         db.add(
             PlayEvent(
@@ -47,6 +54,7 @@ async def record(
                 stars=stars,
                 coins=coins,
                 detail=detail,
+                seconds=seconds,
             )
         )
         await db.commit()

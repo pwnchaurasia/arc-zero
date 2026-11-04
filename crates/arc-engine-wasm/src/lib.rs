@@ -711,14 +711,27 @@ impl GridSnap {
         self.board.combo
     }
 
-    /// 0 playing, 1 stuck, 2 ended.
+    /// 0 playing, 1 stuck, 2 ended, 3 won (a level).
     #[must_use]
     pub fn status(&self) -> u8 {
         match self.board.status {
             gs::Status::Playing => 0,
             gs::Status::Stuck => 1,
             gs::Status::Ended => 2,
+            gs::Status::Won => 3,
         }
+    }
+
+    /// Shapes placed so far.
+    #[must_use]
+    pub fn placed(&self) -> u32 {
+        self.board.placed
+    }
+
+    /// Stones still to clear on a level (0 in endless mode).
+    #[must_use]
+    pub fn stones(&self) -> usize {
+        self.board.stones()
     }
 }
 

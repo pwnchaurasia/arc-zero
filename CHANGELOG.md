@@ -5,6 +5,15 @@ the newest is at the top.
 
 ## Unreleased
 
+### TraceOut: harder, more tangled levels
+- Lines are long and winding now (up to 20 cells, several turns each) and packed tightly,
+  so they wrap around each other instead of sitting in open space. Boards grow faster,
+  up to 16 × 23.
+- Across levels 4–100: the "clear this first" chains are ~45% deeper, lines are ~85%
+  longer, and only about a quarter of the lines can leave at the start (was 44%).
+  Level 1 is still a warm-up; levels 2–3 step up gently.
+- Progress and stars on already-cleared levels are kept; the levels themselves change.
+
 ### Development
 - CI is faster: the browser engine, the server engine and the level generator are each
   built once, in parallel, and the test jobs reuse them instead of compiling Rust again;

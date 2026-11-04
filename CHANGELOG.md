@@ -8,6 +8,8 @@ the newest is at the top.
 ### Analytics: plays and time by player name
 - `make local-players` (or `python -m arc_api.player_report` in the API container) lists
   each saved player's games, plays, clears, minutes and last visit. Guests stay anonymous.
+- `play_events` records a `visit` when the app opens, once per person per day, so you can
+  see who opened the link but never started a game.
 
 ### Local arcade keeps players' data in folders
 - The always-on local stack (`make local-up`) now stores Postgres and Redis in

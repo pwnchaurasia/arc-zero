@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 from pydantic import Field
 from sqlalchemy import select, update
 
-from arc_api import coins, hints, names
+from arc_api import analytics, coins, hints, names
 from arc_api.db import LevelResult, Player
 from arc_api.errors import ApiError
 from arc_api.levels import GAME_IDS
@@ -44,6 +44,7 @@ class MeOut(StrictModel):
 
 @router.get("/me")
 async def me(who: PrincipalDep, state: StateDep, db: DbDep) -> MeOut:
+    await analytics.record_visit(db, state, who)
     stars: dict[str, dict[int, int]] = {g: {} for g in GAME_IDS}
     if who.player_id is not None:
         rows = await db.execute(

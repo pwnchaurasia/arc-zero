@@ -120,3 +120,20 @@ async def test_report_links_plays_to_names_and_keeps_guests_anonymous(
     assert {row.name for row in rows} == {"Nisha", "(guest)"}
     assert sum(games for _, games in totals(named)) == 1
     assert "Nisha" in render(rows)
+
+
+async def test_opening_the_app_counts_one_visit_per_person_per_day(
+    app_client: AsyncClient,
+) -> None:
+    first = await app_client.get("/api/v1/me")
+    ticket = first.json()["guest_ticket"]
+    for _ in range(3):
+        await app_client.get("/api/v1/me", headers={"x-guest-ticket": ticket})
+    rows = await _events()
+    assert [(e["kind"], e["game_id"], e["level"]) for e in rows] == [("visit", None, None)]
+    assert len(rows[0]["who"]) == 16 and not rows[0]["signed_in"]
+
+    # Another browser is another visitor.
+    app_client.cookies.clear()
+    await app_client.get("/api/v1/me")
+    assert len({e["who"] for e in await _events()}) == 2

@@ -95,7 +95,8 @@ your branch ──PR──▶ CI (Rust, API, web, e2e) ──"CI passed"──�
 ## Analytics (first-party, SQL only)
 
 Every level start, clear, loss, hint, assist purchase, GridSnap endless game end and
-sign-up adds a row to `play_events`. Nothing is sent anywhere else. Clears, losses and
+sign-up adds a row to `play_events`, as does opening the app (`visit`, once per person per
+UTC day, whether or not they play). Nothing is sent anywhere else. Clears, losses and
 endless ends also carry `seconds`: how long that level or game took, by the server's clock
 (levels left without finishing have no end row, so they don't count towards play time). `who` is a keyed one-way hash of the
 player or guest id, so plain SQL can't join it to `players`. `signed_in` tells guests from
@@ -131,10 +132,19 @@ SELECT day, game_id, count(DISTINCT who) AS players, count(*) FILTER (WHERE kind
 FROM play_events WHERE day > current_date - 14 AND game_id IS NOT NULL
 GROUP BY day, game_id ORDER BY day DESC, game_id;
 
--- Daily active players across all games, guests vs saved
-SELECT day, count(DISTINCT who) AS players,
-       count(DISTINCT who) FILTER (WHERE signed_in) AS saved
+-- Daily visitors and players: opened the app vs started a game, guests vs saved
+SELECT day, count(DISTINCT who) AS visitors,
+       count(DISTINCT who) FILTER (WHERE kind = 'start') AS players,
+       count(DISTINCT who) FILTER (WHERE kind = 'start' AND signed_in) AS saved_players
 FROM play_events WHERE day > current_date - 30 GROUP BY day ORDER BY day DESC;
+
+-- Estimated time per game, including levels left unfinished: the gaps between each
+-- person's events, each capped at 10 minutes (so a rough upper bound)
+WITH gaps AS (
+  SELECT game_id, extract(epoch FROM lead(at) OVER (PARTITION BY who ORDER BY at) - at) AS gap
+  FROM play_events WHERE game_id IS NOT NULL)
+SELECT game_id, round(sum(least(gap, 600)) / 60.0) AS est_minutes
+FROM gaps GROUP BY game_id ORDER BY est_minutes DESC NULLS LAST;
 
 -- Which levels are too hard: starts vs clears per level (low clear rate = wall)
 SELECT game_id, level,

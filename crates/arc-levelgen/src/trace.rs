@@ -5,8 +5,11 @@
 //!    that is what makes the puzzle. Removing lines in reverse order then always
 //!    works, so every level is solvable by construction (and checked again).
 //! 2. Harder levels try several placements per line and keep the one that blocks
-//!    the most existing lines.
-//! 3. Several candidates per level; keep the one whose "clear this first" chain
+//!    the most existing lines. Lines are long, winding random walks (decision
+//!    2026-11-04: tangled like the reference apps, not short straight sticks).
+//! 3. Lines anywhere (kept only if the level stays solvable) fill the rest, then
+//!    short ones plug the holes so the board looks packed.
+//! 4. Several candidates per level; keep the one whose "clear this first" chain
 //!    (rounds of removing every free line at once) is closest to the target.
 //!
 //! Every 5th level from 5 on is laid inside a picture (heart, diamond, ...).
@@ -18,7 +21,10 @@ use serde::Serialize;
 
 use crate::derive_seed;
 
-const CANDIDATES: usize = 8;
+const CANDIDATES: usize = 12;
+/// Lines sampled per densify step, and how many of the best are tried.
+const DENSIFY_SAMPLES: usize = 8;
+const DENSIFY_TRIES: usize = 3;
 const THEMES: [&str; 6] = ["heart", "diamond", "circle", "hourglass", "cross", "ring"];
 
 #[derive(Clone, Debug, Serialize)]
@@ -36,8 +42,11 @@ struct Params {
     height: u8,
     /// Share of (picture) cells to cover with lines.
     fill: f64,
+    min_len: usize,
     max_len: usize,
     max_turns: usize,
+    /// Chance (in %) that a line turns at each cell it grows.
+    turn_pct: u64,
     /// Placements tried per line; the most blocking one wins.
     tangle: usize,
     depth: f64,
@@ -47,36 +56,36 @@ fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
 }
 
-/// Levels 1–3 are a warm-up; from level 4 the board, the tangle and the chains grow.
+/// Level 1 is a warm-up and 2–3 a gentle step; from level 4 the board grows, lines get
+/// longer and twistier, and the "clear this first" chains get deeper.
 fn params(level: u16) -> Params {
     let t = (f64::from(level.max(4)) - 4.0) / 96.0;
-    let warm = level <= 3;
-    let width = if warm {
-        4 + level as u8
-    } else {
-        lerp(7.0, 14.0, t).round() as u8
-    };
-    let height = ((f64::from(width) * 1.4).round() as u8).min(24);
+    if level <= 3 {
+        let l = level as usize;
+        return Params {
+            width: 4 + level as u8,
+            height: [7, 9, 10][l - 1],
+            fill: [0.6, 0.75, 0.8][l - 1],
+            min_len: 2,
+            max_len: [3, 5, 6][l - 1],
+            max_turns: [0, 1, 2][l - 1],
+            turn_pct: [0, 25, 30][l - 1],
+            tangle: [1, 4, 6][l - 1],
+            depth: [2.0, 3.0, 4.0][l - 1],
+        };
+    }
+    // Boards grow fastest early on: more lines means longer chains.
+    let width = lerp(8.0, 16.0, t.sqrt()).round() as u8;
     Params {
         width,
-        height,
-        fill: if warm { 0.55 } else { lerp(0.75, 0.92, t) },
-        max_len: if warm {
-            3
-        } else {
-            lerp(4.0, 7.0, t).round() as usize
-        },
-        max_turns: if warm {
-            1
-        } else {
-            lerp(1.0, 4.0, t).round() as usize
-        },
-        tangle: if warm {
-            1
-        } else {
-            lerp(3.0, 40.0, t).round() as usize
-        },
-        depth: if warm { 2.0 } else { lerp(4.0, 14.0, t) },
+        height: ((f64::from(width) * 1.45).round() as u8).min(arc_engine::traceout::MAX_SIDE),
+        fill: lerp(0.86, 0.97, t),
+        min_len: lerp(3.0, 6.0, t).round() as usize,
+        max_len: lerp(7.0, 20.0, t).round() as usize,
+        max_turns: lerp(3.0, 12.0, t).round() as usize,
+        turn_pct: lerp(30.0, 45.0, t).round() as u64,
+        tangle: lerp(8.0, 40.0, t).round() as usize,
+        depth: lerp(6.0, 21.0, t),
     }
 }
 
@@ -169,7 +178,7 @@ impl Board {
         if clear_exit && ray.iter().any(|c| self.occ[*c] != 0) {
             return None;
         }
-        let want = 2 + rng.below((p.max_len - 1) as u64) as usize;
+        let want = p.min_len + rng.below((p.max_len + 1 - p.min_len) as u64) as usize;
         let mut body = vec![head];
         let (mut x, mut y) = (hx, hy);
         // Grow away from the arrow: the cell behind the head comes first.
@@ -180,11 +189,15 @@ impl Board {
             let mut options = vec![straight];
             // The cell right behind the head must be straight, or there is no arrow.
             if turns < p.max_turns && body.len() > 1 {
-                let sides = [(gy, gx), (-gy, -gx)];
-                if rng.chance(1, 3) {
-                    options.insert(0, sides[rng.below(2) as usize]);
+                let mut sides = [(gy, gx), (-gy, -gx)];
+                if rng.chance(1, 2) {
+                    sides.swap(0, 1);
+                }
+                // Turn by choice `turn_pct` of the time; otherwise only when blocked.
+                if rng.chance(p.turn_pct, 100) {
+                    options.splice(0..0, sides);
                 } else {
-                    options.push(sides[rng.below(2) as usize]);
+                    options.extend(sides);
                 }
             }
             let next = options.into_iter().find_map(|(ox, oy)| {
@@ -232,22 +245,44 @@ impl Board {
         true
     }
 
-    /// Phase 2: a line anywhere, kept only if the level stays solvable.
+    /// Phase 2: a line anywhere, kept only if the level stays solvable. Of a few
+    /// samples, the most tangled one that keeps it solvable wins: its own way out is
+    /// blocked, and it blocks as many lines as possible.
     fn densify(&mut self, rng: &mut Rng, p: &Params) -> bool {
-        let Some(body) = self.sample(rng, p, false) else {
-            return false;
-        };
-        self.heights.push(1);
-        self.push(&body);
-        if self.level(p).solvable() {
-            return true;
+        let mut options: Vec<(usize, Vec<usize>)> = (0..DENSIFY_SAMPLES)
+            .filter_map(|_| self.sample(rng, p, false))
+            .map(|body| {
+                let [hx, hy] = [body[0] % self.w, body[0] / self.w];
+                let behind = body[1];
+                let (dx, dy) = (
+                    hx as i32 - (behind % self.w) as i32,
+                    hy as i32 - (behind / self.w) as i32,
+                );
+                let stuck = self
+                    .ray(hx as i32, hy as i32, dx, dy)
+                    .iter()
+                    .any(|c| self.occ[*c] != 0);
+                (self.blocks(&body).len() * 2 + usize::from(stuck) * 3, body)
+            })
+            .collect();
+        options.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
+        for (_, body) in options.into_iter().take(DENSIFY_TRIES) {
+            self.heights.push(1);
+            self.push(&body);
+            if self.level(p).solvable() {
+                return true;
+            }
+            self.pop();
         }
+        false
+    }
+
+    fn pop(&mut self) {
         let line = self.lines.pop().unwrap_or(Line { cells: Vec::new() });
         self.heights.pop();
         for &[x, y] in &line.cells {
             self.occ[usize::from(y) * self.w + usize::from(x)] = 0;
         }
-        false
     }
 
     fn level(&self, p: &Params) -> Level {
@@ -293,7 +328,7 @@ fn candidate(level: u16, seed: u64) -> Option<TraceLevel> {
         covered as f64 >= area as f64 * p.fill || b.lines.len() >= arc_engine::traceout::MAX_LINES
     };
     let mut failures = 0;
-    while failures < 60 && !full(&board) {
+    while failures < 80 && !full(&board) {
         if board.place(&mut rng, &p) {
             failures = 0;
         } else {
@@ -303,6 +338,20 @@ fn candidate(level: u16, seed: u64) -> Option<TraceLevel> {
     failures = 0;
     while failures < 600 && !full(&board) {
         if board.densify(&mut rng, &p) {
+            failures = 0;
+        } else {
+            failures += 1;
+        }
+    }
+    // Plug the holes with short lines (still only if the level stays solvable).
+    let short = Params {
+        min_len: 2,
+        max_len: 4,
+        ..p
+    };
+    failures = 0;
+    while failures < 400 && !full(&board) {
+        if board.densify(&mut rng, &short) {
             failures = 0;
         } else {
             failures += 1;
@@ -327,6 +376,13 @@ fn candidate(level: u16, seed: u64) -> Option<TraceLevel> {
     })
 }
 
+/// How far a candidate is from what we want: its chain depth near the target, and
+/// few lines free at the start (a point per 5% free).
+fn miss(c: &TraceLevel, target: f64) -> f64 {
+    let free = c.free_at_start as f64 / c.data.lines.len().max(1) as f64;
+    (c.depth as f64 - target).abs() + free * 20.0
+}
+
 pub fn generate(master: &str, max_level: u16) -> Vec<TraceLevel> {
     (1..=max_level)
         .into_par_iter()
@@ -337,11 +393,7 @@ pub fn generate(master: &str, max_level: u16) -> Vec<TraceLevel> {
                     let seed = derive_seed(master, &["to", &level.to_string(), &i.to_string()]);
                     candidate(level, seed)
                 })
-                .min_by(|a, b| {
-                    (a.depth as f64 - target)
-                        .abs()
-                        .total_cmp(&(b.depth as f64 - target).abs())
-                })
+                .min_by(|a, b| miss(a, target).total_cmp(&miss(b, target)))
                 .unwrap_or_else(|| panic!("traceout level {level}: no valid candidate"));
             eprintln!(
                 "  to level {level}: {}x{} {} lines, depth {} (target {target:.1}), {} free at start{}",

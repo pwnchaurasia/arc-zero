@@ -6,6 +6,11 @@ the newest is at the top.
 ## Unreleased
 
 ### Development
+- CI is faster: the browser engine, the server engine and the level generator are each
+  built once, in parallel, and the test jobs reuse them instead of compiling Rust again;
+  wasm-pack is downloaded prebuilt; e2e plays 10 levels per game (generated in seconds)
+  and no longer waits for the lint and unit-test jobs; the 100-level speed check runs its
+  three seeds side by side.
 - `make local-up` runs an always-on copy of the arcade in Docker on port 5173 for
   friends through ngrok, with its own database; `make dev` moved to port 5174.
 

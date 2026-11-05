@@ -18,11 +18,18 @@ from arc_api.state import AppState
 
 log = logging.getLogger("arc_api.analytics")
 
+# Long enough to outlive the UTC day the key names.
+VISIT_KEY_TTL = 2 * 24 * 3600
+
+
+def who_hash(pepper: str, owner: str) -> str:
+    """A stable, keyed, one-way id: without the pepper it can't be linked to anyone."""
+    key = b"analytics:" + pepper.encode()
+    return hmac.new(key, owner.encode(), hashlib.sha256).hexdigest()[:16]
+
 
 def who(state: AppState, principal: Principal) -> str:
-    """A stable, keyed, one-way id: counts distinct players without identifying them."""
-    key = b"analytics:" + state.settings.recovery_pepper.get_secret_value().encode()
-    return hmac.new(key, principal.owner.encode(), hashlib.sha256).hexdigest()[:16]
+    return who_hash(state.settings.recovery_pepper.get_secret_value(), principal.owner)
 
 
 async def record(
@@ -61,3 +68,17 @@ async def record(
     except Exception:  # analytics must never fail a game request
         log.warning("could not record %s event", kind, exc_info=True)
         await db.rollback()
+
+
+async def record_visit(db: AsyncSession, state: AppState, principal: Principal) -> None:
+    """Records that the app was opened, once per player per UTC day: the client asks for
+    `/me` often, and a visit with no `start` after it means they looked but didn't play."""
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    key = f"analytics:visit:{today}:{who(state, principal)}"
+    try:
+        first = await state.redis.set(key, "1", nx=True, ex=VISIT_KEY_TTL)
+    except Exception:  # analytics must never fail a game request
+        log.warning("could not check today's visit", exc_info=True)
+        return
+    if first:
+        await record(db, state, principal, "visit")

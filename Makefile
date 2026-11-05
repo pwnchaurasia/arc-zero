@@ -69,6 +69,9 @@ local-logs: ## Follow the local arcade's API and web logs
 local-import: services ## Copy your dev database and Redis into the local arcade (replaces its data)
 	tools/local_import.sh
 
+local-players: ## Who plays what in the local arcade: plays, clears and minutes, by name
+	@$(LOCAL) exec -T api python -m arc_api.player_report
+
 # ------------------------------------------------------------------ run
 
 dev: services ## Play locally: API + web in one terminal, open http://localhost:5174 (Ctrl+C stops)

@@ -33,6 +33,11 @@ const INTRO_BALLS: f64 = 40.0;
 /// Extra starting balls from level 5 on (decision 2026-11-03), layouts unchanged.
 const BONUS_BALLS_FROM: u16 = 5;
 const BONUS_BALLS: u16 = 10;
+/// From this level the player starts with a set number of balls, 5 more each level, up to
+/// MAX_BALLS at level 98 (decision 2026-11-05: too many blocks, too few balls).
+const BALL_RAMP_FROM: u16 = 17;
+const BALL_RAMP_START: u16 = 95;
+const BALL_RAMP_STEP: u16 = 5;
 const MAX_ATTEMPTS: u32 = 16;
 /// Balls added after every two layouts the bot could not finish.
 const BALLS_PER_RETRY: u16 = 8;
@@ -60,6 +65,18 @@ pub struct BbLevel {
     pub bot_turns: u16,
     pub bot_closest: u8,
     pub difficulty: f64,
+}
+
+/// The balls a player starts with on a layout chosen with `chosen` balls.
+fn player_balls(level: u16, chosen: u16) -> u16 {
+    let balls = if level >= BALL_RAMP_FROM {
+        chosen.max(BALL_RAMP_START + BALL_RAMP_STEP * (level - BALL_RAMP_FROM))
+    } else if level >= BONUS_BALLS_FROM {
+        chosen + BONUS_BALLS
+    } else {
+        chosen
+    };
+    balls.min(MAX_BALLS)
 }
 
 fn lerp(a: f64, b: f64, t: f64) -> f64 {
@@ -337,26 +354,26 @@ fn build_level(master: &str, level: u16) -> BbLevel {
             );
             continue;
         }
-        // The layout is chosen exactly as before; from level 5 the player then starts with
-        // extra balls, and the bot must still win with them.
-        let (script, run) = if level >= BONUS_BALLS_FROM {
-            let mut bonus = script;
-            bonus.start_balls = bonus.start_balls.saturating_add(BONUS_BALLS).min(MAX_BALLS);
-            match play_level(&bonus, BOT_AIMS) {
-                Ok(again) if again.won => (bonus, again),
-                _ => continue,
-            }
-        } else {
-            (script, run)
-        };
-        // Same blocks and balls, with today's power-ups; the bot must still win.
+        // The layout is chosen exactly as before; the player then gets their balls and
+        // today's power-ups (same blocks). The bot must still win; the old power-ups are
+        // the fallback. Levels with hundreds of balls are slow to play, so try these first.
+        let balls = player_balls(level, script.start_balls);
         let mut current = build_script(settings_level, seed, extra_balls, Powers::Current);
-        current.start_balls = script.start_balls;
+        current.start_balls = balls;
         let (script, run) = match play_level(&current, BOT_AIMS) {
             Ok(again) if again.won => (current, again),
             _ => {
-                eprintln!("  bb {level:>3}: bot lost with the new power-ups; keeping the old ones");
-                (script, run)
+                let mut old = script;
+                old.start_balls = balls;
+                match play_level(&old, BOT_AIMS) {
+                    Ok(again) if again.won => {
+                        eprintln!(
+                            "  bb {level:>3}: bot lost with the new power-ups; keeping the old ones"
+                        );
+                        (old, again)
+                    }
+                    _ => continue,
+                }
             }
         };
         let total_hp = script.total_hp();
@@ -398,4 +415,20 @@ pub fn generate(master: &str, max_level: u16) -> Vec<BbLevel> {
         );
     }
     levels
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn balls_climb_by_5_a_level_from_95_at_level_17() {
+        assert_eq!(player_balls(4, 45), 45);
+        assert_eq!(player_balls(16, 53), 63);
+        assert_eq!(player_balls(17, 53), 95);
+        assert_eq!(player_balls(18, 54), 100);
+        assert_eq!(player_balls(97, 80), 495);
+        assert_eq!(player_balls(98, 80), MAX_BALLS);
+        assert_eq!(player_balls(100, 86), MAX_BALLS);
+    }
 }

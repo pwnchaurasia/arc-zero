@@ -5,6 +5,10 @@ the newest is at the top.
 
 ## Unreleased
 
+### Brick Blast: many more balls from level 17
+- Level 17 now starts with 95 balls (was about 63), and each level after adds 5, up to the
+  limit of 500 at level 98.
+
 ### Analytics: plays and time by player name
 - `make local-players` (or `python -m arc_api.player_report` in the API container) lists
   each saved player's games, plays, clears, minutes and last visit. Guests stay anonymous.

@@ -33,11 +33,9 @@ const INTRO_BALLS: f64 = 40.0;
 /// Extra starting balls from level 5 on (decision 2026-11-03), layouts unchanged.
 const BONUS_BALLS_FROM: u16 = 5;
 const BONUS_BALLS: u16 = 10;
-/// From this level the player starts with a set number of balls, 5 more each level, up to
-/// MAX_BALLS at level 98 (decision 2026-11-05: too many blocks, too few balls).
-const BALL_RAMP_FROM: u16 = 17;
-const BALL_RAMP_START: u16 = 95;
-const BALL_RAMP_STEP: u16 = 5;
+/// From this level the player starts with a set number of balls (decision 2026-11-06: too
+/// many blocks, too few balls), and boosts stop at x2 (`soften_boosts`).
+const BALL_TABLE_FROM: u16 = 17;
 const MAX_ATTEMPTS: u32 = 16;
 /// Balls added after every two layouts the bot could not finish.
 const BALLS_PER_RETRY: u16 = 8;
@@ -69,14 +67,36 @@ pub struct BbLevel {
 
 /// The balls a player starts with on a layout chosen with `chosen` balls.
 fn player_balls(level: u16, chosen: u16) -> u16 {
-    let balls = if level >= BALL_RAMP_FROM {
-        chosen.max(BALL_RAMP_START + BALL_RAMP_STEP * (level - BALL_RAMP_FROM))
-    } else if level >= BONUS_BALLS_FROM {
-        chosen + BONUS_BALLS
-    } else {
-        chosen
+    let balls = match level {
+        0..BONUS_BALLS_FROM => chosen,
+        BONUS_BALLS_FROM..BALL_TABLE_FROM => chosen + BONUS_BALLS,
+        BALL_TABLE_FROM..=20 => chosen.max(90),
+        21..=30 => chosen.max(100),
+        31..=40 => chosen.max(110),
+        41..=50 => chosen.max(120),
+        51..=70 => chosen.max(130),
+        71..=90 => chosen.max(140),
+        _ => chosen.max(150),
     };
     balls.min(MAX_BALLS)
+}
+
+/// Boosts multiply a start count that is now much higher, so x3 turns into +3 balls: fewer
+/// boosts, and none that clears the board in one shot. Blocks stay where they are.
+fn soften_boosts(script: &mut LevelScript) {
+    for row in script.start_rows.iter_mut().chain(&mut script.row_queue) {
+        for cell in row.iter_mut() {
+            if *cell
+                == (Cell::Power {
+                    kind: PowerKind::Boost3,
+                })
+            {
+                *cell = Cell::Power {
+                    kind: PowerKind::PlusBalls3,
+                };
+            }
+        }
+    }
 }
 
 fn lerp(a: f64, b: f64, t: f64) -> f64 {
@@ -360,11 +380,17 @@ fn build_level(master: &str, level: u16) -> BbLevel {
         let balls = player_balls(level, script.start_balls);
         let mut current = build_script(settings_level, seed, extra_balls, Powers::Current);
         current.start_balls = balls;
+        if level >= BALL_TABLE_FROM {
+            soften_boosts(&mut current);
+        }
         let (script, run) = match play_level(&current, BOT_AIMS) {
             Ok(again) if again.won => (current, again),
             _ => {
                 let mut old = script;
                 old.start_balls = balls;
+                if level >= BALL_TABLE_FROM {
+                    soften_boosts(&mut old);
+                }
                 match play_level(&old, BOT_AIMS) {
                     Ok(again) if again.won => {
                         eprintln!(
@@ -422,13 +448,53 @@ mod tests {
     use super::*;
 
     #[test]
-    fn balls_climb_by_5_a_level_from_95_at_level_17() {
+    fn balls_follow_the_table_from_level_17() {
         assert_eq!(player_balls(4, 45), 45);
         assert_eq!(player_balls(16, 53), 63);
-        assert_eq!(player_balls(17, 53), 95);
-        assert_eq!(player_balls(18, 54), 100);
-        assert_eq!(player_balls(97, 80), 495);
-        assert_eq!(player_balls(98, 80), MAX_BALLS);
-        assert_eq!(player_balls(100, 86), MAX_BALLS);
+        for (level, balls) in [
+            (17, 90),
+            (20, 90),
+            (21, 100),
+            (30, 100),
+            (31, 110),
+            (40, 110),
+            (41, 120),
+            (50, 120),
+            (51, 130),
+            (70, 130),
+            (71, 140),
+            (90, 140),
+            (91, 150),
+            (100, 150),
+        ] {
+            assert_eq!(player_balls(level, 60), balls, "level {level}");
+        }
+    }
+
+    #[test]
+    fn softened_boosts_keep_every_block() {
+        let triple = Cell::Power {
+            kind: PowerKind::Boost3,
+        };
+        let cells = |l: &LevelScript| -> Vec<Cell> {
+            l.start_rows
+                .iter()
+                .chain(&l.row_queue)
+                .flatten()
+                .copied()
+                .collect()
+        };
+        let original = (0..200)
+            .map(|seed| build_script(60, seed, 0, Powers::Current))
+            .find(|l| cells(l).contains(&triple))
+            .expect("a level with a x3 boost");
+        let mut softened = original.clone();
+        soften_boosts(&mut softened);
+        assert!(!cells(&softened).contains(&triple));
+        for (before, after) in cells(&original).iter().zip(cells(&softened)) {
+            if *before != triple {
+                assert_eq!(*before, after);
+            }
+        }
     }
 }

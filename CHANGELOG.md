@@ -5,9 +5,11 @@ the newest is at the top.
 
 ## Unreleased
 
-### Brick Blast: many more balls from level 17
-- Level 17 now starts with 95 balls (was about 63), and each level after adds 5, up to the
-  limit of 500 at level 98.
+### Brick Blast: more balls from level 17, gentler boosts
+- Starting balls from level 17: 90 up to level 20, 100 to 30, 110 to 40, 120 to 50, 130 to
+  70, 140 to 90 and 150 to 100 (level 100 had 86).
+- From level 17 there are no more x3 boosts: they became +3 balls, so a single shot can't
+  clear the board. x2 boosts stay.
 
 ### Analytics: plays and time by player name
 - `make local-players` (or `python -m arc_api.player_report` in the API container) lists

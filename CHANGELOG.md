@@ -8,6 +8,9 @@ the newest is at the top.
 ### Brick Blast: more balls from level 17, gentler boosts
 - Starting balls from level 17: 90 up to level 20, 100 to 30, 110 to 40, 120 to 50, 130 to
   70, 140 to 90 and 150 to 100 (level 100 had 86).
+- Every level from 4 is then tuned with simulated players so it takes a few attempts:
+  balls are added where too few clear it (up to 40) and, from level 17, removed where all
+  of them do (up to 20).
 - From level 17 there are no more x3 boosts: they became +3 balls, so a single shot can't
   clear the board. x2 boosts stay.
 

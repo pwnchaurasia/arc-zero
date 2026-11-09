@@ -4,13 +4,15 @@
 //! bot. Only levels the bot clears with room to spare are kept; if a level is
 //! too hard, block HP is scaled down until it becomes finishable.
 
-use arc_engine::brick_blast::bot::play_level;
+use arc_engine::brick_blast::bot::{best_aim, play_level};
 use arc_engine::brick_blast::{
-    Cell, LevelScript, PowerKind, Row, Shape, COLS, EMPTY_ROW, MAX_BALLS, MAX_HP, MAX_SCRIPT_ROWS,
+    play_turn, Cell, LevelScript, PowerKind, Row, Shape, State, Status, AIM_MAX, AIM_MIN, COLS,
+    EMPTY_ROW, MAX_BALLS, MAX_HP, MAX_SCRIPT_ROWS,
 };
 use arc_engine::rng::Rng;
 use rayon::prelude::*;
 use serde::Serialize;
+use std::cmp::Ordering;
 use std::time::Instant;
 
 use crate::derive_seed;
@@ -33,6 +35,22 @@ const INTRO_BALLS: f64 = 40.0;
 /// Extra starting balls from level 5 on (decision 2026-11-03), layouts unchanged.
 const BONUS_BALLS_FROM: u16 = 5;
 const BONUS_BALLS: u16 = 10;
+/// From this level the player starts with a set number of balls (decision 2026-11-06: too
+/// many blocks, too few balls), and boosts stop at x2 (`soften_boosts`).
+const BALL_TABLE_FROM: u16 = 17;
+/// Each level's balls are then tuned with simulated players (decision 2026-11-06): the same
+/// ball count suits some layouts and not others. A level should be challenging but take
+/// only a few attempts, so it should neither stop nearly all of PLAYERS nor let them all
+/// through: fewer than MIN_WINS is too hard, all of them too easy.
+const PLAYERS: u32 = 6;
+const MIN_WINS: u32 = 2;
+/// A simulated player weighs few aims, aims a little off and sometimes misfires.
+const PLAYER_AIMS: u16 = 9;
+const PLAYER_AIM_ERROR: i64 = 35;
+const BALL_TUNE_STEP: u16 = 10;
+const MAX_BALLS_ADDED: u16 = 40;
+/// Trivial levels lose balls only where the table gives plenty.
+const MAX_BALLS_REMOVED: u16 = 20;
 const MAX_ATTEMPTS: u32 = 16;
 /// Balls added after every two layouts the bot could not finish.
 const BALLS_PER_RETRY: u16 = 8;
@@ -60,6 +78,128 @@ pub struct BbLevel {
     pub bot_turns: u16,
     pub bot_closest: u8,
     pub difficulty: f64,
+}
+
+/// The balls a player starts with on a layout chosen with `chosen` balls.
+fn player_balls(level: u16, chosen: u16) -> u16 {
+    let balls = match level {
+        0..BONUS_BALLS_FROM => chosen,
+        BONUS_BALLS_FROM..BALL_TABLE_FROM => chosen + BONUS_BALLS,
+        BALL_TABLE_FROM..=20 => chosen.max(90),
+        21..=30 => chosen.max(100),
+        31..=40 => chosen.max(110),
+        41..=50 => chosen.max(120),
+        51..=70 => chosen.max(130),
+        71..=90 => chosen.max(140),
+        _ => chosen.max(150),
+    };
+    balls.min(MAX_BALLS)
+}
+
+/// Boosts multiply a start count that is now much higher, so x3 turns into +3 balls: fewer
+/// boosts, and none that clears the board in one shot. Blocks stay where they are.
+fn soften_boosts(script: &mut LevelScript) {
+    for row in script.start_rows.iter_mut().chain(&mut script.row_queue) {
+        for cell in row.iter_mut() {
+            if *cell
+                == (Cell::Power {
+                    kind: PowerKind::Boost3,
+                })
+            {
+                *cell = Cell::Power {
+                    kind: PowerKind::PlusBalls3,
+                };
+            }
+        }
+    }
+}
+
+/// Whether one simulated person clears the level.
+fn player_wins(script: &LevelScript, seed: u64) -> bool {
+    let mut rng = Rng::new(seed);
+    let Ok(mut state) = State::new(script) else {
+        return false;
+    };
+    while state.status == Status::Playing {
+        let Some((best, _)) = best_aim(&state, PLAYER_AIMS) else {
+            break;
+        };
+        let aim = if rng.chance(1, 20) {
+            rng.range(i64::from(AIM_MIN), i64::from(AIM_MAX))
+        } else {
+            i64::from(best) + rng.range(-PLAYER_AIM_ERROR, PLAYER_AIM_ERROR)
+        };
+        let aim = aim.clamp(i64::from(AIM_MIN), i64::from(AIM_MAX)) as u16;
+        match play_turn(&state, aim) {
+            Ok((next, _)) => state = next,
+            Err(_) => break,
+        }
+    }
+    state.status == Status::Won
+}
+
+/// How the level compares with the target: `Less` is too hard, `Greater` too easy. Stops
+/// as soon as the answer is known, because these plays are most of the generation time.
+fn player_verdict(script: &LevelScript, seed: u64) -> Ordering {
+    let (mut wins, mut losses) = (0, 0);
+    for k in 0..PLAYERS {
+        if player_wins(script, seed ^ (u64::from(k) + 1)) {
+            wins += 1;
+        } else {
+            losses += 1;
+        }
+        if wins >= MIN_WINS && losses > 0 {
+            return Ordering::Equal;
+        }
+        if losses > PLAYERS - MIN_WINS {
+            return Ordering::Less;
+        }
+    }
+    if wins == PLAYERS {
+        Ordering::Greater
+    } else {
+        Ordering::Equal
+    }
+}
+
+/// Adds balls to a level too few players clear, and from level 17 removes them from one
+/// they all clear, within limits.
+fn tune_balls(script: &mut LevelScript, level: u16, seed: u64) {
+    if level <= INTRO_LEVELS {
+        return;
+    }
+    let ceiling = script.start_balls.saturating_add(MAX_BALLS_ADDED);
+    let floor = if level >= BALL_TABLE_FROM {
+        script.start_balls.saturating_sub(MAX_BALLS_REMOVED).max(1)
+    } else {
+        script.start_balls
+    };
+    match player_verdict(script, seed) {
+        Ordering::Equal => {}
+        Ordering::Less => {
+            while script.start_balls < ceiling {
+                script.start_balls += BALL_TUNE_STEP;
+                if player_verdict(script, seed) != Ordering::Less {
+                    break;
+                }
+            }
+        }
+        Ordering::Greater => {
+            while script.start_balls > floor {
+                let before = script.start_balls;
+                script.start_balls = before.saturating_sub(BALL_TUNE_STEP).max(floor);
+                match player_verdict(script, seed) {
+                    Ordering::Greater => {}
+                    Ordering::Equal => break,
+                    // Too easy to too hard in one step: easy is the better mistake.
+                    Ordering::Less => {
+                        script.start_balls = before;
+                        break;
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn lerp(a: f64, b: f64, t: f64) -> f64 {
@@ -337,26 +477,34 @@ fn build_level(master: &str, level: u16) -> BbLevel {
             );
             continue;
         }
-        // The layout is chosen exactly as before; from level 5 the player then starts with
-        // extra balls, and the bot must still win with them.
-        let (script, run) = if level >= BONUS_BALLS_FROM {
-            let mut bonus = script;
-            bonus.start_balls = bonus.start_balls.saturating_add(BONUS_BALLS).min(MAX_BALLS);
-            match play_level(&bonus, BOT_AIMS) {
-                Ok(again) if again.won => (bonus, again),
-                _ => continue,
-            }
-        } else {
-            (script, run)
-        };
-        // Same blocks and balls, with today's power-ups; the bot must still win.
+        // The layout is chosen exactly as before; the player then gets their balls and
+        // today's power-ups (same blocks). The bot must still win; the old power-ups are
+        // the fallback. Levels with hundreds of balls are slow to play, so try these first.
+        let balls = player_balls(level, script.start_balls);
         let mut current = build_script(settings_level, seed, extra_balls, Powers::Current);
-        current.start_balls = script.start_balls;
+        current.start_balls = balls;
+        if level >= BALL_TABLE_FROM {
+            soften_boosts(&mut current);
+        }
+        tune_balls(&mut current, level, seed);
+        let balls = current.start_balls;
         let (script, run) = match play_level(&current, BOT_AIMS) {
             Ok(again) if again.won => (current, again),
             _ => {
-                eprintln!("  bb {level:>3}: bot lost with the new power-ups; keeping the old ones");
-                (script, run)
+                let mut old = script;
+                old.start_balls = balls;
+                if level >= BALL_TABLE_FROM {
+                    soften_boosts(&mut old);
+                }
+                match play_level(&old, BOT_AIMS) {
+                    Ok(again) if again.won => {
+                        eprintln!(
+                            "  bb {level:>3}: bot lost with the new power-ups; keeping the old ones"
+                        );
+                        (old, again)
+                    }
+                    _ => continue,
+                }
             }
         };
         let total_hp = script.total_hp();
@@ -398,4 +546,95 @@ pub fn generate(master: &str, max_level: u16) -> Vec<BbLevel> {
         );
     }
     levels
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn balls_follow_the_table_from_level_17() {
+        assert_eq!(player_balls(4, 45), 45);
+        assert_eq!(player_balls(16, 53), 63);
+        for (level, balls) in [
+            (17, 90),
+            (20, 90),
+            (21, 100),
+            (30, 100),
+            (31, 110),
+            (40, 110),
+            (41, 120),
+            (50, 120),
+            (51, 130),
+            (70, 130),
+            (71, 140),
+            (90, 140),
+            (91, 150),
+            (100, 150),
+        ] {
+            assert_eq!(player_balls(level, 60), balls, "level {level}");
+        }
+    }
+
+    #[test]
+    fn tuning_helps_hopeless_levels_and_trims_trivial_ones() {
+        let mut row = EMPTY_ROW;
+        row[4] = Cell::Block {
+            shape: Shape::Square,
+            hp: 1,
+        };
+        let mut easy = LevelScript {
+            start_balls: 100,
+            start_rows: vec![row],
+            row_queue: vec![],
+        };
+        tune_balls(&mut easy, 20, 1);
+        assert_eq!(easy.start_balls, 100 - MAX_BALLS_REMOVED);
+        // Below the table, balls are only ever added.
+        easy.start_balls = 100;
+        tune_balls(&mut easy, 10, 1);
+        assert_eq!(easy.start_balls, 100);
+        // The first levels stay as designed.
+        tune_balls(&mut easy, 3, 1);
+        assert_eq!(easy.start_balls, 100);
+
+        let wall = [Cell::Block {
+            shape: Shape::Square,
+            hp: MAX_HP,
+        }; COLS];
+        let mut hopeless = LevelScript {
+            start_balls: 5,
+            start_rows: vec![wall; 6],
+            row_queue: vec![],
+        };
+        tune_balls(&mut hopeless, 20, 1);
+        assert_eq!(hopeless.start_balls, 5 + MAX_BALLS_ADDED);
+    }
+
+    #[test]
+    fn softened_boosts_keep_every_block() {
+        let triple = Cell::Power {
+            kind: PowerKind::Boost3,
+        };
+        let cells = |l: &LevelScript| -> Vec<Cell> {
+            l.start_rows
+                .iter()
+                .chain(&l.row_queue)
+                .flatten()
+                .copied()
+                .collect()
+        };
+        let original = (0..200)
+            .map(|seed| build_script(60, seed, 0, Powers::Current))
+            .find(|l| cells(l).contains(&triple))
+            .expect("a level with a x3 boost");
+        let mut softened = original.clone();
+        soften_boosts(&mut softened);
+        assert!(!cells(&softened).contains(&triple));
+        for (before, after) in cells(&original).iter().zip(cells(&softened)) {
+            if *before != triple {
+                assert_eq!(*before, after);
+            }
+        }
+    }
 }

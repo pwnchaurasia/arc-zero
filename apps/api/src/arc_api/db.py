@@ -17,6 +17,7 @@ from sqlalchemy import (
     LargeBinary,
     SmallInteger,
     String,
+    Text,
     func,
     text,
 )
@@ -184,6 +185,42 @@ class PlayEvent(Base):
     detail: Mapped[str | None] = mapped_column(String(32))
     # Start to clear / loss / end, in seconds (server clock); null for other events.
     seconds: Mapped[int | None] = mapped_column(Integer)
+
+
+class LogoCheck(Base):
+    """LogoQuest practice log: one row per "Check my code", passed or not.
+
+    Unlike play_events it names saved players (by id), because its purpose is letting a
+    parent follow a child's learning. See DEVELOPMENT.md and `make logo-report`.
+    """
+
+    __tablename__ = "logo_checks"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    day: Mapped[date] = mapped_column(Date, server_default=text("CURRENT_DATE"), nullable=False)
+    player_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE")
+    )
+    who: Mapped[str] = mapped_column(String(16), nullable=False)
+    attempt: Mapped[str] = mapped_column(String(64), nullable=False)
+    level: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    # learn | test
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)
+    passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    accuracy: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    blocks: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    par: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    stars: Mapped[int | None] = mapped_column(SmallInteger)
+    seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    active_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    runs: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    taps: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    hints: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    program: Mapped[str] = mapped_column(Text, nullable=False)
+    flags: Mapped[str] = mapped_column(String(64), nullable=False, default="")
 
 
 def make_engine(url: str, pool_size: int, max_overflow: int) -> AsyncEngine:

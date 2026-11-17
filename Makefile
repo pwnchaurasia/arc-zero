@@ -72,6 +72,10 @@ local-import: services ## Copy your dev database and Redis into the local arcade
 local-players: ## Who plays what in the local arcade: plays, clears and minutes, by name
 	@$(LOCAL) exec -T api python -m arc_api.player_report
 
+logo-report: ## LogoQuest learning, day by day, for a saved player: make logo-report NAME=Aarav [DAYS=14]
+	@test -n "$(NAME)" || { echo "usage: make logo-report NAME=<their saved name> [DAYS=14]"; exit 1; }
+	@$(LOCAL) exec -T api python -m arc_api.logo_report "$(NAME)" $(or $(DAYS),14)
+
 # ------------------------------------------------------------------ run
 
 dev: services ## Play locally: API + web in one terminal, open http://localhost:5174 (Ctrl+C stops)

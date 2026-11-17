@@ -5,6 +5,21 @@ the newest is at the top.
 
 ## Unreleased
 
+### New game: LogoQuest (Logo turtle programming, for ages 8-12)
+- 100 hand-designed levels in 5 chapters, one new idea at a time: Grid Walker (FD, BK,
+  RT/LT 90), Pen & Paint (PU, PD, COLOR), Angle Explorer (45, 60, 120...), Loop Master
+  (REPEAT) and Spirograph Lab (REPEAT inside REPEAT).
+- Every level is a Learn (the target in faint dashes, a tip, a protractor when turning)
+  and a Test (a new shape from a reference card, with a clock). Passing the Test opens
+  the next Learn. A Sandbox draws anything with every chip.
+- Programs are built from chips only (no typing or pasting); the real Logo text shows as
+  you build, and the running block lights up as the turtle draws. The server runs every
+  program and judges the drawing, so no level can be passed without the right program.
+- Coins: 5 per Learn, the usual level band per Test. Hint (15): shows the next missing line.
+- Every check is logged; `make logo-report NAME=...` shows a child's learning day by
+  day, every Test passed with tries and time, where they are stuck, and anything that
+  looks too fast. Guests stop after Learn 2: save progress with a name to be tracked.
+
 ### New game: TacShift (tic-tac-toe in four modes)
 - Infinity (signature): each player keeps only 3 marks; a 4th makes your oldest fade, and
   the mark about to fade is shown. Classic 3x3. Ultimate: nine boards, where you play

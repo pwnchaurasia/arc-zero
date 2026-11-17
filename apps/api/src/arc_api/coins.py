@@ -37,6 +37,7 @@ PRICES: Final[dict[str, dict[str, int]]] = {
     "traceout": {"continue": 20, "hint": 30},
     "cipher9": {"hint": 25, "auto_notes": 20, "clear_wrong": 15},
     "tacshift": {"undo": 15, "radar": 25},
+    "logoquest": {"hint": 15},
     "dead-bridge": {
         "airstrike": 60,
         "freeze": 50,

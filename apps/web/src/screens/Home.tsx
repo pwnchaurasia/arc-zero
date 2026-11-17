@@ -59,6 +59,12 @@ export const GAMES: { id: GameId; name: string; tagline: string; image?: string 
     tagline: "Tic-tac-toe that shifts: vanishing marks, nine boards, or a friend.",
     image: "/games/tacshift.webp",
   },
+  {
+    id: "logoquest",
+    name: "LogoQuest",
+    tagline: "Program a turtle with FD, RT and REPEAT. Draw your way to coding.",
+    image: "/games/logoquest.webp",
+  },
 ];
 
 export function Home({
@@ -157,7 +163,12 @@ export function Home({
               <div className="flex flex-1 flex-col p-3">
                 <h2 className="text-base font-extrabold leading-tight sm:text-lg">{g.name}</h2>
                 <p className="mt-1 line-clamp-2 text-xs text-muted">{g.tagline}</p>
-                {g.id === "tacshift" ? (
+                {g.id === "logoquest" ? (
+                  <p className="mt-auto pt-3 text-xs text-muted">
+                    {Math.ceil(Object.keys(progress?.stars ?? {}).length / 2)}/{(progress?.level_count ?? 200) / 2} lessons ·
+                    Learn and Test
+                  </p>
+                ) : g.id === "tacshift" ? (
                   <p className="mt-auto pt-3 text-xs text-muted">Infinity · Classic · Ultimate · 2 players</p>
                 ) : (
                 <div className="mt-auto pt-3">

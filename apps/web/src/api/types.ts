@@ -6,7 +6,8 @@ export type GameId =
   | "traceout"
   | "gridsnap"
   | "cipher9"
-  | "tacshift";
+  | "tacshift"
+  | "logoquest";
 
 export interface GameProgress {
   unlocked_level: number;
@@ -468,4 +469,64 @@ export interface TsAssistOut {
 export interface TsProgress {
   tiers: { mode: TsMode; tier: TsTier; coins: number; earned: boolean }[];
   prices: Record<TsAssist, number>;
+}
+
+export interface LqTools {
+  chips: ("fd" | "bk" | "rt" | "lt" | "pu" | "pd" | "color" | "repeat")[];
+  angles: number[];
+  /** Any angle can be typed on the keypad (from chapter 3). */
+  any_angle: boolean;
+  /** How deep REPEATs may go (0: no REPEAT yet). */
+  depth: number;
+}
+
+export interface LqStart {
+  attempt_id: string;
+  stage: number;
+  data: {
+    level: number;
+    kind: "learn" | "test";
+    chapter: number;
+    chapter_name: string;
+    title: string;
+    tip: string;
+    /** [[x1, y1, x2, y2, colour], ...] in thousandths of a board unit. */
+    target: (number | string)[][];
+    facts: string[];
+    par: number;
+    tools: LqTools;
+  };
+  prices: { hint: number };
+  reward: number;
+  coins: number;
+}
+
+export interface LqCheck extends LevelWin {
+  passed: boolean;
+  accuracy: number;
+  coverage: number;
+  precision: number;
+  blocks: number;
+  par: number;
+  seconds: number;
+  best_stars: number;
+  first_clear: boolean;
+  coins_earned: number;
+  streak_bonus: number;
+  coins: number;
+}
+
+export interface LqHint {
+  line: [number, number, number, number];
+  length: number;
+  coins: number;
+  spent: number;
+}
+
+export interface LqMapLevel {
+  level: number;
+  chapter: number;
+  chapter_name: string;
+  learn: string;
+  test: string;
 }

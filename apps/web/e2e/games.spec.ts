@@ -384,3 +384,42 @@ test("a guest holds TacShift's unbeatable AI to a draw and earns its coins", asy
   await expect(page.getByText("First draw against Unbeatable: +20 coins")).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("a guest learns FD in LogoQuest, then passes its Test", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/");
+  await page.getByRole("heading", { name: "LogoQuest" }).click();
+  const started = page.waitForResponse((r) => r.url().includes("/logoquest/stages/1/start"));
+  await page.getByRole("button", { name: "Learn: First steps" }).click();
+  const start = (await (await started).json()) as { data: { kind: string } };
+  expect(start.data.kind).toBe("learn");
+  expect(JSON.stringify(start)).not.toContain("FD 100");
+
+  // Build FD 100 from chips, watch it run, then check it.
+  await page.getByRole("button", { name: /^FD/ }).click();
+  await page.getByRole("button", { name: "100", exact: true }).click();
+  await expect(page.getByLabel("Your program")).toContainText("FD 100");
+  await page.getByRole("button", { name: "▶ Run" }).click();
+  await page.waitForTimeout(1200);
+  const checked = page.waitForResponse((r) => r.url().includes("/stages/1/check"));
+  await page.getByRole("button", { name: "✔ Check" }).click();
+  const learn = (await (await checked).json()) as { passed: boolean; coins_earned: number; stars: number };
+  expect([learn.passed, learn.coins_earned, learn.stars]).toEqual([true, 5, 3]);
+  await expect(page.getByRole("heading", { name: /You did it/ })).toBeVisible();
+
+  // The Test: no guide on the board, a reference card instead.
+  const testStarted = page.waitForResponse((r) => r.url().includes("/logoquest/stages/2/start"));
+  await page.getByRole("button", { name: "Take the Test →" }).click();
+  await testStarted;
+  await expect(page.getByText("Lengths: 75")).toBeVisible();
+  await page.getByRole("button", { name: /^FD/ }).click();
+  await page.getByRole("button", { name: "75", exact: true }).click();
+  await page.getByRole("button", { name: "▶ Run" }).click();
+  await page.waitForTimeout(800);
+  const testChecked = page.waitForResponse((r) => r.url().includes("/stages/2/check"));
+  await page.getByRole("button", { name: "✔ Check" }).click();
+  const test = (await (await testChecked).json()) as { passed: boolean; unlocked_level: number };
+  expect([test.passed, test.unlocked_level]).toEqual([true, 3]);
+  await expect(page.getByRole("heading", { name: /Test passed/ })).toBeVisible();
+  expect(errors).toEqual([]);
+});

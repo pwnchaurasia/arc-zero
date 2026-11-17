@@ -14,6 +14,7 @@ const GAME_NAMES: Record<string, string> = {
   traceout: "TraceOut",
   cipher9: "Cipher9",
   tacshift: "TacShift",
+  logoquest: "LogoQuest",
 };
 
 const ASSIST_NAMES: Record<string, string> = {
@@ -47,6 +48,9 @@ const GAME_ASSIST_NAMES: Record<string, Record<string, string>> = {
   tacshift: {
     undo: "Undo your move and the AI's reply",
     radar: "Radar: show your strongest move",
+  },
+  logoquest: {
+    hint: "Hint: show a line still missing",
   },
 };
 

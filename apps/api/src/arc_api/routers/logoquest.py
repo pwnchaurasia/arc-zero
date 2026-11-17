@@ -166,7 +166,7 @@ def flags_for(*, passed: bool, seconds: int, par: int, runs: int, taps: int, blo
     # Much quicker than tapping out the answer key's chips could take.
     if seconds < 5 + 3 * par:
         out.append("fast")
-    # Checked without ever pressing Run to see what the program draws.
+    # The turtle never drew it: no Run and no live preview of an edit in the app.
     if runs == 0:
         out.append("no_runs")
     # Fewer taps than blocks: the program wasn't built in the app.

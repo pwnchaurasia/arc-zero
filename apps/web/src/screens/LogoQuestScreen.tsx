@@ -41,9 +41,9 @@ const DISTANCES = [10, 20, 25, 30, 40, 50, 60, 75, 80, 100, 120, 150];
 const COUNTS = [2, 3, 4, 5, 6, 8, 9, 10, 12, 18, 36];
 /** Units per second and degrees per second the turtle moves at. */
 const SPEEDS = {
-  slow: { move: 70, turn: 110, label: "Slow" },
-  normal: { move: 180, turn: 320, label: "Normal" },
-  fast: { move: 650, turn: 1400, label: "Fast" },
+  slow: { move: 55, turn: 90, label: "Slow" },
+  normal: { move: 120, turn: 220, label: "Normal" },
+  fast: { move: 500, turn: 1100, label: "Fast" },
 } as const;
 type Speed = keyof typeof SPEEDS;
 const HINT_MS = 2500;
@@ -256,14 +256,26 @@ export function LogoQuestPlay({
   const [wrap, size] = useSize<HTMLDivElement>();
 
   const stats = useRef({ runs: 0, taps: 0, active: 0, started: false });
-  const anim = useRef<{ raf: number; run: RunOut | null; i: number; t: number; last: number; stepOnce: boolean }>({
+  const anim = useRef<{
+    raf: number;
+    run: RunOut | null;
+    i: number;
+    t: number;
+    last: number;
+    stepOnce: boolean;
+    /** A live preview of an edit: no "done" sound. */
+    quiet: boolean;
+  }>({
     raf: 0,
     run: null,
     i: 0,
     t: 0,
     last: 0,
     stepOnce: false,
+    quiet: false,
   });
+  /** The steps last shown on the board, so an edit only animates what it changed. */
+  const shown = useRef<EngineStep[]>([]);
 
   const tools = info?.data.tools ?? SANDBOX_TOOLS;
   const isTest = info?.data.kind === "test";
@@ -409,7 +421,7 @@ export function LogoQuestPlay({
       setRunning(false);
       if (a.i >= run.steps.length) {
         a.run = null;
-        sfx.complete();
+        if (!a.quiet) sfx.complete();
       }
       return;
     }
@@ -430,17 +442,59 @@ export function LogoQuestPlay({
       const compiled = compile();
       if (!compiled) return;
       stats.current.runs += 1;
+      shown.current = compiled.steps;
       a.run = compiled;
       a.i = 0;
       a.t = 0;
       a.stepOnce = once;
     }
+    a.quiet = false;
     cancelAnimationFrame(a.raf);
     a.last = performance.now();
     setRunning(true);
     setHint(null);
     a.raf = requestAnimationFrame(tick);
   };
+
+  // Every edit shows straight away: the turtle draws only what changed, from the first
+  // step that differs; everything before it stays on the board.
+  useEffect(() => {
+    if (!ready) return;
+    let compiled: RunOut;
+    try {
+      compiled = JSON.parse(engine.logoRun(JSON.stringify(program))) as RunOut;
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "That program can't run.");
+      return;
+    }
+    const before = shown.current;
+    const same = (x: EngineStep | undefined, y: EngineStep | undefined) =>
+      !!x && !!y && x.block === y.block && x.x === y.x && x.y === y.y && x.heading === y.heading && x.drew === y.drew && x.color === y.color;
+    let from = 0;
+    while (from < compiled.steps.length && same(before[from], compiled.steps[from])) from++;
+    shown.current = compiled.steps;
+    const a = anim.current;
+    cancelAnimationFrame(a.raf);
+    if (from >= compiled.steps.length) {
+      // Only removed steps (or nothing new): show the result at once.
+      a.run = null;
+      setRunning(false);
+      setFrame(frameAt(compiled, compiled.steps.length, 0));
+      return;
+    }
+    stats.current.runs += 1;
+    a.run = compiled;
+    a.i = from;
+    a.t = 0;
+    a.stepOnce = false;
+    a.quiet = true;
+    a.last = performance.now();
+    setRunning(true);
+    setHint(null);
+    a.raf = requestAnimationFrame(tick);
+    // Runs once per edit; the helpers it uses read the same program.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [program, ready]);
 
   const skipToEnd = () => {
     const compiled = anim.current.run ?? compile();
@@ -449,7 +503,7 @@ export function LogoQuestPlay({
   };
 
   const commit = (next: Block[], nextCursor: Cursor = cursor) => {
-    resetBoard();
+    stopAnimation();
     setHistory((h) => [...h.slice(-99), program]);
     setProgram(next);
     setCursor(nextCursor);
@@ -509,7 +563,7 @@ export function LogoQuestPlay({
   const undo = () => {
     const prev = history[history.length - 1];
     if (!prev) return;
-    resetBoard();
+    stopAnimation();
     setProgram(prev);
     setHistory((h) => h.slice(0, -1));
     setCursor([]);
@@ -758,7 +812,12 @@ export function LogoQuestPlay({
           </button>
         )}
         {sandbox ? (
-          <Button variant="secondary" onClick={resetBoard} className="min-h-12 whitespace-nowrap px-1 text-sm">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              resetBoard();
+              shown.current = [];
+            }} className="min-h-12 whitespace-nowrap px-1 text-sm">
             Wipe board
           </Button>
         ) : (

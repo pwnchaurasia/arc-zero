@@ -8,7 +8,7 @@ log (`logo_checks`), one row per "Check my code", for the saved players with tha
 - Levels tried but not passed yet (where they are stuck).
 
 Flags are reasons to look closer, not proof: `fast` (passed quicker than tapping the
-answer in could take), `no_runs` (never pressed Run before checking), `few_taps` (fewer
+answer in could take), `no_runs` (the turtle never drew it in the app), `few_taps` (fewer
 taps than blocks: not built in the app), and `quick` (under a third of this player's
 usual time for a Test in the same chapter).
 """

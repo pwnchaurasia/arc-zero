@@ -178,7 +178,8 @@ Coin balances and every coin change for saved players are in `wallets` and `coin
 
 Every "Check my code" in LogoQuest, passed or not, is a row in `logo_checks`: the level,
 Learn or Test, accuracy, blocks against par, server-measured seconds since the level was
-opened, and what the app reports (seconds on screen, Run presses, chip taps, hints). Unlike
+opened, and what the app reports (seconds on screen, runs, chip taps, hints). "Runs" counts
+every time the turtle drew: pressing Run, and the live preview after each edit. Unlike
 `play_events` it names saved players (`player_id`), because its purpose is following a
 child's learning. Guests appear by `who` only, so the child should save their progress
 with a name.
@@ -191,7 +192,7 @@ docker compose exec api python -m arc_api.logo_report Aarav 30   # production, i
 It prints minutes practised, levels learned and Tests passed per day; every Test passed
 with tries, time, Run presses, blocks/par, stars and hints; and the levels not passed yet.
 Flags are reasons to look closer, not proof: `fast` (passed quicker than tapping in the
-answer could take), `no_runs` (checked without ever pressing Run), `few_taps` (fewer
+answer could take), `no_runs` (the turtle never drew it in the app), `few_taps` (fewer
 chip taps than blocks: not built in the app) and `quick` (under a third of their usual
 time for a Test in that chapter). Programs are built from chips only; nothing can be
 typed or pasted.

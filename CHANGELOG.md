@@ -13,7 +13,8 @@ the newest is at the top.
   and a Test (a new shape from a reference card, with a clock). Passing the Test opens
   the next Learn. A Sandbox draws anything with every chip.
 - Programs are built from chips only (no typing or pasting); the real Logo text shows as
-  you build, and the running block lights up as the turtle draws. The server runs every
+  you build, and the running block lights up as the turtle draws. Every chip shows its
+  effect straight away: the turtle draws just what changed, no Run needed. The server runs every
   program and judges the drawing, so no level can be passed without the right program.
 - Coins: 5 per Learn, the usual level band per Test. Hint (15): shows the next missing line.
 - Every check is logged; `make logo-report NAME=...` shows a child's learning day by

@@ -191,6 +191,7 @@ def settings(tmp_path_factory: pytest.TempPathFactory) -> Settings:
         gs_min_ms_between_moves=0,
         to_min_ms_per_move=0,
         c9_min_ms_per_move=0,
+        ts_min_ms_between_moves=0,
     )
 
 

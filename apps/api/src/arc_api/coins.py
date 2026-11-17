@@ -36,6 +36,7 @@ PRICES: Final[dict[str, dict[str, int]]] = {
     "gridsnap": {"reshuffle": 40, "bomb": 60},
     "traceout": {"continue": 20, "hint": 30},
     "cipher9": {"hint": 25, "auto_notes": 20, "clear_wrong": 15},
+    "tacshift": {"undo": 15, "radar": 25},
     "dead-bridge": {
         "airstrike": 60,
         "freeze": 50,
@@ -46,6 +47,20 @@ PRICES: Final[dict[str, dict[str, int]]] = {
         "nuke": 150,
     },
 }
+# TacShift has no levels: the first win against each AI tier pays once, (mode, tier, coins).
+# Classic Hard plays perfectly and can't be beaten, so a draw against it is what pays.
+# Each tier is stored as a "level" (its place in this list, from 1) for first-clear records.
+TACSHIFT_REWARDS: Final = (
+    ("infinity", "easy", 10),
+    ("infinity", "medium", 20),
+    ("infinity", "hard", 40),
+    ("classic", "easy", 5),
+    ("classic", "medium", 15),
+    ("classic", "hard", 20),
+    ("ultimate", "easy", 20),
+    ("ultimate", "medium", 35),
+    ("ultimate", "hard", 60),
+)
 # A hint after the free daily ones (Water Sort, Brick Blast).
 HINT_PRICE: Final = 20
 # GridSnap has no levels: a run pays at score milestones, (score, coins), when it ends.
@@ -254,13 +269,15 @@ async def award_clear(
     level: int,
     spent: int,
     assisted: bool,
+    base_reward: int | None = None,
 ) -> ClearOutcome:
-    """Pays a first clear: the level's reward minus coins spent in that attempt
-    (never below 0), plus the streak bonus. Replays pay nothing.
+    """Pays a first clear: the level's reward (or `base_reward`) minus coins spent in that
+    attempt (never below 0), plus the streak bonus. Replays pay nothing.
 
     For players the caller commits, so the payout and the win land together.
     """
-    reward = max(clear_reward(level) - spent, 0)
+    base = clear_reward(level) if base_reward is None else base_reward
+    reward = max(base - spent, 0)
     if who.player_id is not None:
         return await _award_player(db, who, game, level, reward, assisted)
 

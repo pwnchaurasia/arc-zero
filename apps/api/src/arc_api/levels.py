@@ -15,8 +15,16 @@ from typing import Any, Final, Literal
 import arc_engine
 
 GameId = Literal[
-    "water-sort", "brick-blast", "metro-jam", "dead-bridge", "traceout", "gridsnap", "cipher9"
+    "water-sort",
+    "brick-blast",
+    "metro-jam",
+    "dead-bridge",
+    "traceout",
+    "gridsnap",
+    "cipher9",
+    "tacshift",
 ]
+# Games with numbered levels. TacShift has AI tiers instead (coins.TACSHIFT_REWARDS).
 GAME_IDS: Final[tuple[GameId, ...]] = (
     "water-sort",
     "brick-blast",

@@ -22,6 +22,7 @@ export function GameLogo({ game, image }: { game: GameId | "gridsnap"; image?: s
   }
   if (game === "traceout") return <TraceOutArt />;
   if (game === "cipher9") return <Cipher9Art />;
+  if (game === "tacshift") return <TacShiftArt />;
   return game === "water-sort" ? <WaterSortArt /> : <BrickBlastArt />;
 }
 
@@ -30,6 +31,39 @@ const svgProps = {
   className: "aspect-square w-full",
   "aria-hidden": true,
 } as const;
+
+/** A 3x3 board mid-game: X's oldest mark fading (Infinity), O about to block. */
+function TacShiftArt() {
+  const x = (cx: number, cy: number, o = 1) => (
+    <path
+      d={`M${cx - 9} ${cy - 9} L${cx + 9} ${cy + 9} M${cx + 9} ${cy - 9} L${cx - 9} ${cy + 9}`}
+      stroke="#22d3ee"
+      strokeWidth="5.5"
+      strokeLinecap="round"
+      opacity={o}
+    />
+  );
+  const o = (cx: number, cy: number) => <circle cx={cx} cy={cy} r="10" stroke="#fb7185" strokeWidth="5" fill="none" />;
+  return (
+    <svg {...svgProps}>
+      <rect width="100" height="100" fill="#0f1630" />
+      {[38, 62].map((v) => (
+        <g key={v} stroke="#2a3560" strokeWidth="3" strokeLinecap="round">
+          <line x1={v} y1="16" x2={v} y2="84" />
+          <line x1="16" y1={v} x2="84" y2={v} />
+        </g>
+      ))}
+      {/* The gold glow of a winning line in the making, behind the marks. */}
+      <line x1="50" y1="50" x2="73" y2="73" stroke="#facc15" strokeOpacity="0.18" strokeWidth="12" strokeLinecap="round" />
+      {x(27, 27, 0.35)}
+      <rect x="18" y="18" width="18" height="18" rx="4" fill="none" stroke="#e8ecff" strokeOpacity="0.5" strokeDasharray="3 3" />
+      {x(50, 50)}
+      {x(73, 73)}
+      {o(73, 27)}
+      {o(50, 73)}
+    </svg>
+  );
+}
 
 /** One box of a Sudoku: givens in white, the player's numbers in blue, the last cell lit. */
 function Cipher9Art() {

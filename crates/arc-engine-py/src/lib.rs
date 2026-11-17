@@ -7,6 +7,8 @@ use engine::cipher9 as c9;
 use engine::dead_bridge as db;
 use engine::gridsnap as gs;
 use engine::metro_jam as mj;
+use engine::rng::Rng;
+use engine::tacshift::{self as ts, ai as ts_ai};
 use engine::traceout as to;
 use engine::water_sort as ws;
 use pyo3::create_exception;
@@ -531,6 +533,77 @@ fn c9_hint(py: Python<'_>, level_json: String, moves: Vec<(u8, u8)>) -> PyResult
     .map_err(|e: String| err(e))
 }
 
+// ------------------------------------------------------------------- TacShift
+
+fn ts_parse(state_json: &str) -> Result<ts::Game, String> {
+    serde_json::from_str(state_json).map_err(|e| e.to_string())
+}
+
+fn ts_tier(tier: &str) -> Result<ts_ai::Tier, String> {
+    serde_json::from_value(serde_json::Value::String(tier.to_owned())).map_err(|e| e.to_string())
+}
+
+/// A new game: "classic", "infinity" or "ultimate". Returns the state as JSON.
+#[pyfunction]
+fn ts_new(mode: &str) -> PyResult<String> {
+    let mode: ts::Mode =
+        serde_json::from_value(serde_json::Value::String(mode.to_owned())).map_err(err)?;
+    serde_json::to_string(&ts::Game::new(mode)).map_err(err)
+}
+
+/// One move by the player to move.
+#[pyclass(frozen, get_all, module = "arc_engine")]
+struct TsStep {
+    /// The new state as JSON.
+    state: String,
+    /// "playing", "x_won", "o_won" or "draw".
+    status: &'static str,
+    /// Infinity: the mark that left the board.
+    vanished: Option<u8>,
+}
+
+fn ts_status(s: ts::Status) -> &'static str {
+    match s {
+        ts::Status::Playing => "playing",
+        ts::Status::XWon => "x_won",
+        ts::Status::OWon => "o_won",
+        ts::Status::Draw => "draw",
+    }
+}
+
+/// Plays `cell` for the player to move. Raises `EngineError` if it isn't legal.
+#[pyfunction]
+fn ts_play(state_json: &str, cell: u8) -> PyResult<TsStep> {
+    let mut game = ts_parse(state_json).map_err(err)?;
+    let placed = game.play(cell).map_err(err)?;
+    Ok(TsStep {
+        state: serde_json::to_string(&game).map_err(err)?,
+        status: ts_status(game.status),
+        vanished: placed.vanished,
+    })
+}
+
+/// The AI's move ("easy", "medium", "hard") for the player to move, seeded by the server.
+#[pyfunction]
+fn ts_ai_move(py: Python<'_>, state_json: String, tier: String, seed: u64) -> PyResult<Option<u8>> {
+    py.allow_threads(move || {
+        let game = ts_parse(&state_json)?;
+        let tier = ts_tier(&tier)?;
+        Ok(ts_ai::choose(&game, tier, &mut Rng::new(seed)))
+    })
+    .map_err(|e: String| err(e))
+}
+
+/// The strongest move the AI knows for the player to move (the paid radar).
+#[pyfunction]
+fn ts_radar(py: Python<'_>, state_json: String, seed: u64) -> PyResult<Option<u8>> {
+    py.allow_threads(move || {
+        let game = ts_parse(&state_json)?;
+        Ok(ts_ai::radar(&game, &mut Rng::new(seed)))
+    })
+    .map_err(|e: String| err(e))
+}
+
 #[pymodule]
 fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("EngineError", m.py().get_type::<EngineError>())?;
@@ -558,6 +631,11 @@ fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
         .map(|s| s.rows.iter().map(|r| u16::from(*r)).collect())
         .collect();
     m.add("GS_SHAPES", shapes)?;
+    m.add_class::<TsStep>()?;
+    m.add_function(wrap_pyfunction!(ts_new, m)?)?;
+    m.add_function(wrap_pyfunction!(ts_play, m)?)?;
+    m.add_function(wrap_pyfunction!(ts_ai_move, m)?)?;
+    m.add_function(wrap_pyfunction!(ts_radar, m)?)?;
     m.add_class::<C9Replay>()?;
     m.add_class::<C9Hint>()?;
     m.add_function(wrap_pyfunction!(c9_validate, m)?)?;

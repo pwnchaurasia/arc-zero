@@ -332,3 +332,55 @@ test("a guest solves Cipher9 level 1 by tapping cells and numbers", async ({ pag
   await expect(page.getByText(/1 wrong number along the way/)).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+/** Perfect play for X on a 3x3 board (0 empty, 1 X, 2 O): the move with the best outcome. */
+function perfectX(cells: number[]): number {
+  const lines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+  const winner = (b: number[]) =>
+    lines.map(([a = 0, c = 0, d = 0]) => (b[a] && b[a] === b[c] && b[a] === b[d] ? b[a] : 0)).find(Boolean) ?? 0;
+  const score = (b: number[], turn: number): number => {
+    const w = winner(b);
+    if (w) return w === 1 ? 1 : -1;
+    if (b.every(Boolean)) return 0;
+    const results = b.flatMap((v, i) => (v ? [] : [score(b.map((x, j) => (j === i ? turn : x)), 3 - turn)]));
+    return turn === 1 ? Math.max(...results) : Math.min(...results);
+  };
+  let best = -1;
+  let move = cells.indexOf(0);
+  cells.forEach((v, i) => {
+    if (v) return;
+    const s = score(cells.map((x, j) => (j === i ? 1 : x)), 2);
+    if (s > best) {
+      best = s;
+      move = i;
+    }
+  });
+  return move;
+}
+
+test("a guest holds TacShift's unbeatable AI to a draw and earns its coins", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/");
+  await page.getByRole("heading", { name: "TacShift" }).click();
+  await page.getByRole("tab", { name: "Classic" }).click();
+  await page.getByRole("button", { name: /Unbeatable/ }).click();
+  const started = page.waitForResponse((r) => r.url().endsWith("/tacshift/matches"));
+  await page.getByRole("button", { name: "Play as X" }).click();
+  let state = ((await (await started).json()) as { state: { cells: number[]; status: string } }).state;
+  expect(JSON.stringify(state)).not.toContain("seed");
+  while (state.status === "playing") {
+    const cell = perfectX(state.cells);
+    const reply = page.waitForResponse((r) => r.url().includes("/move"));
+    await page.getByRole("button", { name: `Row ${Math.floor(cell / 3) + 1}, column ${(cell % 3) + 1}: empty` }).click();
+    const body = (await (await reply).json()) as { state: { cells: number[]; status: string }; outcome: { result: string; coins_earned: number } | null };
+    state = body.state;
+    if (body.outcome) {
+      expect(body.outcome.result).toBe("draw");
+      expect(body.outcome.coins_earned).toBe(20);
+    }
+    await page.waitForTimeout(400); // the AI's reply lands after its thinking pause
+  }
+  await expect(page.getByRole("heading", { name: "Draw" })).toBeVisible();
+  await expect(page.getByText("First draw against Unbeatable: +20 coins")).toBeVisible();
+  expect(errors).toEqual([]);
+});

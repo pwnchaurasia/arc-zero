@@ -7,6 +7,7 @@ use arc_engine::brick_blast::{self as bb, Cell, Event};
 use arc_engine::dead_bridge as db;
 use arc_engine::gridsnap as gs;
 use arc_engine::metro_jam as mj;
+use arc_engine::tacshift as ts;
 use arc_engine::traceout as to;
 use arc_engine::water_sort as ws;
 use sha2::{Digest, Sha256};
@@ -804,6 +805,53 @@ impl TraceOut {
             to::Status::Won => 1,
             to::Status::Out => 2,
         }
+    }
+}
+
+// ------------------------------------------------------------------- TacShift
+
+/// A TacShift game in the browser: Pass & Play, and showing a move before the server's
+/// reply arrives. Against the AI the server's state is the one that counts.
+#[wasm_bindgen]
+pub struct TacShift {
+    game: ts::Game,
+}
+
+#[wasm_bindgen]
+impl TacShift {
+    /// "classic", "infinity" or "ultimate"; or a state from the server (`from_state`).
+    #[wasm_bindgen(constructor)]
+    pub fn new(mode: &str) -> Result<TacShift, JsError> {
+        let mode: ts::Mode =
+            serde_json::from_value(serde_json::Value::String(mode.to_owned())).map_err(js_err)?;
+        Ok(Self {
+            game: ts::Game::new(mode),
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromState)]
+    pub fn from_state(state_json: &str) -> Result<TacShift, JsError> {
+        Ok(Self {
+            game: serde_json::from_str(state_json).map_err(js_err)?,
+        })
+    }
+
+    /// Plays a cell for the player to move. Returns the mark that vanished (Infinity), or -1.
+    pub fn play(&mut self, cell: u8) -> Result<i32, JsError> {
+        let placed = self.game.play(cell).map_err(js_err)?;
+        Ok(placed.vanished.map_or(-1, i32::from))
+    }
+
+    /// Whether the player to move may take `cell`.
+    #[must_use]
+    pub fn legal(&self, cell: u8) -> bool {
+        self.game.legal_moves().contains(&cell)
+    }
+
+    /// The whole state as JSON (same shape the server sends).
+    #[must_use]
+    pub fn state(&self) -> String {
+        serde_json::to_string(&self.game).unwrap_or_default()
     }
 }
 

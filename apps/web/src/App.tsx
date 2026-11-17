@@ -29,6 +29,9 @@ const TraceOutScreen = lazy(() =>
 const Cipher9Screen = lazy(() =>
   import("./screens/Cipher9Screen").then((m) => ({ default: m.Cipher9Screen })),
 );
+const TacShiftScreen = lazy(() =>
+  import("./screens/TacShiftScreen").then((m) => ({ default: m.TacShiftScreen })),
+);
 const CoinsScreen = lazy(() => import("./screens/CoinsScreen").then((m) => ({ default: m.CoinsScreen })));
 
 function Loading() {
@@ -39,6 +42,7 @@ type Route =
   | { name: "home" }
   | { name: "coins" }
   | { name: "gridsnap" }
+  | { name: "tacshift" }
   | { name: "levels"; game: GameId }
   | { name: "play"; game: GameId; level: number };
 
@@ -94,7 +98,7 @@ export function App() {
     <NavContext value={nav}>
       {route.name === "home" && (
         <Home
-          onOpen={(game) => go({ name: "levels", game })}
+          onOpen={(game) => go(game === "tacshift" ? { name: "tacshift" } : { name: "levels", game })}
           onSettings={() => setModal("settings")}
           onCheckpoint={openCheckpoint}
           onIosInstall={() => setModal("ios-install")}
@@ -112,6 +116,7 @@ export function App() {
       <Suspense fallback={<Loading />}>
       {route.name === "coins" && <CoinsScreen onBack={back} />}
       {route.name === "gridsnap" && <GridSnapScreen onBack={back} onCheckpoint={openCheckpoint} />}
+      {route.name === "tacshift" && <TacShiftScreen onBack={back} />}
       {route.name === "play" && route.game === "gridsnap" && (
         <GridSnapScreen
           key={`gs-${route.level}`}

@@ -5,6 +5,19 @@ the newest is at the top.
 
 ## Unreleased
 
+### New game: TacShift (tic-tac-toe in four modes)
+- Infinity (signature): each player keeps only 3 marks; a 4th makes your oldest fade, and
+  the mark about to fade is shown. Classic 3x3. Ultimate: nine boards, where you play
+  sends your opponent to that board (a closed board means free choice). 2 Players: Pass
+  & Play on one phone in any of the three, with a free undo and a series score.
+- Against the AI the server plays every reply with its own seed, so the AI can't be
+  weakened and wins can't be faked. Easy, Medium, Hard per mode; Classic Hard plays
+  perfectly ("Unbeatable"), so holding it to a draw is what pays.
+- The first win against each tier pays once: Infinity 10/20/40, Classic 5/15 (+20 for a
+  draw against Unbeatable), Ultimate 20/35/60. Assists, each confirmed first: undo your
+  move and the AI's reply (15, also after a loss) and radar, your strongest move (25).
+  Coins spent come off that tier's reward.
+
 ### New game: Cipher9 (Sudoku)
 - 100 levels in four tiers, each graded by the technique it needs: Warmup (naked singles;
   levels 1-3 extra easy), Casual (hidden singles), Tactical (naked pairs and locked

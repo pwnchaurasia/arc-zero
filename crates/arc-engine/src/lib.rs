@@ -17,6 +17,7 @@ pub mod gridsnap;
 pub mod hash;
 pub mod metro_jam;
 pub mod rng;
+pub mod tacshift;
 pub mod traceout;
 pub mod water_sort;
 

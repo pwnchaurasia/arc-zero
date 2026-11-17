@@ -11,6 +11,13 @@ import type {
   C9Move,
   C9Start,
   CoinRules,
+  TsAssist,
+  TsAssistOut,
+  TsMatch,
+  TsMode,
+  TsMoveOut,
+  TsProgress,
+  TsTier,
   DbAssist,
   DbComplete,
   DbStart,
@@ -265,6 +272,15 @@ export const api = {
         attempt_id: attemptId,
         moves,
       }),
+  },
+
+  ts: {
+    progress: () => request<TsProgress>("GET", "/games/tacshift/progress"),
+    start: (mode: TsMode, tier: TsTier) => request<TsMatch>("POST", "/games/tacshift/matches", { mode, tier }),
+    move: (matchId: string, seq: number, cell: number) =>
+      request<TsMoveOut>("POST", `/games/tacshift/matches/${matchId}/move`, { seq, cell }),
+    assist: (matchId: string, seq: number, kind: TsAssist, price: number) =>
+      request<TsAssistOut>("POST", `/games/tacshift/matches/${matchId}/assist`, { seq, kind, price }),
   },
 
   coins: () => request<CoinRules>("GET", "/coins"),

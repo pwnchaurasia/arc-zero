@@ -1,9 +1,19 @@
+import { Fragment } from "react";
+
 import type { GameId } from "../api/types";
 import { useSession } from "../state/session";
 import { CoinChip } from "../ui/CoinChip";
 import { LockIcon } from "../ui/icons";
 import { Stars, TopBar } from "../ui/kit";
 import { GAMES } from "./Home";
+
+/** Cipher9's tiers start at these levels (the generator's table, crates/arc-levelgen/src/sudoku.rs). */
+const CIPHER9_TIERS: Record<number, string> = {
+  1: "Warmup · naked singles",
+  21: "Casual · hidden singles",
+  46: "Tactical · pairs and locked candidates",
+  76: "Master · X-Wing and XY-Wing",
+};
 
 export function LevelSelect({
   game,
@@ -47,7 +57,8 @@ export function LevelSelect({
           const stars = progress?.stars[String(level)] ?? 0;
           const behindGate = gated && me !== null && level > me.guest_max_level;
           const open = !!me?.all_levels_open || (level <= unlocked && !behindGate);
-          return (
+          const tier = game === "cipher9" ? CIPHER9_TIERS[level] : undefined;
+          const tile = (
             <button
               type="button"
               key={level}
@@ -65,6 +76,14 @@ export function LevelSelect({
               {open ? level : <LockIcon size={18} />}
               {open && stars > 0 && <Stars count={stars} size={10} />}
             </button>
+          );
+          return tier ? (
+            <Fragment key={level}>
+              <h2 className="col-span-5 mt-3 text-xs font-bold uppercase tracking-wider text-muted first:mt-0">{tier}</h2>
+              {tile}
+            </Fragment>
+          ) : (
+            tile
           );
         })}
       </div>

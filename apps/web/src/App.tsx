@@ -26,6 +26,9 @@ const GridSnapScreen = lazy(() =>
 const TraceOutScreen = lazy(() =>
   import("./screens/TraceOutScreen").then((m) => ({ default: m.TraceOutScreen })),
 );
+const Cipher9Screen = lazy(() =>
+  import("./screens/Cipher9Screen").then((m) => ({ default: m.Cipher9Screen })),
+);
 const CoinsScreen = lazy(() => import("./screens/CoinsScreen").then((m) => ({ default: m.CoinsScreen })));
 
 function Loading() {
@@ -133,6 +136,15 @@ export function App() {
           level={route.level}
           onBack={back}
           onLevel={(level) => replaceLevel("traceout", level)}
+          onCheckpoint={openCheckpoint}
+        />
+      )}
+      {route.name === "play" && route.game === "cipher9" && (
+        <Cipher9Screen
+          key={`c9-${route.level}`}
+          level={route.level}
+          onBack={back}
+          onLevel={(level) => replaceLevel("cipher9", level)}
           onCheckpoint={openCheckpoint}
         />
       )}

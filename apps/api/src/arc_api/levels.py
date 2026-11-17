@@ -14,7 +14,9 @@ from typing import Any, Final, Literal
 
 import arc_engine
 
-GameId = Literal["water-sort", "brick-blast", "metro-jam", "dead-bridge", "traceout", "gridsnap"]
+GameId = Literal[
+    "water-sort", "brick-blast", "metro-jam", "dead-bridge", "traceout", "gridsnap", "cipher9"
+]
 GAME_IDS: Final[tuple[GameId, ...]] = (
     "water-sort",
     "brick-blast",
@@ -22,6 +24,7 @@ GAME_IDS: Final[tuple[GameId, ...]] = (
     "dead-bridge",
     "traceout",
     "gridsnap",
+    "cipher9",
 )
 SUPPORTED_VERSION = 2
 
@@ -101,6 +104,18 @@ class GsLevel:
 
 
 @dataclass(frozen=True, slots=True)
+class C9Level:
+    level: int
+    # Puzzle and solution. Server-only: the solution must never reach the client.
+    level_json: str
+    # The givens, 81 digits (0 = empty). Public.
+    puzzle: str
+    tier: str
+    # The hardest technique the level needs.
+    technique: str
+
+
+@dataclass(frozen=True, slots=True)
 class Levels:
     water_sort: dict[int, WsLevel]
     brick_blast: dict[int, BbLevel]
@@ -108,6 +123,7 @@ class Levels:
     dead_bridge: dict[int, DbLevel]
     traceout: dict[int, ToLevel]
     gridsnap: dict[int, GsLevel]
+    cipher9: dict[int, C9Level]
 
     def count(self, game: GameId) -> int:
         if game == "water-sort":
@@ -120,6 +136,8 @@ class Levels:
             return len(self.traceout)
         if game == "gridsnap":
             return len(self.gridsnap)
+        if game == "cipher9":
+            return len(self.cipher9)
         return len(self.dead_bridge)
 
 
@@ -196,12 +214,31 @@ def load(directory: Path) -> Levels:
         grid.new_game()  # validates the board through the engine
         gs[grid.level] = grid
 
+    c9: dict[int, C9Level] = {}
+    for item in _read_game(directory, "cipher9"):
+        level_json = json.dumps(item["data"], separators=(",", ":"))
+        arc_engine.c9_validate(level_json)
+        c9[int(item["level"])] = C9Level(
+            level=int(item["level"]),
+            level_json=level_json,
+            puzzle=str(item["data"]["puzzle"]),
+            tier=str(item["tier"]),
+            technique=str(item["technique"]),
+        )
+
     _contiguous(ws, "water_sort")
     _contiguous(bb, "brick_blast")
     _contiguous(mj, "metro_jam")
     _contiguous(db, "dead_bridge")
     _contiguous(to, "traceout")
     _contiguous(gs, "gridsnap")
+    _contiguous(c9, "cipher9")
     return Levels(
-        water_sort=ws, brick_blast=bb, metro_jam=mj, dead_bridge=db, traceout=to, gridsnap=gs
+        water_sort=ws,
+        brick_blast=bb,
+        metro_jam=mj,
+        dead_bridge=db,
+        traceout=to,
+        gridsnap=gs,
+        cipher9=c9,
     )

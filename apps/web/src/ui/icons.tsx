@@ -136,3 +136,43 @@ export const FlagIcon = (p: IconProps) => (
     <path d="M5 21V4M5 4h11l-2 4 2 4H5" />
   </Icon>
 );
+export const EyeIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </Icon>
+);
+export const EyeOffIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.7 17.7 0 0 1-2.4 3.3M6.6 6.6C3.7 8.5 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6" />
+    <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    <path d="M3 3l18 18" />
+  </Icon>
+);
+export const PencilIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z" />
+    <path d="M13.5 6.5l4 4" />
+  </Icon>
+);
+export const EraserIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M7 20h13" />
+    <path d="M4.7 14.3l9.6-9.6a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L11 18H7.4l-2.7-2.9a.6.6 0 0 1 0-.8z" />
+    <path d="M9.5 9.5l5 5" />
+  </Icon>
+);
+/** A 3x3 grid of small marks: pencil notes filled in. */
+export const NotesIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
+    <path d="M8 8h.01M12 8h.01M16 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01" strokeWidth={2.8} />
+  </Icon>
+);
+/** A cell with a cross: clear the wrong numbers. */
+export const ClearWrongIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
+    <path d="M9 9l6 6M15 9l-6 6" />
+  </Icon>
+);

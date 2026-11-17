@@ -3,6 +3,7 @@
 //! CPU-heavy calls release the GIL so FastAPI can run them in a thread pool.
 
 use engine::brick_blast::{self as bb, bot};
+use engine::cipher9 as c9;
 use engine::dead_bridge as db;
 use engine::gridsnap as gs;
 use engine::metro_jam as mj;
@@ -451,6 +452,85 @@ fn to_replay(py: Python<'_>, level_json: String, moves: Vec<(u8, u8)>) -> PyResu
     .map_err(|e: String| err(e))
 }
 
+// ------------------------------------------------------------------- Cipher9
+
+fn c9_level(level_json: &str) -> Result<c9::Level, String> {
+    serde_json::from_str(level_json).map_err(|e| e.to_string())
+}
+
+/// Validates a level (format, a single solution, givens matching it).
+#[pyfunction]
+fn c9_validate(level_json: &str) -> PyResult<()> {
+    c9_level(level_json)
+        .and_then(|l| l.validate().map_err(|e| e.to_string()))
+        .map_err(err)
+}
+
+/// Result of replaying a Cipher9 move list.
+#[pyclass(frozen, get_all, module = "arc_engine")]
+struct C9Replay {
+    /// "playing" or "won".
+    status: &'static str,
+    stars: u8,
+    mistakes: u16,
+    /// Cells holding a number that isn't the solution's.
+    wrong: Vec<usize>,
+}
+
+/// The next number a person could find (see `cipher9::logic::hint`).
+#[pyclass(frozen, get_all, module = "arc_engine")]
+struct C9Hint {
+    cell: usize,
+    digit: u8,
+    /// "naked_single", "hidden_single", ... or None when the hint just reveals a number.
+    technique: Option<&'static str>,
+    /// "row", "column" or "box", for a hidden single.
+    unit_kind: Option<&'static str>,
+    unit: Option<u8>,
+    /// Harder techniques that crossed out candidates first.
+    after: Vec<&'static str>,
+}
+
+fn c9_play(level_json: &str, moves: &[(u8, u8)]) -> Result<c9::Game, String> {
+    let level = c9_level(level_json)?;
+    c9::replay(&level, moves).map_err(|(i, e)| format!("move {i}: {e}"))
+}
+
+/// Replays `moves` (`(cell, digit)`, digit 0 clears). Raises `EngineError` on an illegal move.
+#[pyfunction]
+fn c9_replay(py: Python<'_>, level_json: String, moves: Vec<(u8, u8)>) -> PyResult<C9Replay> {
+    py.allow_threads(move || {
+        let game = c9_play(&level_json, &moves)?;
+        Ok(C9Replay {
+            status: match game.status() {
+                c9::Status::Playing => "playing",
+                c9::Status::Won => "won",
+            },
+            stars: game.stars(),
+            mistakes: game.mistakes(),
+            wrong: game.wrong_cells(),
+        })
+    })
+    .map_err(|e: String| err(e))
+}
+
+/// The next step after `moves`, or None once the grid is full.
+#[pyfunction]
+fn c9_hint(py: Python<'_>, level_json: String, moves: Vec<(u8, u8)>) -> PyResult<Option<C9Hint>> {
+    py.allow_threads(move || {
+        let game = c9_play(&level_json, &moves)?;
+        Ok(game.hint().map(|h| C9Hint {
+            cell: h.cell,
+            digit: h.digit,
+            technique: h.technique.map(|t| t.id()),
+            unit_kind: h.unit.map(|u| u.kind.id()),
+            unit: h.unit.map(|u| u.index),
+            after: h.after.iter().map(|t| t.id()).collect(),
+        }))
+    })
+    .map_err(|e: String| err(e))
+}
+
 #[pymodule]
 fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("EngineError", m.py().get_type::<EngineError>())?;
@@ -478,6 +558,12 @@ fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
         .map(|s| s.rows.iter().map(|r| u16::from(*r)).collect())
         .collect();
     m.add("GS_SHAPES", shapes)?;
+    m.add_class::<C9Replay>()?;
+    m.add_class::<C9Hint>()?;
+    m.add_function(wrap_pyfunction!(c9_validate, m)?)?;
+    m.add_function(wrap_pyfunction!(c9_replay, m)?)?;
+    m.add_function(wrap_pyfunction!(c9_hint, m)?)?;
+    m.add("C9_MAX_MOVES", c9::MAX_MOVES)?;
     m.add_class::<ToReplay>()?;
     m.add_function(wrap_pyfunction!(to_validate, m)?)?;
     m.add_function(wrap_pyfunction!(to_replay, m)?)?;

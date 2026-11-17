@@ -21,6 +21,7 @@ export function GameLogo({ game, image }: { game: GameId | "gridsnap"; image?: s
     );
   }
   if (game === "traceout") return <TraceOutArt />;
+  if (game === "cipher9") return <Cipher9Art />;
   return game === "water-sort" ? <WaterSortArt /> : <BrickBlastArt />;
 }
 
@@ -29,6 +30,61 @@ const svgProps = {
   className: "aspect-square w-full",
   "aria-hidden": true,
 } as const;
+
+/** One box of a Sudoku: givens in white, the player's numbers in blue, the last cell lit. */
+function Cipher9Art() {
+  // Row by row; 0 = empty. The bottom-middle cell is being filled with a 7.
+  const cells: [number, string][] = [
+    [5, "#ffffff"],
+    [3, "#ffffff"],
+    [0, ""],
+    [6, "#7dd3fc"],
+    [0, ""],
+    [9, "#ffffff"],
+    [8, "#7dd3fc"],
+    [0, ""],
+    [1, "#ffffff"],
+  ];
+  return (
+    <svg {...svgProps}>
+      <rect width="100" height="100" fill="#0f1630" />
+      <rect x="14" y="14" width="72" height="72" rx="8" fill="#141b33" stroke="#94a3b8" strokeWidth="2.5" />
+      {/* The empty cell the player is about to fill. */}
+      <rect x="38.5" y="62.5" width="23" height="23" fill="#38bdf8" opacity="0.35" />
+      {[38, 62].map((v) => (
+        <g key={v} stroke="#2a3560" strokeWidth="1.5">
+          <line x1={v} y1="15" x2={v} y2="85" />
+          <line x1="15" y1={v} x2="85" y2={v} />
+        </g>
+      ))}
+      {cells.map(([d, color], i) =>
+        d ? (
+          <text
+            key={i}
+            x={26 + (i % 3) * 24}
+            y={34 + Math.floor(i / 3) * 24}
+            textAnchor="middle"
+            fontFamily="system-ui, sans-serif"
+            fontSize="17"
+            fontWeight="800"
+            fill={color}
+          >
+            {d}
+          </text>
+        ) : null,
+      )}
+      {/* Pencil notes in the empty top-right cell. */}
+      {["2", "4", "7"].map((n, i) => (
+        <text key={n} x={67 + i * 7} y={24} textAnchor="middle" fontFamily="system-ui, sans-serif" fontSize="6.5" fill="#8b95b8">
+          {n}
+        </text>
+      ))}
+      <text x="50" y="80" textAnchor="middle" fontFamily="system-ui, sans-serif" fontSize="17" fontWeight="800" fill="#facc15">
+        7
+      </text>
+    </svg>
+  );
+}
 
 /** Brown lines with arrowheads on paper, one sliding out of the frame. */
 function TraceOutArt() {

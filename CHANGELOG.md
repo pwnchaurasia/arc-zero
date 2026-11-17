@@ -5,6 +5,20 @@ the newest is at the top.
 
 ## Unreleased
 
+### New game: Cipher9 (Sudoku)
+- 100 levels in four tiers, each graded by the technique it needs: Warmup (naked singles;
+  levels 1-3 extra easy), Casual (hidden singles), Tactical (naked pairs and locked
+  candidates), Master (X-Wing and XY-Wing). Every puzzle has exactly one solution.
+- No lives, no game over: a number that repeats in its row, column or box turns red and
+  its twin flashes. The solution never leaves the server; it replays your moves at the
+  end, and wrong numbers along the way decide the stars (none: 3, one or two: 2).
+- Pencil notes, undo, erase, a clock you can hide that pauses in the background, and your
+  board survives closing the app.
+- Assists, each confirmed before paying: a logic hint that explains the next step (25),
+  auto-notes for the attempt (20), clear every wrong number (15, free if none). Coins for
+  a first clear follow the same bands as every other game.
+- Home tile uses the Cipher9 logo image (`public/games/cipher9.webp`, 512 px).
+
 ### Brick Blast: more balls from level 17, gentler boosts
 - Starting balls from level 17: 90 up to level 20, 100 to 30, 110 to 40, 120 to 50, 130 to
   70, 140 to 90 and 150 to 100 (level 100 had 86).

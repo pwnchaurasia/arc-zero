@@ -5,7 +5,7 @@
 //! file is server-only: it must never be committed or served to clients.
 //!
 //! Usage:
-//!   ARC_LEVEL_SEED=<secret> arc-levelgen --out-dir levels [--game all|water-sort|brick-blast|metro-jam|dead-bridge|traceout|gridsnap] [--levels 100]
+//!   ARC_LEVEL_SEED=<secret> arc-levelgen --out-dir levels [--game all|water-sort|brick-blast|metro-jam|dead-bridge|traceout|gridsnap|cipher9] [--levels 100]
 //!
 //! Each game gets its own file (`levels/<game>.json`), so regenerating one game never
 //! touches the others.
@@ -15,6 +15,7 @@ mod bridge;
 mod grid;
 mod metro;
 mod pictures;
+mod sudoku;
 mod trace;
 mod water;
 
@@ -87,7 +88,7 @@ fn parse_args() -> Result<Args, String> {
             "-h" | "--help" => {
                 return Err(
                     "usage: ARC_LEVEL_SEED=<secret> arc-levelgen --out-dir <dir> \
-                            [--game all|water-sort|brick-blast|metro-jam|dead-bridge|traceout|gridsnap] [--levels 1..=100]"
+                            [--game all|water-sort|brick-blast|metro-jam|dead-bridge|traceout|gridsnap|cipher9] [--levels 1..=100]"
                         .to_owned(),
                 )
             }
@@ -103,6 +104,7 @@ fn parse_args() -> Result<Args, String> {
             | "dead-bridge"
             | "traceout"
             | "gridsnap"
+            | "cipher9"
     ) {
         return Err(format!("unknown game {game}"));
     }
@@ -192,6 +194,15 @@ fn main() -> ExitCode {
             started.elapsed()
         );
         result = result.and(write_game(&args.out_dir, "gridsnap", &levels));
+    }
+    if wants("cipher9") {
+        let levels = sudoku::generate(&master, args.levels);
+        eprintln!(
+            "cipher9: {} levels ({:.1?})",
+            levels.len(),
+            started.elapsed()
+        );
+        result = result.and(write_game(&args.out_dir, "cipher9", &levels));
     }
     if let Err(e) = result {
         eprintln!("{e}");

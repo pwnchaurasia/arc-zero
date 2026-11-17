@@ -103,3 +103,24 @@ class ToReplay:
 
 def to_validate(level_json: str) -> None: ...
 def to_replay(level_json: str, moves: list[tuple[int, int]]) -> ToReplay: ...
+
+# Cipher9
+C9_MAX_MOVES: Final[int]
+
+class C9Replay:
+    status: Literal["playing", "won"]
+    stars: int
+    mistakes: int
+    wrong: list[int]
+
+class C9Hint:
+    cell: int
+    digit: int
+    technique: str | None
+    unit_kind: Literal["row", "column", "box"] | None
+    unit: int | None
+    after: list[str]
+
+def c9_validate(level_json: str) -> None: ...
+def c9_replay(level_json: str, moves: list[tuple[int, int]]) -> C9Replay: ...
+def c9_hint(level_json: str, moves: list[tuple[int, int]]) -> C9Hint | None: ...

@@ -4,6 +4,12 @@ import type {
   BbAssist,
   BbTurn,
   Board,
+  C9Assist,
+  C9Buy,
+  C9Complete,
+  C9Hint,
+  C9Move,
+  C9Start,
   CoinRules,
   DbAssist,
   DbComplete,
@@ -234,6 +240,28 @@ export const api = {
       }),
     complete: (level: number, attemptId: string, moves: ToMove[]) =>
       request<ToComplete>("POST", `${game("traceout")}/levels/${level}/complete`, {
+        attempt_id: attemptId,
+        moves,
+      }),
+  },
+
+  c9: {
+    start: (level: number) => request<C9Start>("POST", `${game("cipher9")}/levels/${level}/start`),
+    hint: (level: number, attemptId: string, moves: C9Move[], price: number) =>
+      request<C9Hint>("POST", `${game("cipher9")}/levels/${level}/hint`, {
+        attempt_id: attemptId,
+        moves,
+        price,
+      }),
+    buy: (level: number, attemptId: string, kind: C9Assist, moves: C9Move[], price: number) =>
+      request<C9Buy>("POST", `${game("cipher9")}/levels/${level}/assists`, {
+        attempt_id: attemptId,
+        kind,
+        moves,
+        price,
+      }),
+    complete: (level: number, attemptId: string, moves: C9Move[]) =>
+      request<C9Complete>("POST", `${game("cipher9")}/levels/${level}/complete`, {
         attempt_id: attemptId,
         moves,
       }),

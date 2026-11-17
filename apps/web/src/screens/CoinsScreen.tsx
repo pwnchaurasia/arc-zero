@@ -12,6 +12,7 @@ const GAME_NAMES: Record<string, string> = {
   "dead-bridge": "Dead Bridge Assault",
   gridsnap: "GridSnap",
   traceout: "TraceOut",
+  cipher9: "Cipher9",
 };
 
 const ASSIST_NAMES: Record<string, string> = {
@@ -33,6 +34,15 @@ const ASSIST_NAMES: Record<string, string> = {
   bomb: "Bomb: clear a 3 × 3 area",
   continue: "Continue: refill 3 droplets",
   hint: "Hint: show a line that can leave",
+};
+
+/** Where a game's assist means something else than in the list above. */
+const GAME_ASSIST_NAMES: Record<string, Record<string, string>> = {
+  cipher9: {
+    hint: "Hint: the next number and how to find it",
+    auto_notes: "Auto-notes for this attempt",
+    clear_wrong: "Clear every wrong number",
+  },
 };
 
 /** The coin rules, straight from the server so this page can't drift from what it enforces. */
@@ -147,7 +157,7 @@ export function CoinsScreen({ onBack }: { onBack: () => void }) {
                   <ul className="grid gap-2 text-sm">
                     {Object.entries(prices).map(([k, price]) => (
                       <li key={k} className="flex justify-between border-t border-line pt-2 first:border-0 first:pt-0">
-                        <span>{ASSIST_NAMES[k] ?? k}</span>
+                        <span>{GAME_ASSIST_NAMES[game]?.[k] ?? ASSIST_NAMES[k] ?? k}</span>
                         <span className="font-bold text-gold">{price} coins</span>
                       </li>
                     ))}

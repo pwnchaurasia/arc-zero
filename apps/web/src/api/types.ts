@@ -1,4 +1,11 @@
-export type GameId = "water-sort" | "brick-blast" | "metro-jam" | "dead-bridge" | "traceout" | "gridsnap";
+export type GameId =
+  | "water-sort"
+  | "brick-blast"
+  | "metro-jam"
+  | "dead-bridge"
+  | "traceout"
+  | "gridsnap"
+  | "cipher9";
 
 export interface GameProgress {
   unlocked_level: number;
@@ -349,6 +356,49 @@ export interface ToStart {
 }
 
 export interface ToComplete extends LevelWin {
+  level: number;
+  mistakes: number;
+  best_stars: number;
+  first_clear: boolean;
+  coins_earned: number;
+  streak_bonus: number;
+  coins: number;
+}
+
+/** `[cell, digit]`: digit 0 clears the cell. */
+export type C9Move = [number, number];
+export type C9Assist = "auto_notes" | "clear_wrong";
+
+export interface C9Start {
+  attempt_id: string;
+  level: number;
+  /** 81 givens, row by row, 0 for empty. The solution never leaves the server. */
+  data: { puzzle: number[]; tier: string; technique: string };
+  prices: { hint: number; auto_notes: number; clear_wrong: number };
+  reward: number;
+  coins: number;
+}
+
+export interface C9Hint {
+  cell: number;
+  digit: number;
+  technique: string | null;
+  unit_kind: "row" | "column" | "box" | null;
+  unit: number | null;
+  after: string[];
+  coins: number;
+  spent: number;
+}
+
+export interface C9Buy {
+  coins: number;
+  owned: Partial<Record<C9Assist, number>>;
+  spent: number;
+  /** For clear_wrong: the cells to empty. */
+  wrong: number[];
+}
+
+export interface C9Complete extends LevelWin {
   level: number;
   mistakes: number;
   best_stars: number;

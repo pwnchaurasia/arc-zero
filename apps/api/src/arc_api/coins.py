@@ -35,6 +35,7 @@ PRICES: Final[dict[str, dict[str, int]]] = {
     "water-sort": {"extra_bottle": 60},
     "gridsnap": {"reshuffle": 40, "bomb": 60},
     "traceout": {"continue": 20, "hint": 30},
+    "cipher9": {"hint": 25, "auto_notes": 20, "clear_wrong": 15},
     "dead-bridge": {
         "airstrike": 60,
         "freeze": 50,

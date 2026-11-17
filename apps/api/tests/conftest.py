@@ -107,6 +107,23 @@ def to_level() -> dict[str, Any]:
     }
 
 
+# A well-known puzzle with one solution, solvable with singles.
+C9_PUZZLE = "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+C9_SOLUTION = "534678912672195348198342567859761423426853791713924856961537284287419635345286179"
+# Every empty cell filled with the solution's number.
+C9_WIN = [(c, int(C9_SOLUTION[c])) for c in range(81) if C9_PUZZLE[c] == "0"]
+
+
+def c9_level(level: int) -> dict[str, Any]:
+    return {
+        "level": level,
+        "tier": "warmup",
+        "technique": "naked_single",
+        "clues": 30,
+        "data": {"puzzle": C9_PUZZLE, "solution": C9_SOLUTION},
+    }
+
+
 def gs_level() -> dict[str, Any]:
     """Seven stones on the bottom row: the first tray can finish it (seed 3)."""
     cells = [0] * 64
@@ -136,6 +153,7 @@ def make_levels(path: Path) -> None:
     db = [{"level": level, "script": db_script()} for level in range(1, 6)]
     to = [{"level": level, "data": to_level()} for level in range(1, 6)]
     gs = [{"level": level, **gs_level()} for level in range(1, 6)]
+    c9 = [c9_level(level) for level in range(1, 6)]
     for game, levels in (
         ("water-sort", ws),
         ("brick-blast", bb),
@@ -143,6 +161,7 @@ def make_levels(path: Path) -> None:
         ("dead-bridge", db),
         ("traceout", to),
         ("gridsnap", gs),
+        ("cipher9", c9),
     ):
         (path / f"{game}.json").write_text(
             json.dumps({"version": 2, "game": game, "levels": levels})
@@ -171,6 +190,7 @@ def settings(tmp_path_factory: pytest.TempPathFactory) -> Settings:
         db_min_real_time_pct=0,
         gs_min_ms_between_moves=0,
         to_min_ms_per_move=0,
+        c9_min_ms_per_move=0,
     )
 
 

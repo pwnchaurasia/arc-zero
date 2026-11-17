@@ -17,6 +17,7 @@ from arc_api.db import make_engine, make_sessionmaker
 from arc_api.routers import (
     auth,
     brick_blast,
+    cipher9,
     dead_bridge,
     gridsnap,
     me,
@@ -67,13 +68,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             engine_slots=CapacityLimiter(settings.engine_threads),
         )
         log.info(
-            "started: %d water sort, %d brick blast, %d metro jam, %d dead bridge, %d traceout"
-            " levels",
+            "started: %d water sort, %d brick blast, %d metro jam, %d dead bridge, %d traceout,"
+            " %d cipher9 levels",
             len(catalogue.water_sort),
             len(catalogue.brick_blast),
             len(catalogue.metro_jam),
             len(catalogue.dead_bridge),
             len(catalogue.traceout),
+            len(catalogue.cipher9),
         )
         try:
             yield
@@ -104,6 +106,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dead_bridge,
         gridsnap,
         traceout,
+        cipher9,
     ):
         api.include_router(module.router)
     app.include_router(api)

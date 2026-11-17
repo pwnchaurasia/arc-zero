@@ -47,6 +47,12 @@ export const GAMES: { id: GameId; name: string; tagline: string; image?: string 
     tagline: "Tap a line to send it out. Mind what's in the way.",
     image: "/games/traceout.webp",
   },
+  {
+    id: "cipher9",
+    name: "Cipher9",
+    tagline: "Sudoku without lives or game over. Just logic.",
+    image: "/games/cipher9.webp",
+  },
 ];
 
 export function Home({

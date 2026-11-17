@@ -18,7 +18,7 @@ services:
     restart: unless-stopped
     env_file: [secrets/api.env]
     # One levels file per game; ARC_LEVELS_PATH=/run/secrets.
-    secrets: [water-sort.json, brick-blast.json, metro-jam.json, dead-bridge.json, traceout.json, gridsnap.json]
+    secrets: [water-sort.json, brick-blast.json, metro-jam.json, dead-bridge.json, traceout.json, gridsnap.json, cipher9.json]
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -68,6 +68,7 @@ secrets:
   dead-bridge.json: { file: ./secrets/dead-bridge.json }
   traceout.json: { file: ./secrets/traceout.json }
   gridsnap.json: { file: ./secrets/gridsnap.json }
+  cipher9.json: { file: ./secrets/cipher9.json }
   postgres_password: { file: ./secrets/postgres_password }
   redis_password: { file: ./secrets/redis_password }
 

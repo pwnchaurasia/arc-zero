@@ -265,3 +265,70 @@ test("a GridSnap level starts with stones to clear and takes a shape", async ({ 
   await expect(page.getByText(`Shapes 1 / ${start.par}`)).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+/** Backtracking solver for a 9x9 grid (stands in for a person who knows Sudoku). */
+function solveSudoku(puzzle: number[]): number[] {
+  const g = [...puzzle];
+  const fits = (c: number, d: number) => {
+    const r = Math.floor(c / 9);
+    const col = c % 9;
+    const br = Math.floor(r / 3) * 3;
+    const bc = Math.floor(col / 3) * 3;
+    for (let i = 0; i < 9; i++) {
+      if (g[r * 9 + i] === d || g[i * 9 + col] === d) return false;
+      if (g[(br + Math.floor(i / 3)) * 9 + bc + (i % 3)] === d) return false;
+    }
+    return true;
+  };
+  const go = (): boolean => {
+    const c = g.indexOf(0);
+    if (c < 0) return true;
+    for (let d = 1; d <= 9; d++) {
+      if (!fits(c, d)) continue;
+      g[c] = d;
+      if (go()) return true;
+    }
+    g[c] = 0;
+    return false;
+  };
+  if (!go()) throw new Error("no solution");
+  return g;
+}
+
+test("a guest solves Cipher9 level 1 by tapping cells and numbers", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/");
+  await page.getByRole("heading", { name: "Cipher9" }).click();
+  await expect(page.getByText("Warmup · naked singles")).toBeVisible();
+  const startResp = page.waitForResponse((r) => r.url().includes("/cipher9/levels/1/start"));
+  await page.getByRole("button", { name: "Level 1", exact: true }).click();
+  const start = (await (await startResp).json()) as { data: { puzzle: number[] } } & Record<string, unknown>;
+  expect(JSON.stringify(start)).not.toContain("solution");
+  const solution = solveSudoku(start.data.puzzle);
+
+  // One wrong number first: it repeats in its row, so it shows as a clash. Then erase it.
+  const first = start.data.puzzle.indexOf(0);
+  const cell = (c: number) => page.getByRole("button", { name: new RegExp(`^Row ${Math.floor(c / 9) + 1}, column ${(c % 9) + 1}:`) });
+  const rowGiven = start.data.puzzle.slice(Math.floor(first / 9) * 9, Math.floor(first / 9) * 9 + 9).find((d) => d > 0) ?? 1;
+  await cell(first).click();
+  await page.getByRole("button", { name: `Enter ${rowGiven}` }).click();
+  await expect(cell(first)).toHaveAccessibleName(/repeats/);
+  await page.getByRole("button", { name: "Erase" }).click();
+
+  const done = page.waitForResponse((r) => r.url().includes("/cipher9/levels/1/complete"));
+  for (let c = 0; c < 81; c++) {
+    if (start.data.puzzle[c]) continue;
+    await cell(c).click();
+    await page.getByRole("button", { name: `Enter ${solution[c]}` }).click();
+    await page.waitForTimeout(160); // the server rejects inhumanly fast play
+  }
+  const result = (await (await done).json()) as { stars: number; mistakes: number; coins_earned: number; unlocked_level: number };
+  // The clash was a wrong number: one mistake, two stars.
+  expect(result.mistakes).toBe(1);
+  expect(result.stars).toBe(2);
+  expect(result.coins_earned).toBe(5);
+  expect(result.unlocked_level).toBe(2);
+  await expect(page.getByText("Level clear!")).toBeVisible();
+  await expect(page.getByText(/1 wrong number along the way/)).toBeVisible();
+  expect(errors).toEqual([]);
+});

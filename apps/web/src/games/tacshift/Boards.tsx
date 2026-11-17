@@ -11,7 +11,7 @@ export function Mark({ who, faded = false }: { who: number; faded?: boolean }) {
     <svg
       viewBox="0 0 100 100"
       aria-hidden="true"
-      className={`pop-in size-[72%] ${who === X ? "text-cyan-400" : "text-rose-400"} ${faded ? "opacity-45" : ""}`}
+      className={`pop-in absolute inset-[14%] size-[72%] ${who === X ? "text-cyan-400" : "text-rose-400"} ${faded ? "opacity-45" : ""}`}
       style={{ filter: `drop-shadow(0 0 6px ${who === X ? "rgb(34 211 238 / 0.55)" : "rgb(251 113 133 / 0.55)"})` }}
     >
       {who === X ? (
@@ -40,7 +40,7 @@ interface BoardProps {
 export function Board3({ state, onCell, locked, vanishing, radar }: BoardProps) {
   const won = new Set(state.status === "playing" ? [] : state.line);
   return (
-    <div role="group" aria-label="Board" className="grid aspect-square w-full grid-cols-3 gap-2 rounded-3xl border border-line bg-panel p-2">
+    <div role="group" aria-label="Board" className="grid aspect-square w-full grid-cols-3 grid-rows-3 gap-2 rounded-3xl border border-line bg-panel p-2">
       {state.cells.map((c, i) => {
         const fading = vanishing === i;
         return (
@@ -50,7 +50,7 @@ export function Board3({ state, onCell, locked, vanishing, radar }: BoardProps) 
             onClick={() => onCell(i)}
             disabled={locked || c !== 0}
             aria-label={`Row ${Math.floor(i / 3) + 1}, column ${(i % 3) + 1}: ${who(c)}${fading ? ", vanishes next" : ""}`}
-            className={`relative grid place-items-center rounded-2xl transition active:scale-95 disabled:active:scale-100 ${
+            className={`relative min-h-0 min-w-0 rounded-2xl transition active:scale-95 disabled:active:scale-100 ${
               won.has(i) ? "ts-win bg-gold/20" : "bg-panel-2"
             } ${radar === i ? "ts-radar" : ""}`}
           >
@@ -73,7 +73,7 @@ export function BoardUltimate({ state, onCell, locked, radar }: Omit<BoardProps,
   const playing = state.status === "playing";
   const wonBoards = new Set(playing ? [] : state.line);
   return (
-    <div role="group" aria-label="Ultimate board" className="grid aspect-square w-full grid-cols-3 gap-1.5 rounded-3xl border border-line bg-panel p-1.5">
+    <div role="group" aria-label="Ultimate board" className="grid aspect-square w-full grid-cols-3 grid-rows-3 gap-1.5 rounded-3xl border border-line bg-panel p-1.5">
       {Array.from({ length: 9 }, (_, b) => {
         const owner = state.boards[b] ?? 0;
         const open = owner === 0;
@@ -81,7 +81,7 @@ export function BoardUltimate({ state, onCell, locked, radar }: Omit<BoardProps,
         return (
           <div
             key={b}
-            className={`relative grid grid-cols-3 gap-0.5 rounded-xl p-1 transition ${
+            className={`relative grid min-h-0 min-w-0 grid-cols-3 grid-rows-3 gap-0.5 rounded-xl p-1 transition ${
               live ? "bg-amber-400/10 ring-2 ring-amber-400" : "bg-panel-2/60"
             } ${wonBoards.has(b) ? "ts-win" : ""}`}
           >
@@ -95,7 +95,7 @@ export function BoardUltimate({ state, onCell, locked, radar }: Omit<BoardProps,
                   onClick={() => onCell(cell)}
                   disabled={locked || !live || c !== 0}
                   aria-label={`Board ${b + 1}, row ${Math.floor(k / 3) + 1}, column ${(k % 3) + 1}: ${who(c)}`}
-                  className={`grid aspect-square place-items-center rounded-md bg-ink/50 ${radar === cell ? "ts-radar" : ""}`}
+                  className={`relative min-h-0 min-w-0 rounded-md bg-ink/50 ${radar === cell ? "ts-radar" : ""}`}
                 >
                   <Mark who={c} />
                 </button>

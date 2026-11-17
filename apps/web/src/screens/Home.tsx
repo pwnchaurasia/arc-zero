@@ -57,6 +57,7 @@ export const GAMES: { id: GameId; name: string; tagline: string; image?: string 
     id: "tacshift",
     name: "TacShift",
     tagline: "Tic-tac-toe that shifts: vanishing marks, nine boards, or a friend.",
+    image: "/games/tacshift.webp",
   },
 ];
 

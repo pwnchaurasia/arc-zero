@@ -17,6 +17,7 @@ the newest is at the top.
   draw against Unbeatable), Ultimate 20/35/60. Assists, each confirmed first: undo your
   move and the AI's reply (15, also after a loss) and radar, your strongest move (25).
   Coins spent come off that tier's reward.
+- Home tile uses the TacShift logo image (`public/games/tacshift.webp`, 512 px).
 
 ### New game: Cipher9 (Sudoku)
 - 100 levels in four tiers, each graded by the technique it needs: Warmup (naked singles;

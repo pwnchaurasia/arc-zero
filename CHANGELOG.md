@@ -17,6 +17,7 @@ the newest is at the top.
 - Assists, each confirmed before paying: a logic hint that explains the next step (25),
   auto-notes for the attempt (20), clear every wrong number (15, free if none). Coins for
   a first clear follow the same bands as every other game.
+- Home tile uses the Cipher9 logo image (`public/games/cipher9.webp`, 512 px).
 
 ### Brick Blast: more balls from level 17, gentler boosts
 - Starting balls from level 17: 90 up to level 20, 100 to 30, 110 to 40, 120 to 50, 130 to

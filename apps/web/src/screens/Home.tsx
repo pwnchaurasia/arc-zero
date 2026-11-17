@@ -51,6 +51,7 @@ export const GAMES: { id: GameId; name: string; tagline: string; image?: string 
     id: "cipher9",
     name: "Cipher9",
     tagline: "Sudoku without lives or game over. Just logic.",
+    image: "/games/cipher9.webp",
   },
 ];
 

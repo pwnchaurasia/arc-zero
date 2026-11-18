@@ -15,6 +15,7 @@ pub mod dead_bridge;
 pub mod error;
 pub mod gridsnap;
 pub mod hash;
+pub mod logo;
 pub mod metro_jam;
 pub mod rng;
 pub mod tacshift;

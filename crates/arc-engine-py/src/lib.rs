@@ -6,6 +6,7 @@ use engine::brick_blast::{self as bb, bot};
 use engine::cipher9 as c9;
 use engine::dead_bridge as db;
 use engine::gridsnap as gs;
+use engine::logo;
 use engine::metro_jam as mj;
 use engine::rng::Rng;
 use engine::tacshift::{self as ts, ai as ts_ai};
@@ -604,6 +605,63 @@ fn ts_radar(py: Python<'_>, state_json: String, seed: u64) -> PyResult<Option<u8
     .map_err(|e: String| err(e))
 }
 
+// ------------------------------------------------------------------ LogoQuest
+
+/// Parses a level's Logo text. Returns its block count (the par).
+#[pyfunction]
+fn logo_blocks(text: &str) -> PyResult<usize> {
+    logo::parse(text).map(|p| logo::blocks(&p)).map_err(err)
+}
+
+/// The lines a program draws, as JSON `[[x1, y1, x2, y2, colour], ...]` in thousandths.
+#[pyfunction]
+fn logo_lines(text: &str) -> PyResult<String> {
+    let program = logo::parse(text).map_err(err)?;
+    let lines: Vec<(i64, i64, i64, i64, &str)> = logo::run(&program)
+        .segments
+        .iter()
+        .map(|s| (s.x1, s.y1, s.x2, s.y2, s.color.name()))
+        .collect();
+    serde_json::to_string(&lines).map_err(err)
+}
+
+/// The judge's verdict on a player's program.
+#[pyclass(frozen, get_all, module = "arc_engine")]
+struct LogoJudge {
+    passed: bool,
+    accuracy: u32,
+    coverage: u32,
+    precision: u32,
+    blocks: usize,
+    /// The first target line not drawn yet: (x1, y1, x2, y2) in thousandths, and length.
+    missing: Option<(i64, i64, i64, i64, i64)>,
+}
+
+/// Runs the player's program (chip JSON) and compares it with the target (Logo text).
+#[pyfunction]
+fn logo_judge(py: Python<'_>, program_json: String, target_text: String) -> PyResult<LogoJudge> {
+    py.allow_threads(move || {
+        let program: logo::Program =
+            serde_json::from_str(&program_json).map_err(|e| e.to_string())?;
+        logo::validate(&program).map_err(|e| e.to_string())?;
+        let target = logo::run(&logo::parse(&target_text).map_err(|e| e.to_string())?).segments;
+        let drawn = logo::run(&program).segments;
+        let j = logo::judge(&drawn, &target);
+        Ok(LogoJudge {
+            passed: j.passed,
+            accuracy: j.accuracy,
+            coverage: j.coverage,
+            precision: j.precision,
+            blocks: logo::blocks(&program),
+            missing: j.missing.map(|i| {
+                let s = target[usize::from(i)];
+                (s.x1, s.y1, s.x2, s.y2, s.length())
+            }),
+        })
+    })
+    .map_err(|e: String| err(e))
+}
+
 #[pymodule]
 fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("EngineError", m.py().get_type::<EngineError>())?;
@@ -636,6 +694,10 @@ fn arc_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ts_play, m)?)?;
     m.add_function(wrap_pyfunction!(ts_ai_move, m)?)?;
     m.add_function(wrap_pyfunction!(ts_radar, m)?)?;
+    m.add_class::<LogoJudge>()?;
+    m.add_function(wrap_pyfunction!(logo_blocks, m)?)?;
+    m.add_function(wrap_pyfunction!(logo_lines, m)?)?;
+    m.add_function(wrap_pyfunction!(logo_judge, m)?)?;
     m.add_class::<C9Replay>()?;
     m.add_class::<C9Hint>()?;
     m.add_function(wrap_pyfunction!(c9_validate, m)?)?;

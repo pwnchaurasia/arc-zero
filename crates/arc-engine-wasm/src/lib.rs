@@ -6,6 +6,7 @@
 use arc_engine::brick_blast::{self as bb, Cell, Event};
 use arc_engine::dead_bridge as db;
 use arc_engine::gridsnap as gs;
+use arc_engine::logo;
 use arc_engine::metro_jam as mj;
 use arc_engine::tacshift as ts;
 use arc_engine::traceout as to;
@@ -806,6 +807,25 @@ impl TraceOut {
             to::Status::Out => 2,
         }
     }
+}
+
+// ------------------------------------------------------------------ LogoQuest
+
+/// Runs a program built from chips (JSON) for the browser to animate:
+/// `{"segments": [...], "steps": [...], "text": "REPEAT 4 [ ... ]", "blocks": n}`.
+/// The server runs the same program again to judge it.
+#[wasm_bindgen(js_name = logoRun)]
+pub fn logo_run(program_json: &str) -> Result<String, JsError> {
+    let program: logo::Program = serde_json::from_str(program_json).map_err(js_err)?;
+    logo::validate(&program).map_err(js_err)?;
+    let run = logo::run(&program);
+    serde_json::to_string(&serde_json::json!({
+        "segments": run.segments,
+        "steps": run.steps,
+        "text": logo::to_text(&program),
+        "blocks": logo::blocks(&program),
+    }))
+    .map_err(js_err)
 }
 
 // ------------------------------------------------------------------- TacShift

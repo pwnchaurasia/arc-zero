@@ -7,7 +7,6 @@ The server is the only source of truth. Players send their moves; the server
 re-runs every move with the same Rust engine the browser uses and decides
 what was won. Nothing the client claims about levels, stars or hints is trusted.
 
-
 ## Architecture
 
 ```

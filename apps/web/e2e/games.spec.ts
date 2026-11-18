@@ -423,3 +423,36 @@ test("a guest learns FD in LogoQuest, then passes its Test", async ({ page }) =>
   await expect(page.getByRole("heading", { name: /Test passed/ })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("the home screen filters by category and resumes the last game at its next level", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Action" }).click();
+  await expect(page.getByRole("heading", { name: "Brick Blast" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Water Sort" })).toHaveCount(0);
+  await page.getByRole("button", { name: /^All/ }).click();
+
+  // Play Water Sort level 1; the home screen then offers to resume at level 2.
+  await page.getByRole("heading", { name: "Water Sort" }).click();
+  const startResp = page.waitForResponse((r) => r.url().includes("/water-sort/levels/1/start"));
+  await page.getByRole("button", { name: "Level 1", exact: true }).click();
+  const start = (await (await startResp).json()) as { board: number[][] };
+  await page.waitForTimeout(800);
+  const done = page.waitForResponse((r) => r.url().includes("/water-sort/levels/1/complete"));
+  for (const [from, to] of solveWaterSort(start.board)) {
+    const a = await bottlePosition(page, start.board.length, from);
+    const b = await bottlePosition(page, start.board.length, to);
+    await page.mouse.click(a.x, a.y);
+    await page.mouse.click(b.x, b.y);
+    await page.waitForTimeout(650);
+  }
+  await done;
+  await page.getByRole("button", { name: "All levels" }).click();
+  await page.getByRole("button", { name: "Back" }).click();
+  const continueRow = page.getByRole("region", { name: "Continue playing" });
+  await expect(continueRow.getByText(/^level 2\//)).toBeVisible();
+  const resumed = page.waitForResponse((r) => r.url().includes("/water-sort/levels/2/start"));
+  await continueRow.getByRole("button", { name: "Resume Water Sort" }).click();
+  expect((await resumed).status()).toBe(200);
+  expect(errors).toEqual([]);
+});

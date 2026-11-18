@@ -5,6 +5,16 @@ the newest is at the top.
 
 ## Unreleased
 
+### Home screen redesign (phone, tablet and desktop)
+- Category chips: All, Puzzles, Action, Brain & Logic, Board, Junior (a game can be in
+  more than one). One sideways-scrolling row on phones, wrapped on wider screens.
+- "Continue playing": the games played most recently on this device, each with where it
+  will pick up ("level 5/100", "lesson 3 · Test") and a Resume button that goes straight
+  to that level (GridSnap's endless game, TacShift's mode picker). Guests past the
+  checkpoint are asked to save first.
+- Compact game cards: a wide crop of each logo, a progress bar and "52/100 lvl · 153★".
+  2 per row on phones, 3 on tablets, 4-5 on desktop; taglines from tablet size up.
+
 ### New game: LogoQuest (Logo turtle programming, for ages 8-12)
 - 100 hand-designed levels in 5 chapters, one new idea at a time: Grid Walker (FD, BK,
   RT/LT 90), Pen & Paint (PU, PD, COLOR), Angle Explorer (45, 60, 120...), Loop Master

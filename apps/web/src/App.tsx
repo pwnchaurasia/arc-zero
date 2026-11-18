@@ -6,6 +6,7 @@ import { IosInstallModal } from "./screens/IosInstallModal";
 import { LevelSelect } from "./screens/LevelSelect";
 import { CheckpointModal, RestoreModal, SettingsModal } from "./screens/modals";
 import { NavContext } from "./state/nav";
+import { markPlayed } from "./state/recent";
 import { setAtHome } from "./state/updates";
 
 const WaterSortScreen = lazy(() =>
@@ -86,6 +87,11 @@ export function App() {
   const { route, go, replace, back } = useRoute();
   // A waiting app update is applied only here, never in the middle of a game.
   useEffect(() => setAtHome(route.name === "home"), [route.name]);
+  // Remember what was played, for the home screen's "Continue playing" row.
+  useEffect(() => {
+    if (route.name === "play") markPlayed(route.game);
+    else if (route.name === "gridsnap" || route.name === "tacshift" || route.name === "logoquest") markPlayed(route.name);
+  }, [route]);
   const [modal, setModal] = useState<"settings" | "restore" | "checkpoint" | "ios-install" | null>(null);
   const close = useCallback(() => setModal(null), []);
   const openCheckpoint = useCallback(() => setModal("checkpoint"), []);
@@ -111,6 +117,11 @@ export function App() {
               game === "tacshift" || game === "logoquest" ? { name: game } : { name: "levels", game },
             )
           }
+          onResume={(game, level) => {
+            if (level !== null) go({ name: "play", game, level });
+            else if (game === "gridsnap" || game === "tacshift") go({ name: game });
+            else go({ name: "levels", game });
+          }}
           onSettings={() => setModal("settings")}
           onCheckpoint={openCheckpoint}
           onIosInstall={() => setModal("ios-install")}

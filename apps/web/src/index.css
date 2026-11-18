@@ -172,3 +172,12 @@ body {
     animation: none;
   }
 }
+
+/* Sideways-scrolling rows (home screen chips and "Continue playing"). */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

@@ -289,6 +289,7 @@ export const api = {
 
   lq: {
     levels: () => request<LqMapLevel[]>("GET", `${game("logoquest")}/levels`),
+    bests: () => request<{ bests: Record<string, number> }>("GET", `${game("logoquest")}/bests`),
     start: (stage: number) => request<LqStart>("POST", `${game("logoquest")}/stages/${stage}/start`),
     check: (
       stage: number,

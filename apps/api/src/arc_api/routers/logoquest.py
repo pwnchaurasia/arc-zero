@@ -18,9 +18,11 @@ from typing import Annotated, Any, Literal
 import arc_engine
 from fastapi import APIRouter, Path, Request
 from pydantic import Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from arc_api import analytics, coins, store
-from arc_api.db import LogoCheck
+from arc_api.db import LevelResult, LogoCheck
 from arc_api.errors import ApiError
 from arc_api.levels import GameId, LqLevel, LqStage, lq_stage
 from arc_api.principal import Principal, PrincipalDep, issue_ticket
@@ -87,6 +89,8 @@ class StartOut(StrictModel):
     prices: dict[str, int]
     reward: int
     coins: int
+    # Fewest blocks this saved player has passed this stage with (None: not yet).
+    best: int | None = None
     guest_ticket: str | None = None
 
 
@@ -130,6 +134,8 @@ class CheckOut(StrictModel):
     coins_earned: int = 0
     streak_bonus: int = 0
     coins: int = 0
+    # Fewest blocks ever used to pass this stage, this one included (saved players).
+    best: int | None = None
     guest_ticket: str | None = None
 
 
@@ -190,12 +196,39 @@ async def _judge(state: AppState, program: list[dict[str, Any]], target: LqStage
         raise ApiError(422, "bad_program", "That program can't run.") from exc
 
 
+async def _bests(db: AsyncSession, who: Principal, stage: int | None = None) -> dict[int, int]:
+    """Fewest blocks each stage was passed with. Saved players only: guests keep theirs
+    on the device for the first stages they can play."""
+    if who.player_id is None:
+        return {}
+    q = select(LevelResult.level, LevelResult.best_moves).where(
+        LevelResult.player_id == who.player_id, LevelResult.game_id == GAME
+    )
+    if stage is not None:
+        q = q.where(LevelResult.level == stage)
+    return {int(lv): int(best) for lv, best in await db.execute(q) if best is not None}
+
+
+class BestsOut(StrictModel):
+    # Stage -> fewest blocks.
+    bests: dict[int, int]
+
+
+@router.get("/bests")
+async def bests(who: PrincipalDep, db: DbDep) -> BestsOut:
+    """Personal bests for the level map (golf-style: fewer blocks is better)."""
+    return BestsOut(bests=await _bests(db, who))
+
+
 class MapLevel(StrictModel):
     level: int
     chapter: int
     chapter_name: str
     learn: str
     test: str
+    # Blocks in each answer key: at or under par is "on par" (golf).
+    learn_par: int
+    test_par: int
 
 
 @router.get("/levels")
@@ -208,6 +241,8 @@ async def level_map(state: StateDep) -> list[MapLevel]:
             chapter_name=lv.chapter_name,
             learn=lv.learn.title,
             test=lv.test.title,
+            learn_par=lv.learn.par,
+            test_par=lv.test.par,
         )
         for lv in sorted(state.levels.logoquest.values(), key=lambda lv: lv.level)
     ]
@@ -251,6 +286,7 @@ async def start(
         prices=coins.PRICES[GAME],
         reward=_reward(level, kind),
         coins=await coins.balance(db, state, who),
+        best=(await _bests(db, who, stage)).get(stage),
         guest_ticket=issue_ticket(state, who.guest) if who.guest else None,
     )
 
@@ -362,6 +398,7 @@ async def check(
                 "streak_bonus": paid.streak_bonus,
                 "coins": paid.balance,
                 "guest_ticket": outcome.guest_ticket,
+                "best": (await _bests(db, who, stage)).get(stage),
             }
         )
         attempt["result"] = out.model_dump()

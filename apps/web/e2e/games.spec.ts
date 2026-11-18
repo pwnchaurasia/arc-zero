@@ -456,3 +456,37 @@ test("the home screen filters by category and resumes the last game at its next 
   expect((await resumed).status()).toBe(200);
   expect(errors).toEqual([]);
 });
+
+test("two friends play a TacShift best-of-3 challenge on one phone", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/");
+  await page.getByRole("heading", { name: "TacShift" }).click();
+  await page.getByRole("tab", { name: "2 Players" }).click();
+  await page.getByLabel("Player 1").fill("Aarav");
+  await page.getByLabel("Player 2").fill("Riya");
+  await page.getByRole("button", { name: "classic" }).click();
+  await page.getByRole("button", { name: "Best of 3" }).click();
+  await page.getByRole("button", { name: "Start challenge" }).click();
+  const cell = (c: number) => page.getByRole("button", { name: new RegExp(`^Row ${Math.floor(c / 3) + 1}, column ${(c % 3) + 1}:`) });
+  const playCells = async (cells: number[]) => {
+    for (const c of cells) await cell(c).click();
+  };
+
+  // Game 1: Aarav is X and takes the top row.
+  await expect(page.getByText("Aarav (X) to move")).toBeVisible();
+  await playCells([0, 3, 1, 4, 2]);
+  await expect(page.getByRole("heading", { name: "Aarav wins game 1!" })).toBeVisible();
+  await expect(page.getByText("Next: Riya plays X and goes first.")).toBeVisible();
+  await page.getByRole("button", { name: "Next game" }).click();
+
+  // Game 2: they swapped. Riya (X) opens, Aarav (O) takes the middle row.
+  await expect(page.getByText("Riya (X) to move")).toBeVisible();
+  await playCells([0, 3, 1, 4, 8, 5]);
+  await expect(page.getByRole("heading", { name: "Challenge over" })).toBeVisible();
+  await expect(page.getByText("Aarav wins!")).toBeVisible();
+
+  // A rematch starts at 0-0 with Riya going first this time.
+  await page.getByRole("button", { name: "Rematch" }).click();
+  await expect(page.getByText("Riya (X) to move")).toBeVisible();
+  expect(errors).toEqual([]);
+});

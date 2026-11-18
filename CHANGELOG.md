@@ -35,7 +35,11 @@ the newest is at the top.
 - Infinity (signature): each player keeps only 3 marks; a 4th makes your oldest fade, and
   the mark about to fade is shown. Classic 3x3. Ultimate: nine boards, where you play
   sends your opponent to that board (a closed board means free choice). 2 Players: Pass
-  & Play on one phone in any of the three, with a free undo and a series score.
+  & Play on one phone in any of the three, with a free undo.
+- 2 Players is a challenge: two names, the rules, and 1 game or best of 3, 5 or 7. The
+  players swap X and O every game so both get to start; draws don't count. A scoreboard,
+  a card between games saying who starts next, and a trophy screen with a rematch.
+  Offline: nothing is sent to the server, and the match survives a reload.
 - Against the AI the server plays every reply with its own seed, so the AI can't be
   weakened and wins can't be faked. Easy, Medium, Hard per mode; Classic Hard plays
   perfectly ("Unbeatable"), so holding it to a draw is what pays.

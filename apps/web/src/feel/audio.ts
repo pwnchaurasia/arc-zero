@@ -80,6 +80,14 @@ export const sfx = {
   pickup(): void {
     tone(990, 0.1, "triangle", 0.35, 1480);
   },
+  /** A mark placed: X a little higher than O. */
+  mark(x: boolean): void {
+    tone(x ? 520 : 390, 0.09, x ? "triangle" : "sine", 0.4);
+  },
+  /** A mark fading off the board (TacShift Infinity). */
+  vanish(): void {
+    tone(330, 0.16, "sine", 0.25, 180);
+  },
   win(): void {
     [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.18, "triangle", 0.4), i * 90));
   },

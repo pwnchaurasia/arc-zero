@@ -5,6 +5,36 @@ the newest is at the top.
 
 ## Unreleased
 
+### New game: LogoQuest (Logo turtle programming, for ages 8-12)
+- 100 hand-designed levels in 5 chapters, one new idea at a time: Grid Walker (FD, BK,
+  RT/LT 90), Pen & Paint (PU, PD, COLOR), Angle Explorer (45, 60, 120...), Loop Master
+  (REPEAT) and Spirograph Lab (REPEAT inside REPEAT).
+- Every level is a Learn (the target in faint dashes, a tip, a protractor when turning)
+  and a Test (a new shape from a reference card, with a clock). Passing the Test opens
+  the next Learn. A Sandbox draws anything with every chip.
+- Programs are built from chips only (no typing or pasting); the real Logo text shows as
+  you build, and the running block lights up as the turtle draws. Every chip shows its
+  effect straight away: the turtle draws just what changed, no Run needed. The server runs every
+  program and judges the drawing, so no level can be passed without the right program.
+- Coins: 5 per Learn, the usual level band per Test. Hint (15): shows the next missing line.
+- Every check is logged; `make logo-report NAME=...` shows a child's learning day by
+  day, every Test passed with tries and time, where they are stuck, and anything that
+  looks too fast. Guests stop after Learn 2: save progress with a name to be tracked.
+
+### New game: TacShift (tic-tac-toe in four modes)
+- Infinity (signature): each player keeps only 3 marks; a 4th makes your oldest fade, and
+  the mark about to fade is shown. Classic 3x3. Ultimate: nine boards, where you play
+  sends your opponent to that board (a closed board means free choice). 2 Players: Pass
+  & Play on one phone in any of the three, with a free undo and a series score.
+- Against the AI the server plays every reply with its own seed, so the AI can't be
+  weakened and wins can't be faked. Easy, Medium, Hard per mode; Classic Hard plays
+  perfectly ("Unbeatable"), so holding it to a draw is what pays.
+- The first win against each tier pays once: Infinity 10/20/40, Classic 5/15 (+20 for a
+  draw against Unbeatable), Ultimate 20/35/60. Assists, each confirmed first: undo your
+  move and the AI's reply (15, also after a loss) and radar, your strongest move (25).
+  Coins spent come off that tier's reward.
+- Home tile uses the TacShift logo image (`public/games/tacshift.webp`, 512 px).
+
 ### New game: Cipher9 (Sudoku)
 - 100 levels in four tiers, each graded by the technique it needs: Warmup (naked singles;
   levels 1-3 extra easy), Casual (hidden singles), Tactical (naked pairs and locked

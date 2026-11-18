@@ -13,6 +13,8 @@ const GAME_NAMES: Record<string, string> = {
   gridsnap: "GridSnap",
   traceout: "TraceOut",
   cipher9: "Cipher9",
+  tacshift: "TacShift",
+  logoquest: "LogoQuest",
 };
 
 const ASSIST_NAMES: Record<string, string> = {
@@ -42,6 +44,13 @@ const GAME_ASSIST_NAMES: Record<string, Record<string, string>> = {
     hint: "Hint: the next number and how to find it",
     auto_notes: "Auto-notes for this attempt",
     clear_wrong: "Clear every wrong number",
+  },
+  tacshift: {
+    undo: "Undo your move and the AI's reply",
+    radar: "Radar: show your strongest move",
+  },
+  logoquest: {
+    hint: "Hint: show a line still missing",
   },
 };
 

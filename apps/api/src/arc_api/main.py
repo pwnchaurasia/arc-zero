@@ -20,9 +20,11 @@ from arc_api.routers import (
     cipher9,
     dead_bridge,
     gridsnap,
+    logoquest,
     me,
     meta,
     metro_jam,
+    tacshift,
     traceout,
     wallet,
     water_sort,
@@ -107,6 +109,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         gridsnap,
         traceout,
         cipher9,
+        tacshift,
+        logoquest,
     ):
         api.include_router(module.router)
     app.include_router(api)

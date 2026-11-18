@@ -5,7 +5,9 @@ export type GameId =
   | "dead-bridge"
   | "traceout"
   | "gridsnap"
-  | "cipher9";
+  | "cipher9"
+  | "tacshift"
+  | "logoquest";
 
 export interface GameProgress {
   unlocked_level: number;
@@ -406,4 +408,125 @@ export interface C9Complete extends LevelWin {
   coins_earned: number;
   streak_bonus: number;
   coins: number;
+}
+
+export type TsMode = "infinity" | "classic" | "ultimate";
+export type TsTier = "easy" | "medium" | "hard";
+export type TsAssist = "undo" | "radar";
+
+/** The engine's game state (crates/arc-engine/src/tacshift). Cells: 0 empty, 1 X, 2 O. */
+export interface TsState {
+  mode: TsMode;
+  /** 9 cells, or 81 in Ultimate (board * 9 + cell). */
+  cells: number[];
+  /** Infinity: X's and O's marks, oldest first. */
+  queues: [number[], number[]];
+  /** Ultimate: each board, 0 open, 1 X, 2 O, 3 drawn. */
+  boards: number[];
+  /** Ultimate: the board to play in next; null is free choice. */
+  active: number | null;
+  turn: 1 | 2;
+  status: "playing" | "x_won" | "o_won" | "draw";
+  /** The winning cells (or boards in Ultimate). */
+  line: number[];
+  plies: number;
+}
+
+export interface TsOutcome {
+  result: "won" | "lost" | "draw";
+  first_win: boolean;
+  coins_earned: number;
+  streak_bonus: number;
+  coins: number;
+}
+
+export interface TsMatch {
+  match_id: string;
+  seq: number;
+  state: TsState;
+  prices: Record<TsAssist, number>;
+  /** This tier's first-win reward, 0 once earned. */
+  reward: number;
+  coins: number;
+}
+
+export interface TsMoveOut {
+  seq: number;
+  state: TsState;
+  vanished: number | null;
+  ai: { cell: number; vanished: number | null } | null;
+  outcome: TsOutcome | null;
+}
+
+export interface TsAssistOut {
+  seq: number;
+  state: TsState;
+  cell: number | null;
+  coins: number;
+  spent: number;
+}
+
+export interface TsProgress {
+  tiers: { mode: TsMode; tier: TsTier; coins: number; earned: boolean }[];
+  prices: Record<TsAssist, number>;
+}
+
+export interface LqTools {
+  chips: ("fd" | "bk" | "rt" | "lt" | "pu" | "pd" | "color" | "repeat")[];
+  angles: number[];
+  /** Any angle can be typed on the keypad (from chapter 3). */
+  any_angle: boolean;
+  /** How deep REPEATs may go (0: no REPEAT yet). */
+  depth: number;
+}
+
+export interface LqStart {
+  attempt_id: string;
+  stage: number;
+  data: {
+    level: number;
+    kind: "learn" | "test";
+    chapter: number;
+    chapter_name: string;
+    title: string;
+    tip: string;
+    /** [[x1, y1, x2, y2, colour], ...] in thousandths of a board unit. */
+    target: (number | string)[][];
+    facts: string[];
+    par: number;
+    tools: LqTools;
+  };
+  prices: { hint: number };
+  reward: number;
+  coins: number;
+}
+
+export interface LqCheck extends LevelWin {
+  passed: boolean;
+  accuracy: number;
+  coverage: number;
+  precision: number;
+  blocks: number;
+  par: number;
+  seconds: number;
+  best_stars: number;
+  first_clear: boolean;
+  coins_earned: number;
+  streak_bonus: number;
+  coins: number;
+}
+
+export interface LqHint {
+  line: [number, number, number, number];
+  length: number;
+  coins: number;
+  spent: number;
+}
+
+export interface LqMapLevel {
+  level: number;
+  chapter: number;
+  chapter_name: string;
+  learn: string;
+  test: string;
 }

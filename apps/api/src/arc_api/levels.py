@@ -15,8 +15,17 @@ from typing import Any, Final, Literal
 import arc_engine
 
 GameId = Literal[
-    "water-sort", "brick-blast", "metro-jam", "dead-bridge", "traceout", "gridsnap", "cipher9"
+    "water-sort",
+    "brick-blast",
+    "metro-jam",
+    "dead-bridge",
+    "traceout",
+    "gridsnap",
+    "cipher9",
+    "tacshift",
+    "logoquest",
 ]
+# Games with numbered levels. TacShift has AI tiers instead (coins.TACSHIFT_REWARDS).
 GAME_IDS: Final[tuple[GameId, ...]] = (
     "water-sort",
     "brick-blast",
@@ -25,6 +34,7 @@ GAME_IDS: Final[tuple[GameId, ...]] = (
     "traceout",
     "gridsnap",
     "cipher9",
+    "logoquest",
 )
 SUPPORTED_VERSION = 2
 
@@ -116,6 +126,38 @@ class C9Level:
 
 
 @dataclass(frozen=True, slots=True)
+class LqStage:
+    title: str
+    # The answer key (Logo text). Server-only: only its drawing goes to the client.
+    program: str
+    par: int
+    # The drawing to match: JSON [[x1, y1, x2, y2, colour], ...] in thousandths.
+    lines_json: str
+
+
+@dataclass(frozen=True, slots=True)
+class LqLevel:
+    level: int
+    chapter: int
+    chapter_name: str
+    tip: str
+    learn: LqStage
+    test: LqStage
+    facts: tuple[str, ...]
+
+
+def _lq_stage(item: dict[str, Any]) -> LqStage:
+    program = str(item["program"])
+    par = arc_engine.logo_blocks(program)  # validates the answer key through the engine
+    return LqStage(
+        title=str(item["title"]),
+        program=program,
+        par=par,
+        lines_json=arc_engine.logo_lines(program),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class Levels:
     water_sort: dict[int, WsLevel]
     brick_blast: dict[int, BbLevel]
@@ -124,6 +166,7 @@ class Levels:
     traceout: dict[int, ToLevel]
     gridsnap: dict[int, GsLevel]
     cipher9: dict[int, C9Level]
+    logoquest: dict[int, LqLevel]
 
     def count(self, game: GameId) -> int:
         if game == "water-sort":
@@ -138,6 +181,9 @@ class Levels:
             return len(self.gridsnap)
         if game == "cipher9":
             return len(self.cipher9)
+        if game == "logoquest":
+            # Every level is two stages, Learn then Test (levels.lq_stage).
+            return 2 * len(self.logoquest)
         return len(self.dead_bridge)
 
 
@@ -226,6 +272,18 @@ def load(directory: Path) -> Levels:
             technique=str(item["technique"]),
         )
 
+    lq: dict[int, LqLevel] = {}
+    for item in _read_game(directory, "logoquest"):
+        lq[int(item["level"])] = LqLevel(
+            level=int(item["level"]),
+            chapter=int(item["chapter"]),
+            chapter_name=str(item["chapter_name"]),
+            tip=str(item["tip"]),
+            learn=_lq_stage(item["learn"]),
+            test=_lq_stage(item["test"]),
+            facts=tuple(str(f) for f in item["facts"]),
+        )
+
     _contiguous(ws, "water_sort")
     _contiguous(bb, "brick_blast")
     _contiguous(mj, "metro_jam")
@@ -233,6 +291,7 @@ def load(directory: Path) -> Levels:
     _contiguous(to, "traceout")
     _contiguous(gs, "gridsnap")
     _contiguous(c9, "cipher9")
+    _contiguous(lq, "logoquest")
     return Levels(
         water_sort=ws,
         brick_blast=bb,
@@ -241,4 +300,11 @@ def load(directory: Path) -> Levels:
         traceout=to,
         gridsnap=gs,
         cipher9=c9,
+        logoquest=lq,
     )
+
+
+def lq_stage(stage: int) -> tuple[int, Literal["learn", "test"]]:
+    """LogoQuest stage (the progress "level") -> (level, kind): 1 is Learn 1, 2 Test 1,
+    3 Learn 2... so passing a Test is what opens the next Learn."""
+    return (stage + 1) // 2, "learn" if stage % 2 else "test"

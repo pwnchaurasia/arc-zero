@@ -174,6 +174,36 @@ DELETE FROM play_events WHERE day < current_date - 365;
 
 Coin balances and every coin change for saved players are in `wallets` and `coin_ledger`.
 
+### LogoQuest learning log (named, for a parent)
+
+Every "Check my code" in LogoQuest, passed or not, is a row in `logo_checks`: the level,
+Learn or Test, accuracy, blocks against par, server-measured seconds since the level was
+opened, and what the app reports (seconds on screen, runs, chip taps, hints). "Runs" counts
+every time the turtle drew: pressing Run, and the live preview after each edit. Unlike
+`play_events` it names saved players (`player_id`), because its purpose is following a
+child's learning. Guests appear by `who` only, so the child should save their progress
+with a name.
+
+```sh
+make logo-report NAME=Aarav            # local arcade; DAYS=30 for a longer history
+docker compose exec api python -m arc_api.logo_report Aarav 30   # production, in the deploy directory
+```
+
+It prints minutes practised, levels learned and Tests passed per day; every Test passed
+with tries, time, Run presses, blocks/par, stars and hints; and the levels not passed yet.
+Flags are reasons to look closer, not proof: `fast` (passed quicker than tapping in the
+answer could take), `no_runs` (the turtle never drew it in the app), `few_taps` (fewer
+chip taps than blocks: not built in the app) and `quick` (under a third of their usual
+time for a Test in that chapter). Programs are built from chips only; nothing can be
+typed or pasted.
+
+```sql
+-- Raw: one child's checks today
+SELECT at, level, kind, passed, accuracy, blocks, par, seconds, runs, taps, hints, flags
+FROM logo_checks c JOIN players p ON p.id = c.player_id
+WHERE p.display_name ILIKE 'Aarav' AND c.day = current_date ORDER BY at;
+```
+
 ## Let friends play your local game (ngrok)
 
 Run an always-on copy of the arcade in Docker. It keeps running while you develop, and

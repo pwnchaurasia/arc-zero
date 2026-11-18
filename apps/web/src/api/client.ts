@@ -11,6 +11,17 @@ import type {
   C9Move,
   C9Start,
   CoinRules,
+  LqCheck,
+  LqMapLevel,
+  LqHint,
+  LqStart,
+  TsAssist,
+  TsAssistOut,
+  TsMatch,
+  TsMode,
+  TsMoveOut,
+  TsProgress,
+  TsTier,
   DbAssist,
   DbComplete,
   DbStart,
@@ -264,6 +275,37 @@ export const api = {
       request<C9Complete>("POST", `${game("cipher9")}/levels/${level}/complete`, {
         attempt_id: attemptId,
         moves,
+      }),
+  },
+
+  ts: {
+    progress: () => request<TsProgress>("GET", "/games/tacshift/progress"),
+    start: (mode: TsMode, tier: TsTier) => request<TsMatch>("POST", "/games/tacshift/matches", { mode, tier }),
+    move: (matchId: string, seq: number, cell: number) =>
+      request<TsMoveOut>("POST", `/games/tacshift/matches/${matchId}/move`, { seq, cell }),
+    assist: (matchId: string, seq: number, kind: TsAssist, price: number) =>
+      request<TsAssistOut>("POST", `/games/tacshift/matches/${matchId}/assist`, { seq, kind, price }),
+  },
+
+  lq: {
+    levels: () => request<LqMapLevel[]>("GET", `${game("logoquest")}/levels`),
+    start: (stage: number) => request<LqStart>("POST", `${game("logoquest")}/stages/${stage}/start`),
+    check: (
+      stage: number,
+      attemptId: string,
+      program: unknown[],
+      stats: { runs: number; taps: number; active_seconds: number },
+    ) =>
+      request<LqCheck>("POST", `${game("logoquest")}/stages/${stage}/check`, {
+        attempt_id: attemptId,
+        program,
+        ...stats,
+      }),
+    hint: (stage: number, attemptId: string, program: unknown[], price: number) =>
+      request<LqHint>("POST", `${game("logoquest")}/stages/${stage}/hint`, {
+        attempt_id: attemptId,
+        program,
+        price,
       }),
   },
 

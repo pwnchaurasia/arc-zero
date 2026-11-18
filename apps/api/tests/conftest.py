@@ -124,6 +124,23 @@ def c9_level(level: int) -> dict[str, Any]:
     }
 
 
+def lq_level(level: int) -> dict[str, Any]:
+    return {
+        "level": level,
+        "chapter": 1,
+        "chapter_name": "Grid Walker",
+        "tip": "FD moves the turtle forward.",
+        "learn": {"title": "Up", "program": "FD 100", "par": 1},
+        "test": {"title": "Corner", "program": "FD 50 RT 90 FD 50", "par": 3},
+        "facts": ["Lengths: 50", "Turns: 90°"],
+    }
+
+
+# Chips that draw each stage of the test levels.
+LQ_LEARN = [{"op": "fd", "n": 100}]
+LQ_TEST = [{"op": "fd", "n": 50}, {"op": "rt", "n": 90}, {"op": "fd", "n": 50}]
+
+
 def gs_level() -> dict[str, Any]:
     """Seven stones on the bottom row: the first tray can finish it (seed 3)."""
     cells = [0] * 64
@@ -154,6 +171,7 @@ def make_levels(path: Path) -> None:
     to = [{"level": level, "data": to_level()} for level in range(1, 6)]
     gs = [{"level": level, **gs_level()} for level in range(1, 6)]
     c9 = [c9_level(level) for level in range(1, 6)]
+    lq = [lq_level(level) for level in range(1, 4)]
     for game, levels in (
         ("water-sort", ws),
         ("brick-blast", bb),
@@ -162,6 +180,7 @@ def make_levels(path: Path) -> None:
         ("traceout", to),
         ("gridsnap", gs),
         ("cipher9", c9),
+        ("logoquest", lq),
     ):
         (path / f"{game}.json").write_text(
             json.dumps({"version": 2, "game": game, "levels": levels})
@@ -191,6 +210,7 @@ def settings(tmp_path_factory: pytest.TempPathFactory) -> Settings:
         gs_min_ms_between_moves=0,
         to_min_ms_per_move=0,
         c9_min_ms_per_move=0,
+        ts_min_ms_between_moves=0,
     )
 
 
@@ -220,7 +240,7 @@ async def app_client(settings: Settings, _database: None) -> AsyncIterator[Async
     conn = await asyncpg.connect(TEST_DB_URL)
     await conn.execute(
         "TRUNCATE players, game_progress, level_results, hint_usage, play_events,"
-        " gridsnap_scores CASCADE"
+        " gridsnap_scores, logo_checks CASCADE"
     )
     await conn.close()
 

@@ -499,9 +499,13 @@ export interface LqStart {
   prices: { hint: number };
   reward: number;
   coins: number;
+  /** Fewest blocks this saved player has passed the stage with. */
+  best: number | null;
 }
 
 export interface LqCheck extends LevelWin {
+  /** Fewest blocks ever used to pass this stage, this pass included (saved players). */
+  best: number | null;
   passed: boolean;
   accuracy: number;
   coverage: number;
@@ -529,4 +533,6 @@ export interface LqMapLevel {
   chapter_name: string;
   learn: string;
   test: string;
+  learn_par: number;
+  test_par: number;
 }

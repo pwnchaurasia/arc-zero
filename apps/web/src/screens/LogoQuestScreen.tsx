@@ -19,7 +19,25 @@ import {
   type Color,
   type Cursor,
 } from "../games/logoquest/program";
-import { fromEngine, HALF, TurtleBoard, type Arc, type Line, type Turtle } from "../games/logoquest/TurtleBoard";
+import {
+  loadLook,
+  newlyUnlocked,
+  parWord,
+  saveLook,
+  SKINS,
+  TRAILS,
+  type Look,
+  type Stars as StarMap,
+} from "../games/logoquest/cosmetics";
+import {
+  fromEngine,
+  HALF,
+  SkinPreview,
+  TurtleBoard,
+  type Arc,
+  type Line,
+  type Turtle,
+} from "../games/logoquest/TurtleBoard";
 import { useSession } from "../state/session";
 import { CoinChip } from "../ui/CoinChip";
 import { BulbIcon, LockIcon, UndoIcon } from "../ui/icons";
@@ -99,6 +117,30 @@ function useSize<T extends HTMLElement>() {
   return [ref, size] as const;
 }
 
+/** How many recent positions the trail effect follows. */
+const TAIL = 28;
+const BEST_KEY = "arc.lq.best";
+
+/** Best block counts kept on this device (guests, and as a fallback). */
+function localBests(): Record<string, number> {
+  try {
+    return JSON.parse(localStorage.getItem(BEST_KEY) ?? "{}") as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+
+function rememberBest(stage: number, blocks: number): void {
+  const all = localBests();
+  const key = String(stage);
+  if (all[key] === undefined || blocks < (all[key] ?? Infinity)) all[key] = blocks;
+  try {
+    localStorage.setItem(BEST_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+}
+
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
 // ----------------------------------------------------------------------------- map
@@ -118,7 +160,11 @@ export function LogoQuestHome({
   const { me } = useSession();
   const [levels, setLevels] = useState<LqMapLevel[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [bests, setBests] = useState<Record<string, number>>(() => localBests());
+  const [picking, setPicking] = useState(false);
   const progress = me?.games.logoquest;
+  const starMap: StarMap = progress?.stars ?? {};
+  const [look, setLook] = useState<Look>(() => loadLook(starMap));
   const unlocked = progress?.unlocked_level ?? 1;
   const stars = (stage: number) => progress?.stars[String(stage)] ?? 0;
   const gated = (stage: number) => !me?.signed_in && me !== null && stage > (me?.guest_max_level ?? 3);
@@ -126,7 +172,22 @@ export function LogoQuestHome({
 
   useEffect(() => {
     api.lq.levels().then(setLevels, (e: unknown) => setError(e instanceof ApiError ? e.message : "Could not load the levels."));
+    api.lq.bests().then(
+      (r) =>
+        setBests((local) => {
+          const merged = { ...local };
+          for (const [k, v] of Object.entries(r.bests)) merged[k] = Math.min(v, merged[k] ?? Infinity);
+          return merged;
+        }),
+      () => undefined,
+    );
   }, []);
+
+  const choose = (next: Look) => {
+    setLook(next);
+    saveLook(next);
+    sfx.tap();
+  };
 
   // The chapter with the next thing to do starts open.
   const current = Math.ceil(unlocked / 2);
@@ -138,9 +199,10 @@ export function LogoQuestHome({
     return [...out.entries()];
   }, [levels]);
 
-  const stageButton = (stage: number, kind: "Learn" | "Test", title: string) => {
+  const stageButton = (stage: number, kind: "Learn" | "Test", title: string, par: number) => {
     const ok = open(stage);
     const s = stars(stage);
+    const best = bests[String(stage)];
     return (
       <button
         type="button"
@@ -154,7 +216,20 @@ export function LogoQuestHome({
           <span className={`block text-[10px] font-bold uppercase tracking-wider ${ok ? "text-muted" : ""}`}>{kind}</span>
           <span className="block truncate font-semibold">{title}</span>
         </span>
-        {ok ? s > 0 ? <Stars count={s} size={11} /> : null : <LockIcon size={16} />}
+        {ok ? (
+          s > 0 ? (
+            <span className="flex shrink-0 flex-col items-end gap-0.5">
+              <Stars count={s} size={11} />
+              {best !== undefined && (
+                <span className={`text-[10px] font-bold ${best <= par ? "text-emerald-300" : "text-muted"}`} title={`Best: ${best} blocks, par ${par}`}>
+                  {best <= par ? "⛳" : ""} {best}/{par}
+                </span>
+              )}
+            </span>
+          ) : null
+        ) : (
+          <LockIcon size={16} />
+        )}
       </button>
     );
   };
@@ -173,6 +248,17 @@ export function LogoQuestHome({
             <span className="text-xs text-muted">Draw anything you like with every chip</span>
           </span>
           <span aria-hidden="true" className="text-2xl">🐢</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPicking(true)}
+          className="mb-3 flex w-full items-center justify-between rounded-2xl border border-line bg-panel px-4 py-2 text-left"
+        >
+          <span>
+            <span className="block text-sm font-bold">Your turtle: {SKINS.find((x) => x.id === look.skin)?.name}</span>
+            <span className="text-xs text-muted">Trail: {TRAILS.find((x) => x.id === look.trail)?.name} · tap to change</span>
+          </span>
+          <SkinPreview skin={look.skin} size={44} />
         </button>
         {error && <p className="rounded-xl bg-red-500/15 p-3 text-sm text-red-200">{error}</p>}
         {chapters.map(([n, list]) => (
@@ -195,8 +281,8 @@ export function LogoQuestHome({
                 {list.map((l) => (
                   <li key={l.level} className="grid grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2">
                     <span className="text-right text-sm font-bold text-muted">{l.level}</span>
-                    {stageButton(learnStage(l.level), "Learn", l.learn)}
-                    {stageButton(testStage(l.level), "Test", l.test)}
+                    {stageButton(learnStage(l.level), "Learn", l.learn, l.learn_par)}
+                    {stageButton(testStage(l.level), "Test", l.test, l.test_par)}
                   </li>
                 ))}
               </ol>
@@ -204,6 +290,54 @@ export function LogoQuestHome({
           </section>
         ))}
       </div>
+      <Modal open={picking} onClose={() => setPicking(false)} title="Choose your look">
+        <div className="grid gap-3">
+          <p className="text-xs text-muted">Pass Tests and earn stars to unlock more.</p>
+          <div className="grid grid-cols-3 gap-2">
+            {SKINS.map((x) => {
+              const ok = x.test(starMap);
+              return (
+                <button
+                  type="button"
+                  key={x.id}
+                  disabled={!ok}
+                  aria-pressed={look.skin === x.id}
+                  onClick={() => choose({ ...look, skin: x.id })}
+                  className={`flex flex-col items-center gap-1 rounded-xl border p-2 text-xs font-semibold ${
+                    look.skin === x.id ? "border-accent bg-accent/15" : "border-line bg-panel-2"
+                  } ${ok ? "" : "opacity-45"}`}
+                >
+                  <SkinPreview skin={x.id} size={56} />
+                  {x.name}
+                  {!ok && <span className="text-[10px] font-normal text-muted">🔒 {x.needs}</span>}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-sm font-bold">Trails</p>
+          <div className="grid grid-cols-2 gap-2">
+            {TRAILS.map((x) => {
+              const ok = x.test(starMap);
+              return (
+                <button
+                  type="button"
+                  key={x.id}
+                  disabled={!ok}
+                  aria-pressed={look.trail === x.id}
+                  onClick={() => choose({ ...look, trail: x.id })}
+                  className={`rounded-xl border p-2 text-left text-xs font-semibold ${
+                    look.trail === x.id ? "border-accent bg-accent/15" : "border-line bg-panel-2"
+                  } ${ok ? "" : "opacity-45"}`}
+                >
+                  {x.name}
+                  {!ok && <span className="block text-[10px] font-normal text-muted">🔒 {x.needs}</span>}
+                </button>
+              );
+            })}
+          </div>
+          <Button onClick={() => setPicking(false)}>Done</Button>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -226,8 +360,12 @@ export function LogoQuestPlay({
   onStage: (stage: number) => void;
   onCheckpoint: () => void;
 }) {
-  const { refresh } = useSession();
+  const { refresh, me } = useSession();
   const sandbox = stage === 0;
+  const starMap: StarMap = useMemo(() => me?.games.logoquest?.stars ?? {}, [me]);
+  const look = useMemo(() => loadLook(starMap), [starMap]);
+  const [unlockedNow, setUnlockedNow] = useState<string[]>([]);
+  const [newBest, setNewBest] = useState(false);
   const [info, setInfo] = useState<LqStart | null>(null);
   const [ready, setReady] = useState(false);
   const [program, setProgram] = useState<Block[]>([]);
@@ -237,6 +375,9 @@ export function LogoQuestPlay({
   const [pad, setPad] = useState<Pad | null>(null);
   const [typed, setTyped] = useState("");
   const [speed, setSpeed] = useState<Speed>("normal");
+  const tail = useRef<{ x: number; y: number }[]>([]);
+  const tailFade = useRef<number | undefined>(undefined);
+  const [tailShown, setTailShown] = useState<{ x: number; y: number }[]>([]);
   const [frame, setFrame] = useState<{ drawn: Line[]; turtle: Turtle; arc: Arc | null; block: number | null }>({
     drawn: [],
     turtle: START,
@@ -416,7 +557,16 @@ export function LogoQuestPlay({
         dt = 0;
       }
     }
-    setFrame(frameAt(run, a.i, a.t));
+    const f = frameAt(run, a.i, a.t);
+    setFrame(f);
+    // The trail follows the turtle while it moves, then fades out.
+    tail.current = [...tail.current, { x: f.turtle.x, y: f.turtle.y }].slice(-TAIL);
+    setTailShown(tail.current);
+    window.clearTimeout(tailFade.current);
+    tailFade.current = window.setTimeout(() => {
+      tail.current = [];
+      setTailShown([]);
+    }, 450);
     if (a.i >= run.steps.length || (a.stepOnce && a.t === 0)) {
       setRunning(false);
       if (a.i >= run.steps.length) {
@@ -605,6 +755,12 @@ export function LogoQuestPlay({
         active_seconds: stats.current.active,
       });
       if (res.passed) {
+        const before = starMap;
+        const after = { ...before, [String(stage)]: Math.max(before[String(stage)] ?? 0, res.stars) };
+        setUnlockedNow(newlyUnlocked(before, after));
+        const previous = Math.min(info.best ?? Infinity, localBests()[String(stage)] ?? Infinity);
+        setNewBest(previous !== Infinity && res.blocks < previous);
+        rememberBest(stage, res.blocks);
         skipToEnd();
         sfx.win();
         haptic(30);
@@ -674,11 +830,19 @@ export function LogoQuestPlay({
           <span className={`rounded-full px-2 py-0.5 font-bold ${isTest ? "bg-amber-500/20 text-amber-200" : "bg-emerald-500/20 text-emerald-200"}`}>
             {isTest ? "TEST" : "LEARN"} · {info.data.chapter_name}
           </span>
-          {isTest ? (
-            <span className="font-semibold tabular-nums text-white" aria-label="Time">⏱ {clock(elapsed)}</span>
-          ) : (
-            <span className="text-muted">Par: {info.data.par} {info.data.par === 1 ? "block" : "blocks"}</span>
-          )}
+          <span className="flex items-center gap-2">
+            <span
+              aria-label={`${countBlocks(program)} blocks, par ${info.data.par}`}
+              className={`rounded-full px-2 py-0.5 font-bold tabular-nums ${
+                program.length && countBlocks(program) <= info.data.par ? "bg-emerald-500/20 text-emerald-200" : "bg-panel-2 text-muted"
+              }`}
+              title={info.best !== null ? `Your best: ${info.best} blocks` : undefined}
+            >
+              ⛳ {countBlocks(program)}/{info.data.par}
+              {info.best !== null ? ` · best ${info.best}` : ""}
+            </span>
+            {isTest && <span className="font-semibold tabular-nums text-white" aria-label="Time">⏱ {clock(elapsed)}</span>}
+          </span>
         </div>
       )}
       {!sandbox && info && !isTest && (
@@ -697,6 +861,9 @@ export function LogoQuestPlay({
               arc={!isTest || sandbox ? frame.arc : null}
               hint={hint}
               label={sandbox ? "Your drawing" : isTest ? "Your drawing (the target is on the card)" : "Your drawing, with the target in faint dashes"}
+              skin={look.skin}
+              trail={look.trail}
+              tail={tailShown}
             />
           )}
         </div>
@@ -895,6 +1062,15 @@ export function LogoQuestPlay({
               <dd className="text-right font-bold">
                 {result.blocks} <span className="text-muted">(par {result.par})</span>
               </dd>
+              {result.passed && (
+                <>
+                  <dt className="text-muted">Golf</dt>
+                  <dd className={`text-right font-bold ${result.blocks <= result.par ? "text-emerald-300" : "text-muted"}`}>
+                    {result.blocks <= result.par ? "⛳ " : ""}
+                    {parWord(result.blocks, result.par)}
+                  </dd>
+                </>
+              )}
               {isTest && (
                 <>
                   <dt className="text-muted">Time</dt>
@@ -915,8 +1091,19 @@ export function LogoQuestPlay({
                 Press Run to watch your turtle, and compare with {isTest ? "the card" : "the dashed lines"}.
               </p>
             )}
+            {result.passed && newBest && <p className="font-bold text-emerald-300">🏅 New best: {result.blocks} blocks!</p>}
+            {result.passed && unlockedNow.length > 0 && (
+              <p className="rounded-xl bg-accent/15 p-2 font-bold text-accent">
+                🎁 Unlocked: {unlockedNow.join(", ")}! Choose it on the level map.
+              </p>
+            )}
             {result.passed && result.blocks > result.par && (
-              <p className="text-sm text-muted">Can you do it with {result.par} blocks? Try REPEAT if you know it!</p>
+              <p className="text-sm text-muted">
+                Can you do it in {result.par} {result.par === 1 ? "block" : "blocks"}?{" "}
+                {(info?.data.chapter ?? 1) >= 4
+                  ? "Look for a part that repeats, and use REPEAT."
+                  : "One big step can replace two small ones in a row."}
+              </p>
             )}
             {nextStage ? (
               <Button onClick={() => onStage(nextStage)}>{isTest ? "Next lesson →" : "Take the Test →"}</Button>

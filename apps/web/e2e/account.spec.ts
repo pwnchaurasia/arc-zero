@@ -88,7 +88,7 @@ test("save progress, confirm the key, replace a lost key, restore with the new o
   await withOldKey.close();
   const withNewKey = await restoreOnFreshDevice(secondKey);
   // Any level total: CI generates only the first levels of each game.
-  await expect(withNewKey.getByText(/^3\/\d+ levels/)).toBeVisible({ timeout: 30_000 });
+  await expect(withNewKey.getByText(/^3\/\d+ lvl/)).toBeVisible({ timeout: 30_000 });
   await withNewKey.close();
 
   expect(errors).toEqual([]);

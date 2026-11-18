@@ -1,5 +1,8 @@
-import type { GameId } from "../api/types";
+import { useMemo, useState } from "react";
+
+import type { GameId, Me } from "../api/types";
 import { useInstall } from "../state/install";
+import { recentGames } from "../state/recent";
 import { useSession } from "../state/session";
 import { CoinChip } from "../ui/CoinChip";
 import { GearIcon, InstallIcon } from "../ui/icons";
@@ -67,30 +70,115 @@ export const GAMES: { id: GameId; name: string; tagline: string; image?: string 
   },
 ];
 
+/** Home screen filters (decision 2026-11-18). A game can be in more than one. */
+const CATEGORIES: { id: string; label: string; emoji: string; games: GameId[] }[] = [
+  { id: "puzzles", label: "Puzzles", emoji: "🧩", games: ["water-sort", "metro-jam", "gridsnap", "traceout", "cipher9"] },
+  { id: "action", label: "Action", emoji: "💥", games: ["brick-blast", "dead-bridge"] },
+  { id: "brain", label: "Brain & Logic", emoji: "🧠", games: ["cipher9", "logoquest", "traceout", "tacshift"] },
+  { id: "board", label: "Board", emoji: "🎮", games: ["tacshift"] },
+  { id: "junior", label: "Junior", emoji: "🧒", games: ["logoquest", "water-sort"] },
+];
+
+/** Games without numbered levels open somewhere else. */
+const NO_LEVELS: ReadonlySet<GameId> = new Set(["tacshift"]);
+
+interface Progress {
+  cleared: number;
+  total: number;
+  stars: number;
+  /** "52/100 lvl · 153★" and friends. */
+  line: string;
+  /** Where Resume goes, and how it's described ("level 5/100"). */
+  next: number | null;
+  nextLabel: string;
+}
+
+function progressOf(me: Me | null, id: GameId): Progress {
+  const p = me?.games[id];
+  const stars = p ? Object.values(p.stars).reduce((a, b) => a + b, 0) : 0;
+  if (id === "tacshift") {
+    return { cleared: 0, total: 0, stars: 0, line: "vs AI · 2 players", next: null, nextLabel: "pick a mode" };
+  }
+  if (id === "logoquest") {
+    // Two stages a lesson: Learn, then Test. A lesson counts once its Test is passed.
+    const lessons = (p?.level_count ?? 200) / 2;
+    const passed = Object.entries(p?.stars ?? {}).filter(([k, v]) => Number(k) % 2 === 0 && v > 0).length;
+    const stage = Math.min(p?.unlocked_level ?? 1, p?.level_count ?? 200);
+    return {
+      cleared: passed,
+      total: lessons,
+      stars,
+      line: `${passed}/${lessons} lessons · ${stars}★`,
+      next: stage,
+      nextLabel: `lesson ${Math.ceil(stage / 2)} · ${stage % 2 ? "Learn" : "Test"}`,
+    };
+  }
+  const total = p?.level_count ?? 100;
+  const cleared = p ? Object.keys(p.stars).length : 0;
+  const next = Math.min(p?.unlocked_level ?? 1, total);
+  if (id === "gridsnap") {
+    const best = me?.gridsnap_best ?? 0;
+    return { cleared, total, stars, line: `${cleared}/${total} lvl · best ${best}`, next: null, nextLabel: `endless · best ${best}` };
+  }
+  return { cleared, total, stars, line: `${cleared}/${total} lvl · ${stars}★`, next, nextLabel: `level ${next}/${total}` };
+}
+
+
 export function Home({
   onOpen,
+  onResume,
   onSettings,
   onCheckpoint,
   onIosInstall,
 }: {
   onOpen: (game: GameId) => void;
+  /** Straight into play: a level, or (null) the game's own start screen. */
+  onResume: (game: GameId, level: number | null) => void;
   onSettings: () => void;
   onCheckpoint: () => void;
   onIosInstall: () => void;
 }) {
   const { me, error, refresh } = useSession();
   const install = useInstall();
+  const [category, setCategory] = useState("all");
+  const recent = useMemo(() => recentGames().filter((id) => GAMES.some((g) => g.id === id)), []);
+  const shown = GAMES.filter((g) => category === "all" || CATEGORIES.find((c) => c.id === category)?.games.includes(g.id));
+
+  const resume = (id: GameId) => {
+    const p = progressOf(me, id);
+    // Guests stop at the checkpoint: past it, Resume asks them to save first.
+    if (p.next !== null && !me?.signed_in && !me?.all_levels_open && p.next > (me?.guest_max_level ?? 3)) {
+      onCheckpoint();
+      return;
+    }
+    onResume(id, NO_LEVELS.has(id) ? null : p.next);
+  };
+
+  const chip = (id: string, label: string, emoji: string | null) => (
+    <button
+      type="button"
+      key={id}
+      aria-pressed={category === id}
+      onClick={() => setCategory(id)}
+      className={`flex shrink-0 items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-bold transition active:scale-95 ${
+        category === id ? "border-accent bg-accent/15 text-accent" : "border-line bg-panel text-white/90 hover:border-accent/50"
+      }`}
+    >
+      {emoji && <span aria-hidden="true">{emoji}</span>}
+      {label}
+    </button>
+  );
 
   return (
     <div className="mx-auto flex h-full w-full max-w-6xl flex-col overflow-y-auto">
-      <header className="flex items-center justify-between px-5 pb-2 pt-5">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight">Arc Zero</h1>
-          <p className="text-sm text-muted">
+      <header className="flex items-center justify-between gap-3 px-5 pb-2 pt-5">
+        <div className="min-w-0">
+          <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Arc Zero</h1>
+          <p className="truncate text-sm text-muted">
             {me?.name ? `Playing as ${me.name}` : "No ads. No tracking. Just games."}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <CoinChip />
           <IconButton label="Settings" onClick={onSettings}>
             <GearIcon />
@@ -141,56 +229,84 @@ export function Home({
         </button>
       )}
 
-      {/* 2 tiles per row on phones, up to 5 on a laptop. */}
-      <main className="grid grid-cols-2 gap-4 p-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        {GAMES.map((g) => {
-          const progress = me?.games[g.id];
-          const cleared = progress ? Object.keys(progress.stars).length : 0;
-          const stars = progress ? Object.values(progress.stars).reduce((a, b) => a + b, 0) : 0;
-          const total = progress?.level_count ?? 100;
-          return (
-            <button
-              type="button"
-              key={g.id}
-              onClick={() => onOpen(g.id)}
-              className="group flex flex-col overflow-hidden rounded-3xl border border-line bg-panel text-left transition hover:border-accent/60 active:scale-[0.98]"
-            >
-              <div className="overflow-hidden">
-                <div className="transition duration-300 group-hover:scale-105">
-                  <GameLogo game={g.id} image={g.image} />
-                </div>
-              </div>
-              <div className="flex flex-1 flex-col p-3">
-                <h2 className="text-base font-extrabold leading-tight sm:text-lg">{g.name}</h2>
-                <p className="mt-1 line-clamp-2 text-xs text-muted">{g.tagline}</p>
-                {g.id === "logoquest" ? (
-                  <p className="mt-auto pt-3 text-xs text-muted">
-                    {Math.ceil(Object.keys(progress?.stars ?? {}).length / 2)}/{(progress?.level_count ?? 200) / 2} lessons ·
-                    Learn and Test
-                  </p>
-                ) : g.id === "tacshift" ? (
-                  <p className="mt-auto pt-3 text-xs text-muted">Infinity · Classic · Ultimate · 2 players</p>
-                ) : (
-                <div className="mt-auto pt-3">
-                  <div className="h-1.5 overflow-hidden rounded-full bg-ink/60">
-                    <div
-                      className="h-full rounded-full bg-accent transition-all"
-                      style={{ width: `${(cleared / total) * 100}%` }}
-                    />
+      {/* Category chips: one row that scrolls sideways on phones, wraps on wider screens. */}
+      <nav aria-label="Categories" className="no-scrollbar mt-3 flex shrink-0 gap-2 overflow-x-auto px-5 pb-1 md:flex-wrap md:overflow-visible">
+        {chip("all", `All (${GAMES.length})`, null)}
+        {CATEGORIES.filter((c) => c.games.length).map((c) => chip(c.id, c.label, c.emoji))}
+      </nav>
+
+      {category === "all" && recent.length > 0 && (
+        <section className="mt-5 shrink-0" aria-label="Continue playing">
+          <h2 className="px-5 text-sm font-bold uppercase tracking-wider text-muted">Continue playing</h2>
+          <div className="no-scrollbar mt-2 flex snap-x scroll-px-5 gap-3 overflow-x-auto px-5 pb-1">
+            {recent.map((id) => {
+              const g = GAMES.find((x) => x.id === id);
+              if (!g) return null;
+              const p = progressOf(me, id);
+              return (
+                <div
+                  key={id}
+                  className="flex w-[17.5rem] shrink-0 snap-start items-center gap-3 rounded-2xl border border-line bg-panel p-2.5 sm:w-80"
+                >
+                  <button type="button" onClick={() => onOpen(id)} className="size-16 shrink-0 overflow-hidden rounded-xl" aria-label={`${g.name}: all levels`}>
+                    <GameLogo game={g.id} image={g.image} />
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-extrabold">{g.name}</p>
+                    <p className="truncate text-xs text-muted">{p.nextLabel}</p>
                   </div>
-                  <p className="mt-1.5 text-xs text-muted">
-                    {cleared}/{total} levels · {stars} ★
-                  </p>
-                  {g.id === "gridsnap" && (
-                    <p className="text-xs text-muted">Endless best: {me?.gridsnap_best ?? 0}</p>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => resume(id)}
+                    aria-label={`Resume ${g.name}`}
+                    className="shrink-0 rounded-full bg-accent px-3.5 py-2 text-xs font-black tracking-wide text-ink transition active:scale-95"
+                  >
+                    RESUME
+                  </button>
                 </div>
-                )}
-              </div>
-            </button>
-          );
-        })}
-      </main>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      <section className="mt-5 shrink-0" aria-label="Games">
+        <h2 className="px-5 text-sm font-bold uppercase tracking-wider text-muted">
+          {category === "all" ? "All games" : CATEGORIES.find((c) => c.id === category)?.label}
+        </h2>
+        {/* 2 per row on phones, 3 on tablets, up to 5 on a laptop. */}
+        <div className="grid grid-cols-2 gap-3 p-5 pt-2 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
+          {shown.map((g) => {
+            const p = progressOf(me, g.id);
+            return (
+              <button
+                type="button"
+                key={g.id}
+                onClick={() => onOpen(g.id)}
+                className="group flex flex-col overflow-hidden rounded-3xl border border-line bg-panel text-left transition hover:border-accent/60 active:scale-[0.98]"
+              >
+                <div className="aspect-[16/10] overflow-hidden">
+                  <div className="h-full transition duration-300 group-hover:scale-105">
+                    <GameLogo game={g.id} image={g.image} fill />
+                  </div>
+                </div>
+                <div className="flex flex-1 flex-col gap-1.5 p-3">
+                  <h3 className="text-base font-extrabold leading-tight sm:text-lg">{g.name}</h3>
+                  <p className="hidden text-xs text-muted sm:line-clamp-2">{g.tagline}</p>
+                  <div className="mt-auto">
+                    {p.total > 0 && (
+                      <div className="h-1.5 overflow-hidden rounded-full bg-ink/60">
+                        <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${(p.cleared / p.total) * 100}%` }} />
+                      </div>
+                    )}
+                    <p className="mt-1.5 text-xs text-muted">{p.line}</p>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       <footer className="mt-auto px-5 pb-6 text-center text-xs text-muted">
         Every move is verified on our server, so progress is fair for everyone.

@@ -6,7 +6,16 @@ import type { GameId } from "../api/types";
  * Square logo for a game tile. Uses the game's image when one is configured,
  * otherwise a drawn placeholder in the game's own art style.
  */
-export function GameLogo({ game, image }: { game: GameId | "gridsnap"; image?: string }) {
+export function GameLogo({
+  game,
+  image,
+  fill = false,
+}: {
+  game: GameId | "gridsnap";
+  image?: string;
+  /** Fill a box of any shape (cropping the square logo) instead of a square. */
+  fill?: boolean;
+}) {
   if (image) {
     return (
       <img
@@ -16,7 +25,8 @@ export function GameLogo({ game, image }: { game: GameId | "gridsnap"; image?: s
         height={512}
         loading="lazy"
         decoding="async"
-        className="aspect-square w-full object-cover"
+        // Wide crops keep the lower part: the logos' titles sit along the top.
+        className={fill ? "h-full w-full object-cover object-[50%_80%]" : "aspect-square w-full object-cover"}
       />
     );
   }

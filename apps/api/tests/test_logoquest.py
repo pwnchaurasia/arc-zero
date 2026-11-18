@@ -141,8 +141,40 @@ async def test_the_map_names_levels_without_answers(app_client: AsyncClient) -> 
         "chapter_name": "Grid Walker",
         "learn": "Up",
         "test": "Corner",
+        "learn_par": 1,
+        "test_par": 3,
     }
     assert "FD" not in r.text
+
+
+async def test_personal_bests_track_the_fewest_blocks(app_client: AsyncClient) -> None:
+    from tests.conftest import guest_through_gate, pow_for
+
+    ticket = await guest_through_gate(app_client)
+    r = await app_client.post(
+        "/api/v1/auth/register",
+        json={
+            "guest_ticket": ticket,
+            "pow": await pow_for(app_client, "register"),
+            "name": "Nephew",
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert (await app_client.get("/api/v1/games/logoquest/bests")).json() == {"bests": {}}
+
+    start = await _start(app_client, 1)
+    assert start["best"] is None
+    long_way = [{"op": "fd", "n": 50}, {"op": "fd", "n": 50}]
+    first = await _check(app_client, 1, start, long_way, {})
+    assert (first["passed"], first["best"]) == (True, 2)
+    again = await _start(app_client, 1)
+    assert again["best"] == 2
+    better = await _check(app_client, 1, again, LQ_LEARN, {})
+    assert better["best"] == 1
+    # A worse pass later doesn't lose the record.
+    third = await _start(app_client, 1)
+    await _check(app_client, 1, third, long_way, {})
+    assert (await app_client.get("/api/v1/games/logoquest/bests")).json() == {"bests": {"1": 1}}
 
 
 def test_stars_and_flags() -> None:

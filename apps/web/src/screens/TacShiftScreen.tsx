@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api } from "../api/client";
 import type { TsAssist, TsMode, TsOutcome, TsProgress, TsState, TsTier } from "../api/types";
-import { engine, loadEngine } from "../engine/wasm";
+import { loadEngine } from "../engine/wasm";
 import { haptic, sfx } from "../feel/audio";
 import { Board3, BoardUltimate } from "../games/tacshift/Boards";
+import { Challenge } from "../games/tacshift/Challenge";
+import { applyLocal, vanishing } from "../games/tacshift/rules";
 import { useSession } from "../state/session";
 import { CoinChip } from "../ui/CoinChip";
 import { RestartIcon, UndoIcon } from "../ui/icons";
@@ -52,37 +54,6 @@ interface Match {
   spent: number;
 }
 
-interface Local {
-  state: TsState;
-  history: TsState[];
-}
-
-/** The player to move's mark that their next one would push off (Infinity, 3 down). */
-function vanishing(s: TsState): number | null {
-  if (s.mode !== "infinity" || s.status !== "playing") return null;
-  const q = s.queues[s.turn - 1];
-  return q && q.length === 3 ? (q[0] ?? null) : null;
-}
-
-function emptyState(mode: TsMode): TsState {
-  const sim = new engine.TacShift(mode);
-  const s = JSON.parse(sim.state()) as TsState;
-  sim.free();
-  return s;
-}
-
-/** Plays `cell` with the browser engine. `null` if the move isn't legal. */
-function applyLocal(s: TsState, cell: number): { state: TsState; vanished: number } | null {
-  const sim = engine.TacShift.fromState(JSON.stringify(s));
-  try {
-    if (!sim.legal(cell)) return null;
-    const vanished = sim.play(cell);
-    return { state: JSON.parse(sim.state()) as TsState, vanished };
-  } finally {
-    sim.free();
-  }
-}
-
 export function TacShiftScreen({ onBack }: { onBack: () => void }) {
   const { refresh } = useSession();
   const [ready, setReady] = useState(false);
@@ -90,14 +61,10 @@ export function TacShiftScreen({ onBack }: { onBack: () => void }) {
   const [tier, setTier] = useState<TsTier>("easy");
   const [progress, setProgress] = useState<TsProgress | null>(null);
   const [match, setMatch] = useState<Match | null>(null);
-  const [local, setLocal] = useState<Local | null>(null);
-  const [localMode, setLocalMode] = useState<TsMode>("infinity");
-  const [series, setSeries] = useState({ x: 0, o: 0, draw: 0 });
   const [thinking, setThinking] = useState(false);
   const [starting, setStarting] = useState(false);
   const [radar, setRadar] = useState<number | null>(null);
   const [outcome, setOutcome] = useState<TsOutcome | null>(null);
-  const [localResult, setLocalResult] = useState<string | null>(null);
   const [coins, setCoins] = useState<number | undefined>(undefined);
   const [spend, setSpend] = useState<(SpendRequest & { kind: TsAssist }) | null>(null);
   const [buying, setBuying] = useState(false);
@@ -120,9 +87,7 @@ export function TacShiftScreen({ onBack }: { onBack: () => void }) {
     if (thinking) return;
     setTab(t);
     setMatch(null);
-    setLocal(null);
     setOutcome(null);
-    setLocalResult(null);
     setRadar(null);
     if (t !== "local") {
       // Start on the easiest tier still paying, so the next goal is obvious.
@@ -145,11 +110,6 @@ export function TacShiftScreen({ onBack }: { onBack: () => void }) {
     } finally {
       setStarting(false);
     }
-  };
-
-  const startLocal = () => {
-    setLocal({ state: emptyState(localMode), history: [] });
-    setLocalResult(null);
   };
 
   const finish = async (o: TsOutcome) => {
@@ -208,35 +168,6 @@ export function TacShiftScreen({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const playLocal = (cell: number) => {
-    if (!local || local.state.status !== "playing") return;
-    sfx.unlock();
-    const next = applyLocal(local.state, cell);
-    if (!next) {
-      sfx.invalid();
-      return;
-    }
-    sfx.mark(local.state.turn === 1);
-    haptic(8);
-    if (next.vanished >= 0) sfx.vanish();
-    setLocal({ state: next.state, history: [...local.history, local.state] });
-    if (next.state.status !== "playing") {
-      const s = next.state.status;
-      setSeries((r) => ({ x: r.x + (s === "x_won" ? 1 : 0), o: r.o + (s === "o_won" ? 1 : 0), draw: r.draw + (s === "draw" ? 1 : 0) }));
-      void sleep(RESULT_DELAY_MS).then(() => {
-        sfx.win();
-        setLocalResult(s === "x_won" ? "X wins!" : s === "o_won" ? "O wins!" : "A draw");
-      });
-    }
-  };
-
-  const undoLocal = () => {
-    const previous = local?.history.at(-1);
-    if (!local || !previous || local.state.status !== "playing") return;
-    setLocal({ state: previous, history: local.history.slice(0, -1) });
-    sfx.tap();
-  };
-
   const ask = (kind: TsAssist) => {
     if (!match) return;
     setSpend({
@@ -279,9 +210,9 @@ export function TacShiftScreen({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const status = (s: TsState, vsAi: boolean) => {
+  const status = (s: TsState) => {
     if (s.status !== "playing") return " ";
-    const turn = vsAi ? (s.turn === 1 ? "Your move" : "AI is thinking…") : `${s.turn === 1 ? "X" : "O"} to move`;
+    const turn = s.turn === 1 ? "Your move" : "AI is thinking…";
     if (s.mode !== "ultimate") return turn;
     return s.active === null ? `${turn} · any open board` : `${turn} · board ${s.active + 1}`;
   };
@@ -303,8 +234,7 @@ export function TacShiftScreen({ onBack }: { onBack: () => void }) {
     return match?.mode === "infinity" ? "Watch which of your marks fades next." : "Undo your last move, or try again.";
   };
 
-  const vsAi = tab !== "local";
-  const playingState = vsAi ? match?.state : local?.state;
+  const playingState = match?.state;
 
   return (
     <div className="relative flex h-full flex-col">
@@ -326,124 +256,77 @@ export function TacShiftScreen({ onBack }: { onBack: () => void }) {
       </div>
 
       <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col px-4 pt-3">
-        {!playingState && (
+        {tab === "local" && <Challenge ready={ready} />}
+        {tab !== "local" && !playingState && (
           <div className="grid gap-3 overflow-y-auto pb-4">
-            {vsAi ? (
-              <>
-                <p className="text-sm text-muted">{RULES[tab]}</p>
-                <div className="grid gap-2">
-                  {TIERS.map((t) => {
-                    const info = tierInfo(tab, t.id);
-                    const unbeatable = tab === "classic" && t.id === "hard";
-                    return (
-                      <button
-                        type="button"
-                        key={t.id}
-                        aria-pressed={tier === t.id}
-                        onClick={() => setTier(t.id)}
-                        className={`flex items-center justify-between rounded-2xl border px-4 py-3 text-left transition active:scale-[0.98] ${
-                          tier === t.id ? "border-accent bg-accent/10" : "border-line bg-panel-2"
-                        }`}
-                      >
-                        <span>
-                          <span className="block font-extrabold">{unbeatable ? "Unbeatable" : t.label}</span>
-                          <span className="text-xs text-muted">{unbeatable ? "Draw to earn" : "Win to earn"}</span>
-                        </span>
-                        <span className={`text-sm font-bold ${info?.earned ? "text-emerald-300" : "text-gold"}`}>
-                          {info ? (info.earned ? "✓ Earned" : `+${info.coins} coins`) : "…"}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <Button onClick={() => void startMatch()} disabled={!ready || starting}>
-                  {starting ? "…" : "Play as X"}
-                </Button>
-              </>
-            ) : (
-              <>
-                <p className="text-sm text-muted">Two players on one phone. Pass it after every move.</p>
-                <div className="grid grid-cols-3 gap-1 rounded-2xl bg-panel p-1">
-                  {(["infinity", "classic", "ultimate"] as const).map((m) => (
-                    <button
-                      type="button"
-                      key={m}
-                      aria-pressed={localMode === m}
-                      onClick={() => setLocalMode(m)}
-                      className={`rounded-xl py-2 text-xs font-bold capitalize ${localMode === m ? "bg-panel-2 text-white ring-1 ring-accent" : "text-muted"}`}
-                    >
-                      {m}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-muted">{RULES[localMode]}</p>
-                <Button onClick={startLocal} disabled={!ready}>
-                  Start
-                </Button>
-              </>
-            )}
-            {!vsAi && (series.x || series.o || series.draw) ? (
-              <p className="text-center text-sm text-muted">
-                Series · X {series.x} · O {series.o} · draws {series.draw}
-              </p>
-            ) : null}
+            <p className="text-sm text-muted">{RULES[tab]}</p>
+            <div className="grid gap-2">
+              {TIERS.map((t) => {
+                const info = tierInfo(tab, t.id);
+                const unbeatable = tab === "classic" && t.id === "hard";
+                return (
+                  <button
+                    type="button"
+                    key={t.id}
+                    aria-pressed={tier === t.id}
+                    onClick={() => setTier(t.id)}
+                    className={`flex items-center justify-between rounded-2xl border px-4 py-3 text-left transition active:scale-[0.98] ${
+                      tier === t.id ? "border-accent bg-accent/10" : "border-line bg-panel-2"
+                    }`}
+                  >
+                    <span>
+                      <span className="block font-extrabold">{unbeatable ? "Unbeatable" : t.label}</span>
+                      <span className="text-xs text-muted">{unbeatable ? "Draw to earn" : "Win to earn"}</span>
+                    </span>
+                    <span className={`text-sm font-bold ${info?.earned ? "text-emerald-300" : "text-gold"}`}>
+                      {info ? (info.earned ? "✓ Earned" : `+${info.coins} coins`) : "…"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <Button onClick={() => void startMatch()} disabled={!ready || starting}>
+              {starting ? "…" : "Play as X"}
+            </Button>
           </div>
         )}
 
-        {playingState && (
+        {tab !== "local" && playingState && match && (
           <>
             <div className="mb-2 flex items-center justify-between text-sm">
-              <span className={`font-semibold ${thinking ? "animate-pulse text-rose-300" : "text-white"}`}>{status(playingState, vsAi)}</span>
+              <span className={`font-semibold ${thinking ? "animate-pulse text-rose-300" : "text-white"}`}>{status(playingState)}</span>
               <span className="text-muted">
-                {vsAi && match
-                  ? `${match.tier === "hard" && match.mode === "classic" ? "Unbeatable" : TIERS.find((t) => t.id === match.tier)?.label} · ${match.reward ? `+${match.reward}` : "earned"}`
-                  : `X ${series.x} · O ${series.o}`}
+                {`${match.tier === "hard" && match.mode === "classic" ? "Unbeatable" : TIERS.find((t) => t.id === match.tier)?.label} · ${match.reward ? `+${match.reward}` : "earned"}`}
               </span>
             </div>
             <div className="mx-auto w-full" style={{ maxWidth: "min(100%, calc(100dvh - 300px))" }}>
-              {vsAi
-                ? board(playingState, (c) => void playAi(c), thinking || playingState.status !== "playing")
-                : board(playingState, playLocal, playingState.status !== "playing")}
+              {board(playingState, (c) => void playAi(c), thinking || playingState.status !== "playing")}
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2 pb-[max(env(safe-area-inset-bottom),12px)]">
-              {vsAi && match ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => ask("undo")}
-                    disabled={thinking || match.state.plies === 0 || (outcome !== null && outcome.result !== "lost")}
-                    className="flex min-h-14 flex-col items-center justify-center rounded-2xl border border-line bg-panel-2 text-xs font-semibold disabled:opacity-40"
-                  >
-                    <UndoIcon size={20} />
-                    <span>Undo · <span className="text-gold">{match.prices.undo}</span></span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => ask("radar")}
-                    disabled={thinking || match.state.status !== "playing"}
-                    className="flex min-h-14 flex-col items-center justify-center rounded-2xl border border-line bg-panel-2 text-xs font-semibold disabled:opacity-40"
-                  >
-                    <span aria-hidden="true" className="text-lg leading-none">◎</span>
-                    <span>Radar · <span className="text-gold">{match.prices.radar}</span></span>
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={undoLocal}
-                    disabled={!local?.history.length || local.state.status !== "playing"}
-                    className="flex min-h-14 flex-col items-center justify-center rounded-2xl border border-line bg-panel-2 text-xs font-semibold disabled:opacity-40"
-                  >
-                    <UndoIcon size={20} />
-                    <span>Undo · free</span>
-                  </button>
-                  <span />
-                </>
-              )}
               <button
                 type="button"
-                onClick={() => (vsAi ? (setMatch(null), setOutcome(null)) : (setLocal(null), setLocalResult(null)))}
+                onClick={() => ask("undo")}
+                disabled={thinking || match.state.plies === 0 || (outcome !== null && outcome.result !== "lost")}
+                className="flex min-h-14 flex-col items-center justify-center rounded-2xl border border-line bg-panel-2 text-xs font-semibold disabled:opacity-40"
+              >
+                <UndoIcon size={20} />
+                <span>Undo · <span className="text-gold">{match.prices.undo}</span></span>
+              </button>
+              <button
+                type="button"
+                onClick={() => ask("radar")}
+                disabled={thinking || match.state.status !== "playing"}
+                className="flex min-h-14 flex-col items-center justify-center rounded-2xl border border-line bg-panel-2 text-xs font-semibold disabled:opacity-40"
+              >
+                <span aria-hidden="true" className="text-lg leading-none">◎</span>
+                <span>Radar · <span className="text-gold">{match.prices.radar}</span></span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMatch(null);
+                  setOutcome(null);
+                }}
                 disabled={thinking}
                 className="flex min-h-14 flex-col items-center justify-center rounded-2xl border border-line bg-panel-2 text-xs font-semibold disabled:opacity-40"
               >
@@ -473,15 +356,6 @@ export function TacShiftScreen({ onBack }: { onBack: () => void }) {
             </Button>
           </div>
         )}
-      </Modal>
-      <Modal open={localResult !== null} onClose={() => setLocalResult(null)} title={localResult ?? ""}>
-        <div className="grid gap-3">
-          <p className="text-muted">Series · X {series.x} · O {series.o} · draws {series.draw}</p>
-          <Button onClick={startLocal}>Next game</Button>
-          <Button variant="ghost" onClick={() => { setLocalResult(null); setLocal(null); }}>
-            Change rules
-          </Button>
-        </div>
       </Modal>
     </div>
   );

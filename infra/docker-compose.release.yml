@@ -37,6 +37,21 @@ services:
     networks: [internal, egress]
     restart: "no"
 
+  # Optional ngrok tunnel to the web container; activate.sh turns it on
+  # (COMPOSE_PROFILES=tunnel) only when secrets/ngrok.yml has content.
+  ngrok:
+    image: ngrok/ngrok:3
+    profiles: [tunnel]
+    restart: unless-stopped
+    command: ["start", "--all", "--config", "/run/secrets/ngrok.yml"]
+    secrets: [ngrok.yml]
+    depends_on: { web: { condition: service_started } }
+    networks: [edge]
+    read_only: true
+    tmpfs: [/tmp, /home/ngrok]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -60,6 +75,7 @@ secrets:
   cipher9.json: { file: ./secrets/cipher9.json }
   logoquest.json: { file: ./secrets/logoquest.json }
   redis_password: { file: ./secrets/redis_password }
+  ngrok.yml: { file: ./secrets/ngrok.yml }
 
 volumes: { redisdata: {} }
 

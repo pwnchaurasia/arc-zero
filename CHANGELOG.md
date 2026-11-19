@@ -5,6 +5,10 @@ the newest is at the top.
 
 ## Unreleased
 
+### Small fixes
+- Local `make share` also accepts ngrok's newer `*.ngrok-free.dev` / `*.ngrok.dev` addresses.
+- The name box's placeholder is now "e.g. Nova".
+
 ### Home screen redesign (phone, tablet and desktop)
 - Category chips: All, Puzzles, Action, Brain & Logic, Board, Junior (a game can be in
   more than one). One sideways-scrolling row on phones, wrapped on wider screens.

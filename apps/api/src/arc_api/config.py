@@ -19,7 +19,7 @@ ENCRYPTED_SSL_MODES = frozenset({"require", "verify-ca", "verify-full"})
 
 
 # Domains ngrok hands out (ARC_DEV_TUNNEL, local sharing only).
-TUNNEL_DOMAINS = (".ngrok-free.app", ".ngrok.app", ".ngrok.io")
+TUNNEL_DOMAINS = (".ngrok-free.app", ".ngrok-free.dev", ".ngrok.app", ".ngrok.dev", ".ngrok.io")
 
 
 class Settings(BaseSettings):
@@ -53,7 +53,8 @@ class Settings(BaseSettings):
     # the guest gate. Wins are still verified. Refused in production (check_production).
     dev_unlock_all: bool = False
     # Local sharing only: also accept requests through an ngrok tunnel (any
-    # *.ngrok-free.app / *.ngrok.app / *.ngrok.io address). Refused in production.
+    # *.ngrok-free.app / .ngrok-free.dev / .ngrok.app / .ngrok.dev / .ngrok.io
+    # address). Refused in production.
     dev_tunnel: bool = False
     hsts: bool = False
 

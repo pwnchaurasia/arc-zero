@@ -109,7 +109,7 @@ function NameField({
         disabled={disabled}
         maxLength={20}
         autoComplete="nickname"
-        placeholder="e.g. Pawan"
+        placeholder="e.g. Nova"
         className="min-h-11 w-full rounded-2xl border border-line bg-panel-2 px-4 text-white outline-none focus:border-accent"
       />
     </label>

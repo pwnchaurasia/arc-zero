@@ -83,7 +83,7 @@ export default defineConfig({
     proxy: api,
     // `make share`: let friends in through any ngrok address (local dev only).
     ...(process.env.ARC_DEV_TUNNEL === "true"
-      ? { allowedHosts: [".ngrok-free.app", ".ngrok.app", ".ngrok.io"] }
+      ? { allowedHosts: [".ngrok-free.app", ".ngrok-free.dev", ".ngrok.app", ".ngrok.dev", ".ngrok.io"] }
       : {}),
   },
   preview: {

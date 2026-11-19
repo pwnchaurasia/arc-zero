@@ -86,7 +86,8 @@ jobs:
     name: Deploy to production
     needs: [version, images]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Level generation alone takes about 10 minutes (see .github/scripts/ci-levelgen.sh).
+    timeout-minutes: 45
     environment:
       name: production
       url: https://${{ vars.SITE_ADDRESS }}

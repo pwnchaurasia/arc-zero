@@ -4,10 +4,8 @@ import { ApiError, api } from "../api/client";
 import type {
   GsAssist,
   GsFinal,
-  GsLeaderboard,
   GsLevelResult,
   GsLevelStart,
-  GsPeriod,
   GsStart,
   GsView,
 } from "../api/types";
@@ -16,7 +14,7 @@ import { haptic, sfx } from "../feel/audio";
 import { GridSnapView, shapeSize } from "../games/gridsnap/GridSnapView";
 import { useSession } from "../state/session";
 import { CoinChip } from "../ui/CoinChip";
-import { BombIcon, CrownIcon, FlagIcon, RestartIcon, ShuffleIcon, TrophyIcon } from "../ui/icons";
+import { BombIcon, CrownIcon, FlagIcon, RestartIcon, ShuffleIcon } from "../ui/icons";
 import { Button, IconButton, Modal, TopBar } from "../ui/kit";
 import { ConfirmSpend, type SpendRequest } from "./ConfirmSpend";
 import { ResultCard } from "./ResultCard";
@@ -29,7 +27,7 @@ const ASSISTS: Record<GsAssist, { title: string; what: string }> = {
   bomb: { title: "Bomb", what: "Clears the 3 × 3 area around the square you picked. No points for the cleared blocks." },
 };
 const TERMS =
-  "Coins aren't refunded. A game with bought help still counts for your best score, but not for the leaderboards.";
+  "Coins aren't refunded. A game with bought help still counts for your best score.";
 const STEPS: Record<string, [number, number]> = {
   ArrowUp: [-1, 0],
   ArrowDown: [1, 0],
@@ -38,11 +36,6 @@ const STEPS: Record<string, [number, number]> = {
 };
 /** How long the board stays visible after the last move before "No room!" covers it. */
 const STUCK_CARD_DELAY_MS = 1200;
-const PERIODS: { id: GsPeriod; label: string }[] = [
-  { id: "week", label: "This week" },
-  { id: "month", label: "This month" },
-  { id: "all", label: "All time" },
-];
 
 interface Run {
   id: string;
@@ -117,8 +110,6 @@ export function GridSnapScreen({
   const [picking, setPicking] = useState(false);
   const [final, setFinal] = useState<GsFinal | null>(null);
   const [confirmEnd, setConfirmEnd] = useState<"end" | "new" | null>(null);
-  const [board, setBoard] = useState<GsLeaderboard | null>(null);
-  const [period, setPeriod] = useState<GsPeriod | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, showToast] = useToast(3200);
   // Read by callbacks the canvas holds on to, so they never see stale values.
@@ -466,17 +457,6 @@ export function GridSnapScreen({
     }
   };
 
-  const openBoard = async (p: GsPeriod) => {
-    setPeriod(p);
-    setBoard(null);
-    try {
-      setBoard(await api.gs.leaderboard(p));
-    } catch (e) {
-      setPeriod(null);
-      showToast(e instanceof ApiError ? e.message : "Could not load the leaderboard.");
-    }
-  };
-
   const assistsUsed = (k: GsAssist) => (k === "bomb" ? run.current?.view.bombs : run.current?.view.reshuffles) ?? 0;
 
   return (
@@ -489,9 +469,6 @@ export function GridSnapScreen({
             <CoinChip balance={coins} />
             {level === undefined ? (
               <>
-                <IconButton label="Leaderboards" onClick={() => void openBoard("week")}>
-                  <TrophyIcon />
-                </IconButton>
                 <IconButton label="New game" onClick={onNewGame} disabled={!ready}>
                   <RestartIcon />
                 </IconButton>
@@ -644,60 +621,6 @@ export function GridSnapScreen({
         </div>
       </Modal>
 
-      <Modal open={period !== null} onClose={() => setPeriod(null)} title="Leaderboards">
-        <div className="grid gap-4">
-          <div className="grid grid-cols-3 gap-1 rounded-2xl bg-panel-2 p-1 text-sm">
-            {PERIODS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => void openBoard(p.id)}
-                className={`rounded-xl px-2 py-2 font-semibold ${period === p.id ? "bg-accent text-ink" : "text-muted"}`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          {!board && <p className="text-center text-muted">Loading…</p>}
-          {board && board.entries.length === 0 && (
-            <p className="text-center text-muted">No scores yet. Be the first!</p>
-          )}
-          {board && board.entries.length > 0 && (
-            <ol className="grid gap-1">
-              {board.entries.map((e) => (
-                <li
-                  key={e.rank}
-                  className={`flex items-center gap-3 rounded-xl px-3 py-2 ${e.you ? "bg-accent/15 text-accent" : "bg-panel-2"}`}
-                >
-                  <span className="w-6 text-right font-bold tabular-nums text-muted">{e.rank}</span>
-                  <span className="min-w-0 flex-1 truncate font-semibold">{e.name}</span>
-                  <span className="font-bold tabular-nums">{e.score}</span>
-                </li>
-              ))}
-            </ol>
-          )}
-          {board?.you && !board.entries.some((e) => e.you) && (
-            <p className="rounded-xl bg-accent/15 px-3 py-2 text-sm text-accent">
-              You: #{board.you.rank} with {board.you.score}
-            </p>
-          )}
-          {board && !board.signed_in && (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setPeriod(null);
-                onCheckpoint();
-              }}
-            >
-              Save your progress to join the leaderboards
-            </Button>
-          )}
-          {board?.signed_in && !me?.name && (
-            <p className="text-xs text-muted">You show as "Anonymous player". Pick a name in Settings.</p>
-          )}
-          <p className="text-xs text-muted">Best score per player. Games with bought help don't count. Weeks start on Monday (UTC).</p>
-        </div>
-      </Modal>
 
       {result && level !== undefined && (
         <ResultCard
@@ -725,16 +648,8 @@ export function GridSnapScreen({
               {final.lines} lines · best {final.best}
               {final.coins_earned > 0 ? ` · +${final.coins_earned} coins` : ""}
             </p>
-            {!final.ranked && (
-              <p className="mt-2 text-xs text-muted">
-                {me?.signed_in ? "Bought help was used: this game isn't on the leaderboards." : "Save your progress to get on the leaderboards."}
-              </p>
-            )}
             <div className="mt-5 grid gap-3">
               <Button onClick={() => void newGame()}>Play again</Button>
-              <Button variant="secondary" onClick={() => void openBoard("week")}>
-                Leaderboards
-              </Button>
               <Button variant="ghost" onClick={onBack}>
                 All games
               </Button>

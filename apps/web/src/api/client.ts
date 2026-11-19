@@ -28,9 +28,7 @@ import type {
   GameId,
   GsAssist,
   GsFinal,
-  GsLeaderboard,
   GsLevelStart,
-  GsPeriod,
   GsStart,
   GsStep,
   Me,
@@ -232,8 +230,6 @@ export const api = {
     assist: (runId: string, seq: number, kind: GsAssist, price: number, row = 0, col = 0) =>
       request<GsStep>("POST", `/games/gridsnap/runs/${runId}/assist`, { seq, kind, row, col, price }),
     end: (runId: string) => request<GsFinal>("POST", `/games/gridsnap/runs/${runId}/end`),
-    leaderboard: (period: GsPeriod) =>
-      request<GsLeaderboard>("GET", `/games/gridsnap/leaderboard?period=${period}`),
   },
   to: {
     start: (level: number) => request<ToStart>("POST", `${game("traceout")}/levels/${level}/start`),

@@ -527,8 +527,8 @@ fn build_level(master: &str, level: u16) -> BbLevel {
     panic!("brick blast level {level}: no finishable layout in {MAX_ATTEMPTS} attempts");
 }
 
-pub fn generate(master: &str, max_level: u16) -> Vec<BbLevel> {
-    let levels = crate::heavy_first(max_level, |level| build_level(master, level));
+pub fn generate(master: &str, wanted: &[u16]) -> Vec<BbLevel> {
+    let levels = crate::heavy_first(wanted, |level| build_level(master, level));
     for l in &levels {
         eprintln!(
             "  bb {:>3}: balls {:>2} rows {:>2} hp {:>5} bot turns {:>2} closest {}",

@@ -410,8 +410,8 @@ fn miss(c: &TraceLevel, target: f64) -> f64 {
     (c.depth as f64 - target).abs() + free * 20.0 + (1.0 - c.cover) * 50.0
 }
 
-pub fn generate(master: &str, max_level: u16) -> Vec<TraceLevel> {
-    crate::heavy_first(max_level, |level| {
+pub fn generate(master: &str, levels: &[u16]) -> Vec<TraceLevel> {
+    crate::heavy_first(levels, |level| {
         let target = params(level).depth;
         let best = (0..CANDIDATES)
             .filter_map(|i| {

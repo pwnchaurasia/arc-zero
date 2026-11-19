@@ -3,12 +3,13 @@
 The deal's seed and the game state stay in Redis; the client only ever sees the
 board and the current tray, so it can't know what comes next. A run's score is
 whatever the server computed, recorded when the run ends (or when the player
-starts the next one). Leaderboards show display names only.
+starts the next one). There is no leaderboard (decision 2026-11-19): a player only
+ever sees their own best.
 
 Levels (decision 2026-11-04) use the same run machinery: a level run starts from the
 level's board and is won the moment the engine reports its last stone cleared. That
 placement (or bomb) pays the first-clear coins and unlocks the next level. Level runs
-never touch scores, milestones or leaderboards.
+never touch scores or milestones.
 """
 
 from __future__ import annotations
@@ -16,17 +17,17 @@ from __future__ import annotations
 import json
 import secrets
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 import arc_engine
-from fastapi import APIRouter, Path, Query, Request, Response
+from fastapi import APIRouter, Path, Request, Response
 from pydantic import Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arc_api import analytics, coins, store
-from arc_api.db import GridSnapScore, Player
+from arc_api.db import GridSnapScore
 from arc_api.errors import ApiError
 from arc_api.levels import GameId, GsLevel
 from arc_api.principal import Principal, PrincipalDep, issue_ticket
@@ -39,10 +40,6 @@ router = APIRouter(prefix="/games/gridsnap", tags=["gridsnap"])
 
 RunPath = Annotated[str, Path(pattern=r"^[A-Za-z0-9_-]{16,64}$")]
 LevelPath = Annotated[int, Path(ge=1, le=10_000)]
-Period = Literal["week", "month", "all"]
-LEADERBOARD_SIZE = 10
-LEADERBOARD_CACHE_SECONDS = 30
-ANONYMOUS = "Anonymous player"
 
 
 class FinalOut(StrictModel):
@@ -121,21 +118,6 @@ class StepOut(StrictModel):
     coins: int | None = None
     # Set when this action cleared a level's last stone.
     result: LevelResultOut | None = None
-
-
-class Entry(StrictModel):
-    rank: int
-    name: str
-    score: int
-    you: bool
-
-
-class LeaderboardOut(StrictModel):
-    period: Period
-    entries: list[Entry]
-    # The caller's best unassisted score in this period and its rank (players only).
-    you: Entry | None
-    signed_in: bool
 
 
 def _run_key(run_id: str) -> str:
@@ -494,82 +476,4 @@ async def _give_up_level(
         ranked=False,
         coins_earned=0,
         coins=await coins.balance(db, state, who),
-    )
-
-
-def _since(period: Period) -> datetime | None:
-    now = datetime.now(UTC)
-    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    if period == "week":
-        return midnight - timedelta(days=now.weekday())
-    if period == "month":
-        return midnight.replace(day=1)
-    return None
-
-
-async def _top(db: AsyncSession, since: datetime | None) -> list[tuple[str, str, int]]:
-    """(player id, name, best) for the top players: unassisted runs only."""
-    best = func.max(GridSnapScore.score).label("best")
-    query = (
-        select(GridSnapScore.player_id, Player.display_name, best)
-        .join(Player, Player.id == GridSnapScore.player_id)
-        .where(GridSnapScore.assisted.is_(False))
-        .group_by(GridSnapScore.player_id, Player.display_name)
-        .order_by(best.desc(), func.min(GridSnapScore.created_at))
-        .limit(LEADERBOARD_SIZE)
-    )
-    if since is not None:
-        query = query.where(GridSnapScore.created_at >= since)
-    rows = await db.execute(query)
-    return [(str(pid), name or ANONYMOUS, int(score)) for pid, name, score in rows]
-
-
-@router.get("/leaderboard")
-async def leaderboard(
-    request: Request,
-    who: PrincipalDep,
-    state: StateDep,
-    db: DbDep,
-    period: Annotated[Period, Query()] = "week",
-) -> LeaderboardOut:
-    await limit(state, request, who, "gs-board", 60)
-    since = _since(period)
-    cache = f"gs:lb:{period}"
-    cached = await state.redis.get(cache)
-    if cached is None:
-        top = await _top(db, since)
-        await state.redis.set(cache, json.dumps(top), ex=LEADERBOARD_CACHE_SECONDS)
-    else:
-        top = [(str(pid), str(name), int(score)) for pid, name, score in json.loads(cached)]
-    me = str(who.player_id) if who.player_id is not None else None
-    # Player ids never leave the server: they only mark the caller's own row.
-    entries = [
-        Entry(rank=i, name=name, score=score, you=pid == me)
-        for i, (pid, name, score) in enumerate(top, start=1)
-    ]
-
-    you = None
-    if who.player_id is not None:
-        mine = select(func.max(GridSnapScore.score)).where(
-            GridSnapScore.player_id == who.player_id, GridSnapScore.assisted.is_(False)
-        )
-        if since is not None:
-            mine = mine.where(GridSnapScore.created_at >= since)
-        my_best = await db.scalar(mine)
-        if my_best is not None:
-            better = (
-                select(GridSnapScore.player_id)
-                .where(GridSnapScore.assisted.is_(False))
-                .group_by(GridSnapScore.player_id)
-                .having(func.max(GridSnapScore.score) > my_best)
-            )
-            if since is not None:
-                better = better.where(GridSnapScore.created_at >= since)
-            ahead = await db.scalar(select(func.count()).select_from(better.subquery()))
-            name = await db.scalar(select(Player.display_name).where(Player.id == who.player_id))
-            you = Entry(
-                rank=int(ahead or 0) + 1, name=name or ANONYMOUS, score=int(my_best), you=True
-            )
-    return LeaderboardOut(
-        period=period, entries=entries, you=you, signed_in=who.player_id is not None
     )

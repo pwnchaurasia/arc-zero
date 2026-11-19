@@ -197,7 +197,7 @@ export function Home({
     <div className="mx-auto flex h-full w-full max-w-6xl flex-col overflow-y-auto">
       <header className="flex items-center justify-between gap-3 px-5 pb-2 pt-5">
         <div className="min-w-0">
-          <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Arc Zero</h1>
+          <h1 className="min-h-9 text-3xl font-black tracking-tight sm:min-h-10 sm:text-4xl">{me?.brand}</h1>
           <p className="truncate text-sm text-muted">
             {me?.name ? `Playing as ${me.name}` : "No ads. No tracking. Just games."}
           </p>

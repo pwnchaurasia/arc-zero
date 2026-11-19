@@ -25,6 +25,8 @@
 		X-Frame-Options "DENY"
 		Referrer-Policy "no-referrer"
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		# Not for search engines, on any address (decision 2026-11-19).
+		X-Robots-Tag "noindex, nofollow"
 		Cross-Origin-Opener-Policy "same-origin"
 		Cross-Origin-Resource-Policy "same-origin"
 		-Server

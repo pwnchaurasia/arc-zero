@@ -4,7 +4,8 @@
 #   activate.sh <deploy-dir> <image-prefix> <image-tag>
 #
 # Expects <deploy-dir>/secrets.new/{api.env,redis_password,<game>.json for each game} and
-# <deploy-dir>/docker-compose.yml to have been uploaded already.
+# <deploy-dir>/docker-compose.yml to have been uploaded already. secrets.new/ngrok.yml is
+# optional: with content it starts the ngrok tunnel too, empty or missing stops it.
 # Set SKIP_PULL=1 to use local images (testing).
 set -euo pipefail
 
@@ -20,6 +21,10 @@ done
 chmod 700 secrets.new
 chmod 600 secrets.new/api.env secrets.new/redis_password
 for f in $LEVEL_FILES; do chmod 644 "secrets.new/$f"; done
+# The ngrok agent runs as its own user, so its config is readable like the level files
+# (the 700 parent still keeps other host users out).
+[ -f secrets.new/ngrok.yml ] || : > secrets.new/ngrok.yml
+chmod 644 secrets.new/ngrok.yml
 
 # Swap the whole directory at once so a half-copied set is never used.
 rm -rf secrets.old
@@ -30,8 +35,16 @@ rm -rf secrets.old
 # Record the live version so manual `docker compose` commands (and rollbacks:
 # edit IMAGE_TAG, then `docker compose up -d`) need no extra flags.
 touch .env
-sed -i.bak '/^IMAGE_PREFIX=/d;/^IMAGE_TAG=/d' .env && rm -f .env.bak
+sed -i.bak '/^IMAGE_PREFIX=/d;/^IMAGE_TAG=/d;/^COMPOSE_PROFILES=/d' .env && rm -f .env.bak
 printf 'IMAGE_PREFIX=%s\nIMAGE_TAG=%s\n' "$prefix" "$tag" >> .env
+if [ -s secrets/ngrok.yml ]; then
+  printf 'COMPOSE_PROFILES=tunnel\n' >> .env
+  echo "ngrok tunnel: on"
+else
+  # Turned off: stop a tunnel left from an earlier release.
+  docker compose --profile tunnel rm -sf ngrok >/dev/null 2>&1 || true
+  echo "ngrok tunnel: off"
+fi
 
 if [ "${SKIP_PULL:-0}" != 1 ]; then
   docker compose pull --quiet

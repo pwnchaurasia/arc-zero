@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 
 import type { HomeGame, Me } from "../api/types";
-import { loadSaved as neonCoilSaved } from "../games/neoncoil/skins";
+import { LEVEL_COUNT as NEONCOIL_LEVELS } from "../games/neoncoil/levels";
+import { loadSaved as neonCoilSaved, openLevel as neonCoilOpen, totalStars as neonCoilStars } from "../games/neoncoil/skins";
 import { useInstall } from "../state/install";
 import { recentGames } from "../state/recent";
 import { useSession } from "../state/session";
@@ -72,7 +73,7 @@ export const GAMES: { id: HomeGame; name: string; tagline: string; image?: strin
   {
     id: "neoncoil",
     name: "NeonCoil",
-    tagline: "A neon snake that only gets faster. Chain bites for FEVER.",
+    tagline: "Steer a neon snake through 30 arenas. Each one a bit faster.",
     image: "/games/neoncoil.webp",
   },
 ];
@@ -87,7 +88,7 @@ const CATEGORIES: { id: string; label: string; emoji: string; games: HomeGame[] 
 ];
 
 /** Games without numbered levels open somewhere else. */
-const NO_LEVELS: ReadonlySet<HomeGame> = new Set(["tacshift", "neoncoil"]);
+const NO_LEVELS: ReadonlySet<HomeGame> = new Set(["tacshift"]);
 
 interface Progress {
   cleared: number;
@@ -102,9 +103,19 @@ interface Progress {
 
 function progressOf(me: Me | null, id: HomeGame): Progress {
   if (id === "neoncoil") {
-    // Played only on this device: its best score is kept here, not on the server.
-    const best = neonCoilSaved().best;
-    return { cleared: 0, total: 0, stars: 0, line: `endless · best ${best}`, next: null, nextLabel: `best ${best}` };
+    // Played only on this device: its progress is kept here, not on the server.
+    const saved = neonCoilSaved();
+    const cleared = Object.keys(saved.stars).length;
+    const stars = neonCoilStars(saved);
+    const next = neonCoilOpen(saved);
+    return {
+      cleared,
+      total: NEONCOIL_LEVELS,
+      stars,
+      line: `${cleared}/${NEONCOIL_LEVELS} lvl · ${stars}★`,
+      next,
+      nextLabel: `level ${next}/${NEONCOIL_LEVELS}`,
+    };
   }
   const p = me?.games[id];
   const stars = p ? Object.values(p.stars).reduce((a, b) => a + b, 0) : 0;
@@ -158,8 +169,9 @@ export function Home({
 
   const resume = (id: HomeGame) => {
     const p = progressOf(me, id);
-    // Guests stop at the checkpoint: past it, Resume asks them to save first.
-    if (p.next !== null && !me?.signed_in && !me?.all_levels_open && p.next > (me?.guest_max_level ?? 3)) {
+    // Guests stop at the checkpoint: past it, Resume asks them to save first. NeonCoil
+    // is played only on this device, so it has no checkpoint.
+    if (id !== "neoncoil" && p.next !== null && !me?.signed_in && !me?.all_levels_open && p.next > (me?.guest_max_level ?? 3)) {
       onCheckpoint();
       return;
     }

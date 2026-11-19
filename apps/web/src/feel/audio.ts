@@ -88,15 +88,10 @@ export const sfx = {
   vanish(): void {
     tone(330, 0.16, "sine", 0.25, 180);
   },
-  /** NeonCoil: a bite, pitched up with the combo. */
-  chomp(combo: number): void {
-    tone(500 * Math.pow(1.12, Math.min(combo, 5) - 1), 0.07, "square", 0.22, 820 * Math.pow(1.12, Math.min(combo, 5) - 1));
-  },
-  golden(): void {
-    [988, 1319, 1760].forEach((f, i) => setTimeout(() => tone(f, 0.1, "triangle", 0.35), i * 55));
-  },
-  speedUp(): void {
-    tone(300, 0.28, "sawtooth", 0.12, 900);
+  /** NeonCoil: a bite, a little higher for each fruit of the level. */
+  chomp(fruit: number): void {
+    const up = Math.pow(1.12, Math.min(fruit, 5) - 1);
+    tone(500 * up, 0.07, "square", 0.22, 820 * up);
   },
   crash(): void {
     tone(220, 0.35, "sawtooth", 0.3, 55);

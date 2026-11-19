@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { loadSaved, mix, newlyUnlocked, save, SKINS } from "./skins";
+import { chooseSkin, loadSaved, mix, newlyUnlocked, openLevel, recordClear, SKINS, totalStars } from "./skins";
 
 // Tests run in Node: a small in-memory stand-in for the browser's storage.
 const store = new Map<string, string>();
@@ -15,29 +15,37 @@ globalThis.localStorage = {
   },
 } as Storage;
 
-describe("skins", () => {
+describe("progress and skins", () => {
   beforeEach(() => localStorage.clear());
 
-  it("start with only the first skin and a best of 0", () => {
-    expect(loadSaved()).toEqual({ best: 0, skin: "viper" });
+  it("start at level 1 with only the first skin", () => {
+    expect(loadSaved()).toEqual({ stars: {}, skin: "viper" });
+    expect(openLevel(loadSaved())).toBe(1);
   });
 
-  it("unlock as the best score grows", () => {
-    expect(newlyUnlocked(100, 320).map((s) => s.id)).toEqual(["cobalt", "solar"]);
-    expect(newlyUnlocked(320, 330)).toEqual([]);
+  it("keep the best stars and open the next level", () => {
+    recordClear(1, 2);
+    recordClear(1, 1);
+    recordClear(2, 3);
+    const saved = loadSaved();
+    expect(saved.stars).toEqual({ 1: 2, 2: 3 });
+    expect(totalStars(saved)).toBe(5);
+    expect(openLevel(saved)).toBe(3);
+  });
+
+  it("unlock skins with stars, and never keep a locked one", () => {
+    expect(newlyUnlocked(8, 26).map((s) => s.id)).toEqual(["cobalt", "solar"]);
+    expect(chooseSkin("aurora").skin).toBe("viper");
+    for (let l = 1; l <= 4; l++) recordClear(l, 3);
+    expect(chooseSkin("cobalt").skin).toBe("cobalt");
     expect(SKINS.map((s) => s.unlock)).toEqual([...SKINS.map((s) => s.unlock)].sort((a, b) => a - b));
   });
 
-  it("never keep a locked skin chosen, even if storage says so", () => {
-    localStorage.setItem("arc.neoncoil", JSON.stringify({ best: 200, skin: "aurora" }));
-    expect(loadSaved()).toEqual({ best: 200, skin: "viper" });
-    save({ skin: "cobalt" });
-    expect(loadSaved().skin).toBe("cobalt");
-  });
-
-  it("ignore corrupt storage", () => {
-    localStorage.setItem("arc.neoncoil", "{nope");
-    expect(loadSaved().best).toBe(0);
+  it("ignore corrupt or tampered storage", () => {
+    localStorage.setItem("arc.neoncoil.v2", "{nope");
+    expect(loadSaved().stars).toEqual({});
+    localStorage.setItem("arc.neoncoil.v2", JSON.stringify({ stars: { 1: 9, 99: 3, 2: 3 }, skin: "aurora" }));
+    expect(loadSaved()).toEqual({ stars: { 2: 3 }, skin: "viper" });
   });
 
   it("mix colours", () => {

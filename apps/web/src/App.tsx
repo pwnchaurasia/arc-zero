@@ -52,7 +52,7 @@ type Route =
   | { name: "gridsnap" }
   | { name: "tacshift" }
   | { name: "logoquest" }
-  | { name: "neoncoil" }
+  | { name: "neoncoil"; level?: number }
   | { name: "logo-sandbox" }
   | { name: "levels"; game: GameId }
   | { name: "play"; game: GameId; level: number };
@@ -92,7 +92,8 @@ export function App() {
   // Remember what was played, for the home screen's "Continue playing" row.
   useEffect(() => {
     if (route.name === "play") markPlayed(route.game);
-    else if (route.name === "gridsnap" || route.name === "tacshift" || route.name === "logoquest" || route.name === "neoncoil") markPlayed(route.name);
+    else if (route.name === "gridsnap" || route.name === "tacshift" || route.name === "logoquest" || route.name === "neoncoil")
+      markPlayed(route.name);
   }, [route]);
   const [modal, setModal] = useState<"settings" | "restore" | "checkpoint" | "ios-install" | null>(null);
   const close = useCallback(() => setModal(null), []);
@@ -120,7 +121,7 @@ export function App() {
             )
           }
           onResume={(game, level) => {
-            if (game === "neoncoil") go({ name: game });
+            if (game === "neoncoil") go({ name: game, level: level ?? undefined });
             else if (level !== null) go({ name: "play", game, level });
             else if (game === "gridsnap" || game === "tacshift") go({ name: game });
             else go({ name: "levels", game });
@@ -141,7 +142,7 @@ export function App() {
       )}
       <Suspense fallback={<Loading />}>
       {route.name === "coins" && <CoinsScreen onBack={back} />}
-      {route.name === "neoncoil" && <NeonCoilScreen onBack={back} />}
+      {route.name === "neoncoil" && <NeonCoilScreen onBack={back} level={route.level} />}
       {route.name === "gridsnap" && <GridSnapScreen onBack={back} onCheckpoint={openCheckpoint} />}
       {route.name === "tacshift" && <TacShiftScreen onBack={back} />}
       {route.name === "logoquest" && (

@@ -496,25 +496,28 @@ test.describe("NeonCoil", () => {
   // density, and the game clock only advances with frames: keep it at 1x here.
   test.use({ deviceScaleFactor: 1 });
 
-test("NeonCoil runs on the device: play, pause, crash into the wall, play again", async ({ page }) => {
-  const errors = watchConsole(page);
-  await page.goto("/");
-  await page.getByRole("heading", { name: "NeonCoil" }).first().click();
-  await expect(page.getByRole("radiogroup", { name: "Snake skin" })).toBeVisible();
-  // Only the first skin is open on a new device.
-  await expect(page.getByRole("radio", { name: /Cobalt Pulse: locked/ })).toBeDisabled();
-  await page.getByRole("button", { name: "Play" }).click();
+  test("NeonCoil: level map, start with an arrow, pause, crash and try again", async ({ page }) => {
+    const errors = watchConsole(page);
+    await page.goto("/");
+    await page.getByRole("heading", { name: "NeonCoil" }).first().click();
+    // A new device: level 1 open, the rest locked; only the first skin.
+    await expect(page.getByRole("button", { name: "Level 2, locked" })).toBeDisabled();
+    await expect(page.getByRole("radio", { name: /Cobalt Pulse: locked/ })).toBeDisabled();
+    await page.getByRole("button", { name: "Play level 1" }).click();
 
-  await page.keyboard.press("Space");
-  await expect(page.getByRole("heading", { name: "PAUSED" })).toBeVisible();
-  await page.getByRole("button", { name: "Resume" }).click();
+    // The on-screen arrows are there by default; one starts the level.
+    await expect(page.getByText(/to start/)).toBeVisible();
+    await page.getByRole("button", { name: "Turn up" }).dispatchEvent("pointerdown");
+    await expect(page.getByText(/to start/)).toBeHidden();
+    await page.keyboard.press("Space");
+    await expect(page.getByRole("heading", { name: "PAUSED" })).toBeVisible();
+    await page.getByRole("button", { name: "Resume" }).click();
 
-  // Heading straight up, the snake hits the top wall within a few seconds.
-  const over = page.getByRole("dialog", { name: "Game over" });
-  await expect(over).toBeVisible({ timeout: 40_000 });
-  await expect(page.getByTestId("nc-final")).toHaveText("0");
-  await over.getByRole("button", { name: "Play again" }).click();
-  await expect(over).toBeHidden();
-  expect(errors).toEqual([]);
-});
+    // Heading straight up, the snake reaches the top wall within a few seconds.
+    const crashed = page.getByRole("dialog", { name: "Crashed" });
+    await expect(crashed).toBeVisible({ timeout: 40_000 });
+    await crashed.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByText(/to start/)).toBeVisible();
+    expect(errors).toEqual([]);
+  });
 });

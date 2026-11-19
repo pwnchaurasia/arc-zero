@@ -1,14 +1,14 @@
 /**
- * NeonCoil rules (decision 2026-11-18): an endless snake that gets faster as time
- * passes, played entirely on the device for fun (no levels, coins or server).
+ * NeonCoil rules (decisions 2026-11-18/19): played on the device, just for fun.
+ * A level is an arena (see levels.ts); eat 5 fruit to clear it. Walls and the
+ * snake's own body end the attempt (try again at once). Stars reward short routes:
+ * every fruit adds its shortest distance to a "par", and the moves taken are
+ * compared with it.
  *
- * The board is 19 cells across its short side and as long as the screen allows
- * (fixed when a run starts); walls and the snake's own body end the run. Apples are
- * worth 10, a golden fruit (every 5th apple, gone after 7 seconds) 50. Eating again
- * within 4 seconds raises the combo, up to 5x (FEVER), which multiplies the points.
- * Turns are buffered (two ahead), so a quick double swipe makes a U-turn without the
+ * Turns are buffered two ahead, so a quick double swipe makes a U-turn without the
  * second swipe being lost or reversing into the neck.
  */
+import { FRUIT_PER_LEVEL, startBody } from "./levels";
 
 /** The default board (phones in portrait use about this). */
 export const COLS = 19;
@@ -17,26 +17,6 @@ export const ROWS = 25;
 export const SHORT_SIDE = 19;
 const LONG_MIN = 19;
 const LONG_MAX = 34;
-
-/** A board shaped like a `width` x `height` area: 19 cells on its short side. */
-export function boardFor(width: number, height: number): { cols: number; rows: number } {
-  if (width <= 0 || height <= 0) return { cols: COLS, rows: ROWS };
-  const long = (a: number, b: number) => Math.min(LONG_MAX, Math.max(LONG_MIN, Math.floor((SHORT_SIDE * a) / b)));
-  return width <= height ? { cols: SHORT_SIDE, rows: long(height, width) } : { cols: long(width, height), rows: SHORT_SIDE };
-}
-export const START_LENGTH = 4;
-/** Milliseconds per cell at the start, and the fastest it gets. */
-export const START_TICK_MS = 150;
-export const MIN_TICK_MS = 62;
-/** Every this many milliseconds the snake speeds up a step. */
-export const SPEED_STEP_MS = 10_000;
-const SPEED_FACTOR = 0.93;
-export const COMBO_MS = 4_000;
-export const MAX_COMBO = 5;
-export const GOLDEN_EVERY = 5;
-export const GOLDEN_MS = 7_000;
-const APPLE_POINTS = 10;
-const GOLDEN_POINTS = 50;
 const BUFFER = 2;
 
 export interface Cell {
@@ -55,27 +35,41 @@ export const DIRS: Record<Dir, Cell> = {
 
 const opposite = (a: Dir, b: Dir) => DIRS[a].x + DIRS[b].x === 0 && DIRS[a].y + DIRS[b].y === 0;
 
-export interface Food extends Cell {
-  golden: boolean;
-  /** Golden fruit: when it disappears (game time, ms). */
-  expires?: number;
+/** A board shaped like a `width` x `height` area: 19 cells on its short side. */
+export function boardFor(width: number, height: number): { cols: number; rows: number } {
+  if (width <= 0 || height <= 0) return { cols: COLS, rows: ROWS };
+  const long = (a: number, b: number) => Math.min(LONG_MAX, Math.max(LONG_MIN, Math.floor((SHORT_SIDE * a) / b)));
+  return width <= height ? { cols: SHORT_SIDE, rows: long(height, width) } : { cols: long(width, height), rows: SHORT_SIDE };
 }
 
 /** What one step did, for sounds and effects. */
 export interface StepEvent {
-  ate?: { food: Food; points: number; combo: number };
+  ate?: Cell;
   died?: "wall" | "self";
-  /** The golden fruit timed out. */
-  goldenGone?: Food;
-  speedUp?: number;
+  cleared?: boolean;
 }
 
-/** Speed step (1, 2, ...) after `elapsed` ms of play. */
-export const speedLevel = (elapsed: number) => Math.floor(elapsed / SPEED_STEP_MS) + 1;
-
-/** Milliseconds per cell after `elapsed` ms of play. */
-export function tickMs(elapsed: number): number {
-  return Math.max(MIN_TICK_MS, START_TICK_MS * Math.pow(SPEED_FACTOR, speedLevel(elapsed) - 1));
+/** Shortest number of moves from `a` to `b` around the walls (ignores the body). */
+export function distance(a: Cell, b: Cell, cols: number, rows: number, blocked: Set<number>): number {
+  const key = (x: number, y: number) => y * cols + x;
+  const seen = new Set([key(a.x, a.y)]);
+  let frontier = [a];
+  for (let d = 0; frontier.length; d++) {
+    const next: Cell[] = [];
+    for (const p of frontier) {
+      if (p.x === b.x && p.y === b.y) return d;
+      for (const v of Object.values(DIRS)) {
+        const x = p.x + v.x;
+        const y = p.y + v.y;
+        const k = key(x, y);
+        if (x < 0 || y < 0 || x >= cols || y >= rows || blocked.has(k) || seen.has(k)) continue;
+        seen.add(k);
+        next.push({ x, y });
+      }
+    }
+    frontier = next;
+  }
+  return Infinity;
 }
 
 export class Snake {
@@ -83,82 +77,83 @@ export class Snake {
   body: Cell[];
   dir: Dir = "up";
   private queue: Dir[] = [];
-  apple: Food;
-  golden: Food | null = null;
-  score = 0;
+  fruit: Cell;
   eaten = 0;
-  combo = 1;
-  /** Game time of the last bite (for the combo window). */
-  lastBite = -Infinity;
-  /** Game time: only the steps advance it, so pausing stops the clock. */
-  elapsed = 0;
+  moves = 0;
+  /** Sum of the shortest routes to each fruit so far. */
+  par = 0;
   alive = true;
+  cleared = false;
+  readonly walls: Set<number>;
   private grow = 0;
 
   constructor(
-    private readonly random: () => number = Math.random,
     readonly cols = COLS,
     readonly rows = ROWS,
+    walls: Cell[] = [],
+    readonly goal = FRUIT_PER_LEVEL,
+    private readonly random: () => number = Math.random,
   ) {
-    const x = Math.floor(cols / 2);
-    const y = rows - 7;
-    this.body = Array.from({ length: START_LENGTH }, (_, i) => ({ x, y: y + i }));
-    this.apple = this.spawn(false);
+    this.walls = new Set(walls.map((w) => w.y * cols + w.x));
+    this.body = startBody(cols, rows);
+    this.fruit = this.spawn();
+  }
+
+  isWall(x: number, y: number): boolean {
+    return this.walls.has(y * this.cols + x);
   }
 
   /** Queues a turn: up to two ahead, never a reversal into the neck. */
   turn(next: Dir): void {
-    if (!this.alive) return;
+    if (!this.alive || this.cleared) return;
     const last = this.queue[this.queue.length - 1] ?? this.dir;
     if (next === last || opposite(next, last) || this.queue.length >= BUFFER) return;
     this.queue.push(next);
   }
 
-  /** The combo ring: 1 just after a bite, 0 when the window has closed. */
-  comboLeft(): number {
-    return Math.max(0, 1 - (this.elapsed - this.lastBite) / COMBO_MS);
+  /** 3 stars for near-shortest routes, 2 for reasonable ones, 1 for clearing. */
+  stars(): number {
+    const slack = 2 * this.goal;
+    if (this.moves <= Math.ceil(this.par * 1.3) + slack) return 3;
+    if (this.moves <= this.par * 2 + slack) return 2;
+    return 1;
   }
 
-  private occupied(c: Cell): boolean {
-    return this.body.some((b) => b.x === c.x && b.y === c.y);
-  }
-
-  private spawn(golden: boolean): Food {
+  private spawn(): Cell {
     const free: Cell[] = [];
+    const head = this.body[0] ?? { x: 0, y: 0 };
     for (let y = 0; y < this.rows; y++) {
       for (let x = 0; x < this.cols; x++) {
-        const c = { x, y };
-        const taken =
-          this.occupied(c) ||
-          (this.apple && this.apple.x === x && this.apple.y === y) ||
-          (this.golden && this.golden.x === x && this.golden.y === y);
-        if (!taken) free.push(c);
+        if (this.isWall(x, y) || this.body.some((b) => b.x === x && b.y === y)) continue;
+        // Not right in front of the head: a fruit should take a moment to reach.
+        if (Math.abs(x - head.x) + Math.abs(y - head.y) < 3) continue;
+        free.push({ x, y });
       }
     }
     const at = free[Math.floor(this.random() * free.length)] ?? { x: 0, y: 0 };
-    return { ...at, golden, expires: golden ? this.elapsed + GOLDEN_MS : undefined };
+    const d = distance(head, at, this.cols, this.rows, this.walls);
+    this.par += Number.isFinite(d) ? d : 0;
+    return at;
   }
 
-  /** Moves one cell. `ms` is how long this step took (it advances the game clock). */
-  step(ms: number): StepEvent {
+  /** Moves one cell. */
+  step(): StepEvent {
     const event: StepEvent = {};
-    if (!this.alive) return event;
-    const speedBefore = speedLevel(this.elapsed);
-    this.elapsed += ms;
-    if (speedLevel(this.elapsed) > speedBefore && tickMs(this.elapsed) < tickMs(this.elapsed - ms)) {
-      event.speedUp = speedLevel(this.elapsed);
-    }
+    if (!this.alive || this.cleared) return event;
     this.dir = this.queue.shift() ?? this.dir;
     const head = this.body[0] ?? { x: 0, y: 0 };
     const next = { x: head.x + DIRS[this.dir].x, y: head.y + DIRS[this.dir].y };
-    if (next.x < 0 || next.y < 0 || next.x >= this.cols || next.y >= this.rows) {
+    this.moves += 1;
+    if (next.x < 0 || next.y < 0 || next.x >= this.cols || next.y >= this.rows || this.isWall(next.x, next.y)) {
       this.alive = false;
       event.died = "wall";
       return event;
     }
     // The tail moves out of the way this step, unless the snake is growing.
     const tailLeaves = this.grow === 0;
-    const hits = this.body.some((b, i) => b.x === next.x && b.y === next.y && !(tailLeaves && i === this.body.length - 1));
+    const hits = this.body.some(
+      (b, i) => b.x === next.x && b.y === next.y && !(tailLeaves && i === this.body.length - 1),
+    );
     if (hits) {
       this.alive = false;
       event.died = "self";
@@ -168,28 +163,16 @@ export class Snake {
     if (this.grow > 0) this.grow -= 1;
     else this.body.pop();
 
-    const bite = (food: Food, base: number) => {
-      this.combo = this.elapsed - this.lastBite <= COMBO_MS ? Math.min(MAX_COMBO, this.combo + 1) : 1;
-      this.lastBite = this.elapsed;
-      const points = base * this.combo;
-      this.score += points;
-      this.grow += food.golden ? 2 : 1;
-      event.ate = { food, points, combo: this.combo };
-    };
-    if (next.x === this.apple.x && next.y === this.apple.y) {
-      const eatenApple = this.apple;
+    if (next.x === this.fruit.x && next.y === this.fruit.y) {
+      event.ate = this.fruit;
       this.eaten += 1;
-      bite(eatenApple, APPLE_POINTS);
-      this.apple = this.spawn(false);
-      if (this.eaten % GOLDEN_EVERY === 0 && !this.golden) this.golden = this.spawn(true);
-    } else if (this.golden && next.x === this.golden.x && next.y === this.golden.y) {
-      const g = this.golden;
-      this.golden = null;
-      bite(g, GOLDEN_POINTS);
-    }
-    if (this.golden && (this.golden.expires ?? Infinity) <= this.elapsed) {
-      event.goldenGone = this.golden;
-      this.golden = null;
+      this.grow += 1;
+      if (this.eaten >= this.goal) {
+        this.cleared = true;
+        event.cleared = true;
+      } else {
+        this.fruit = this.spawn();
+      }
     }
     return event;
   }

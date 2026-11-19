@@ -161,29 +161,14 @@ body {
   animation: ts-radar 500ms ease-in-out infinite;
 }
 
-/* NeonCoil: the FEVER chip throbs; a new best shimmers. */
-@keyframes nc-fever {
+/* NeonCoil: the next level to play glows on the level map. */
+@keyframes nc-current {
   50% {
-    box-shadow: 0 0 18px #e879f9;
-    transform: scale(1.08);
+    box-shadow: 0 0 18px #38bdf8;
   }
 }
-.nc-fever {
-  animation: nc-fever 420ms ease-in-out infinite;
-}
-@keyframes nc-best {
-  0%,
-  100% {
-    opacity: 1;
-    letter-spacing: 0.3em;
-  }
-  50% {
-    opacity: 0.6;
-    letter-spacing: 0.4em;
-  }
-}
-.nc-best {
-  animation: nc-best 1.2s ease-in-out infinite;
+.nc-current {
+  animation: nc-current 1.4s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -194,8 +179,7 @@ body {
   .c9-wave,
   .ts-win,
   .ts-radar,
-  .nc-fever,
-  .nc-best {
+  .nc-current {
     animation: none;
   }
 }

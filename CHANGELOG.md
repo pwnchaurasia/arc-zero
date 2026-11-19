@@ -5,6 +5,17 @@ the newest is at the top.
 
 ## Unreleased
 
+### Privacy
+- GridSnap's leaderboard is gone: players never see each other's names or scores, only
+  their own best.
+- The arcade's name comes from the server (`ARC_BRAND`, and `ARC_HOST_BRANDS` per
+  address): the page title, home heading, install manifest (now served by the API at
+  `/api/v1/manifest.webmanifest`), install help and recovery-key file all follow it.
+- Not for search engines: `robots.txt` disallows everything, plus `noindex` in the page
+  and an `X-Robots-Tag` header on every response.
+- The name box's placeholder is now "e.g. Nova".
+- Local `make share` also accepts ngrok's newer `*.ngrok-free.dev` / `*.ngrok.dev` addresses.
+
 ### CI: level generation fits its time limit again
 - The "All levels generate quickly (ci seed)" check failed every time: generating all
   levels takes about 10 minutes on GitHub's 4-core runner (almost all of it Brick

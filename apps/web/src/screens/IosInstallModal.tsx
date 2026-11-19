@@ -1,3 +1,4 @@
+import { useSession } from "../state/session";
 import { Button, Modal } from "../ui/kit";
 
 function ShareGlyph() {
@@ -10,8 +11,9 @@ function ShareGlyph() {
 
 /** Safari on iPhone/iPad can't be prompted to install, so we show the three taps instead. */
 export function IosInstallModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const brand = useSession().me?.brand ?? "the arcade";
   return (
-    <Modal open={open} onClose={onClose} title="Install Arc Zero">
+    <Modal open={open} onClose={onClose} title={`Install ${brand}`}>
       <ol className="mb-5 grid gap-3 text-sm">
         <li className="flex gap-3">
           <span className="grid size-7 shrink-0 place-items-center rounded-full bg-accent font-bold text-ink">1</span>
@@ -28,7 +30,7 @@ export function IosInstallModal({ open, onClose }: { open: boolean; onClose: () 
         <li className="flex gap-3">
           <span className="grid size-7 shrink-0 place-items-center rounded-full bg-accent font-bold text-ink">3</span>
           <span>
-            Tap <b>Add</b>. Arc Zero opens full screen from your home screen, like an app.
+            Tap <b>Add</b>. {brand} opens full screen from your home screen, like an app.
           </span>
         </li>
       </ol>

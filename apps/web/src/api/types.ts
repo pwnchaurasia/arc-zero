@@ -17,6 +17,8 @@ export interface GameProgress {
 }
 
 export interface Me {
+  /** The arcade's name on the address the app was opened on. */
+  brand: string;
   signed_in: boolean;
   /** Display name (signed-in players only). */
   name: string | null;
@@ -270,7 +272,7 @@ export interface GsFinal {
   lines: number;
   best: number;
   new_best: boolean;
-  /** False when bought help was used: personal best only, not the leaderboards. */
+  /** False when bought help was used (or for guests). */
   ranked: boolean;
   coins_earned: number;
   coins: number;
@@ -320,21 +322,6 @@ export interface GsLevelResult extends LevelWin {
   coins: number;
 }
 
-export type GsPeriod = "week" | "month" | "all";
-
-export interface GsEntry {
-  rank: number;
-  name: string;
-  score: number;
-  you: boolean;
-}
-
-export interface GsLeaderboard {
-  period: GsPeriod;
-  entries: GsEntry[];
-  you: GsEntry | null;
-  signed_in: boolean;
-}
 
 export interface ToLevelData {
   width: number;

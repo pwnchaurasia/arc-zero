@@ -11,9 +11,9 @@ export function wordMatches(words: string[], index: number, typed: string): bool
 }
 
 /** Text of the downloadable key file. */
-export function keyFileText(key: string, site: string): string {
+export function keyFileText(key: string, site: string, brand: string): string {
   return [
-    "Arc Zero recovery key",
+    `${brand} recovery key`,
     "",
     keyWords(key).join(" "),
     "",
@@ -21,4 +21,10 @@ export function keyFileText(key: string, site: string): string {
     "Keep it private: anyone with this key can use your progress.",
     "",
   ].join("\n");
+}
+
+/** "Pixel Vault" -> "pixel-vault-recovery-key.txt". */
+export function keyFileName(brand: string): string {
+  const slug = brand.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `${slug || "arcade"}-recovery-key.txt`;
 }

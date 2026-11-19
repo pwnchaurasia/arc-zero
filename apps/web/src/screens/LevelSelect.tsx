@@ -47,7 +47,7 @@ export function LevelSelect({
         >
           <span>
             <span className="block font-extrabold">Endless</span>
-            <span className="text-xs text-muted">Play as long as you can · leaderboards</span>
+            <span className="text-xs text-muted">Play as long as you can · beat your best</span>
           </span>
           <span className="text-sm font-bold text-gold">Best {me?.gridsnap_best ?? 0}</span>
         </button>

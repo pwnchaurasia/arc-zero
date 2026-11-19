@@ -9,6 +9,9 @@ export type GameId =
   | "tacshift"
   | "logoquest";
 
+/** Every game the home screen lists. NeonCoil is played only on the device (no server progress). */
+export type HomeGame = GameId | "neoncoil";
+
 export interface GameProgress {
   unlocked_level: number;
   level_count: number;

@@ -5,6 +5,27 @@ the newest is at the top.
 
 ## Unreleased
 
+### New game: NeonCoil (endless neon snake, played just for fun)
+- Steer a glowing snake to eat neon apples; it gets faster every 10 seconds (150 ms a
+  cell down to 62 ms) with a "SPEED n" banner. Walls and your own tail end the run.
+- Golden fruit after every 5th apple: worth 50, gone after 7 seconds (a ring counts
+  down, it blinks at the end). Bite again within 4 seconds to raise the combo up to ×5
+  (FEVER: the arena border throbs pink), which multiplies the points.
+- Controls: swipe anywhere (keep moving your finger to turn again), arrow keys or WASD,
+  or an optional on-screen D-pad. Two turns are buffered, so quick U-turns never get lost
+  or reverse into the neck. Space/P/Esc pauses; leaving the tab pauses too.
+- Feel: smooth sub-cell movement, a tapered glowing body, eyes that follow the food, a
+  flicking tongue, bursts, ripples, "+20 ×2" popups, hit-stop, shake and a head-to-tail
+  dissolve on a crash; synth sounds and haptics. Respects reduced motion.
+- The board keeps 19 cells on its short side and fills the screen on phones, tablets
+  and desktops.
+- Six skins (Cyber Viper, Cobalt Pulse, Solar Wyrm, Crimson Cobra, Void Phantom, Aurora
+  Dragon) unlock at best scores of 0/150/300/500/800/1200; the game-over card shows the
+  score, length, time, fruit, best combo, "NEW BEST!" and newly unlocked skins.
+- Played entirely on the device by design: no levels, no coins, nothing sent to the
+  server. The best score and chosen skin stay in this browser. On the home screen under
+  Action and Junior, with "endless · best N".
+
 ### Home screen redesign (phone, tablet and desktop)
 - Category chips: All, Puzzles, Action, Brain & Logic, Board, Junior (a game can be in
   more than one). One sideways-scrolling row on phones, wrapped on wider screens.

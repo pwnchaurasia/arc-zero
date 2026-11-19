@@ -1,4 +1,4 @@
-import type { GameId } from "../api/types";
+import type { HomeGame as GameId } from "../api/types";
 
 /**
  * Which games were played most recently on this device, for the home screen's

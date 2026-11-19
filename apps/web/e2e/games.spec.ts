@@ -490,3 +490,31 @@ test("two friends play a TacShift best-of-3 challenge on one phone", async ({ pa
   await expect(page.getByText("Riya (X) to move")).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test.describe("NeonCoil", () => {
+  // A canvas redrawn every frame is slow under software rendering at phone pixel
+  // density, and the game clock only advances with frames: keep it at 1x here.
+  test.use({ deviceScaleFactor: 1 });
+
+test("NeonCoil runs on the device: play, pause, crash into the wall, play again", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/");
+  await page.getByRole("heading", { name: "NeonCoil" }).first().click();
+  await expect(page.getByRole("radiogroup", { name: "Snake skin" })).toBeVisible();
+  // Only the first skin is open on a new device.
+  await expect(page.getByRole("radio", { name: /Cobalt Pulse: locked/ })).toBeDisabled();
+  await page.getByRole("button", { name: "Play" }).click();
+
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("heading", { name: "PAUSED" })).toBeVisible();
+  await page.getByRole("button", { name: "Resume" }).click();
+
+  // Heading straight up, the snake hits the top wall within a few seconds.
+  const over = page.getByRole("dialog", { name: "Game over" });
+  await expect(over).toBeVisible({ timeout: 40_000 });
+  await expect(page.getByTestId("nc-final")).toHaveText("0");
+  await over.getByRole("button", { name: "Play again" }).click();
+  await expect(over).toBeHidden();
+  expect(errors).toEqual([]);
+});
+});

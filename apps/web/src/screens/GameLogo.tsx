@@ -1,6 +1,6 @@
 import { useId } from "react";
 
-import type { GameId } from "../api/types";
+import type { HomeGame } from "../api/types";
 
 /**
  * Square logo for a game tile. Uses the game's image when one is configured,
@@ -11,7 +11,7 @@ export function GameLogo({
   image,
   fill = false,
 }: {
-  game: GameId | "gridsnap";
+  game: HomeGame;
   image?: string;
   /** Fill a box of any shape (cropping the square logo) instead of a square. */
   fill?: boolean;

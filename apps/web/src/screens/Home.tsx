@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
-import type { GameId, Me } from "../api/types";
+import type { HomeGame, Me } from "../api/types";
+import { loadSaved as neonCoilSaved } from "../games/neoncoil/skins";
 import { useInstall } from "../state/install";
 import { recentGames } from "../state/recent";
 import { useSession } from "../state/session";
@@ -13,7 +14,7 @@ import { GameLogo } from "./GameLogo";
  * Games on the home screen. Set `image` to a square logo in public/games/
  * (e.g. "/games/water-sort.webp") to replace the drawn placeholder.
  */
-export const GAMES: { id: GameId; name: string; tagline: string; image?: string }[] = [
+export const GAMES: { id: HomeGame; name: string; tagline: string; image?: string }[] = [
   {
     id: "water-sort",
     name: "Water Sort",
@@ -68,19 +69,25 @@ export const GAMES: { id: GameId; name: string; tagline: string; image?: string 
     tagline: "Program a turtle with FD, RT and REPEAT. Draw your way to coding.",
     image: "/games/logoquest.webp",
   },
+  {
+    id: "neoncoil",
+    name: "NeonCoil",
+    tagline: "A neon snake that only gets faster. Chain bites for FEVER.",
+    image: "/games/neoncoil.webp",
+  },
 ];
 
 /** Home screen filters (decision 2026-11-18). A game can be in more than one. */
-const CATEGORIES: { id: string; label: string; emoji: string; games: GameId[] }[] = [
+const CATEGORIES: { id: string; label: string; emoji: string; games: HomeGame[] }[] = [
   { id: "puzzles", label: "Puzzles", emoji: "🧩", games: ["water-sort", "metro-jam", "gridsnap", "traceout", "cipher9"] },
-  { id: "action", label: "Action", emoji: "💥", games: ["brick-blast", "dead-bridge"] },
+  { id: "action", label: "Action", emoji: "💥", games: ["brick-blast", "dead-bridge", "neoncoil"] },
   { id: "brain", label: "Brain & Logic", emoji: "🧠", games: ["cipher9", "logoquest", "traceout", "tacshift"] },
   { id: "board", label: "Board", emoji: "🎮", games: ["tacshift"] },
-  { id: "junior", label: "Junior", emoji: "🧒", games: ["logoquest", "water-sort"] },
+  { id: "junior", label: "Junior", emoji: "🧒", games: ["logoquest", "water-sort", "neoncoil"] },
 ];
 
 /** Games without numbered levels open somewhere else. */
-const NO_LEVELS: ReadonlySet<GameId> = new Set(["tacshift"]);
+const NO_LEVELS: ReadonlySet<HomeGame> = new Set(["tacshift", "neoncoil"]);
 
 interface Progress {
   cleared: number;
@@ -93,7 +100,12 @@ interface Progress {
   nextLabel: string;
 }
 
-function progressOf(me: Me | null, id: GameId): Progress {
+function progressOf(me: Me | null, id: HomeGame): Progress {
+  if (id === "neoncoil") {
+    // Played only on this device: its best score is kept here, not on the server.
+    const best = neonCoilSaved().best;
+    return { cleared: 0, total: 0, stars: 0, line: `endless · best ${best}`, next: null, nextLabel: `best ${best}` };
+  }
   const p = me?.games[id];
   const stars = p ? Object.values(p.stars).reduce((a, b) => a + b, 0) : 0;
   if (id === "tacshift") {
@@ -131,9 +143,9 @@ export function Home({
   onCheckpoint,
   onIosInstall,
 }: {
-  onOpen: (game: GameId) => void;
+  onOpen: (game: HomeGame) => void;
   /** Straight into play: a level, or (null) the game's own start screen. */
-  onResume: (game: GameId, level: number | null) => void;
+  onResume: (game: HomeGame, level: number | null) => void;
   onSettings: () => void;
   onCheckpoint: () => void;
   onIosInstall: () => void;
@@ -144,7 +156,7 @@ export function Home({
   const recent = useMemo(() => recentGames().filter((id) => GAMES.some((g) => g.id === id)), []);
   const shown = GAMES.filter((g) => category === "all" || CATEGORIES.find((c) => c.id === category)?.games.includes(g.id));
 
-  const resume = (id: GameId) => {
+  const resume = (id: HomeGame) => {
     const p = progressOf(me, id);
     // Guests stop at the checkpoint: past it, Resume asks them to save first.
     if (p.next !== null && !me?.signed_in && !me?.all_levels_open && p.next > (me?.guest_max_level ?? 3)) {

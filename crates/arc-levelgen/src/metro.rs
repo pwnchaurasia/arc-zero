@@ -360,10 +360,10 @@ fn candidate(level: u16, seed: u64) -> Option<MjLevel> {
     None
 }
 
-pub fn generate(master: &str, max_level: u16) -> Vec<MjLevel> {
-    (1..=max_level)
-        .into_par_iter()
-        .map(|level| {
+pub fn generate(master: &str, levels: &[u16]) -> Vec<MjLevel> {
+    levels
+        .par_iter()
+        .map(|&level| {
             let target = {
                 let t = params(level).target;
                 if level.is_multiple_of(10) && level != 100 { t - 0.15 } else { t }

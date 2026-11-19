@@ -13,8 +13,11 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="description" content="Ad-free games. No ads, no tracking." />
     <meta name="robots" content="noindex, nofollow" />
-    <!-- Named by the server for the address the app is opened on (api: /manifest.webmanifest). -->
-    <link rel="manifest" href="/api/v1/manifest.webmanifest" />
+    <!-- Named by the server for the address the app is opened on (api: /manifest.webmanifest).
+         use-credentials: browsers fetch the manifest without cookies by default, and a
+         tunnel's "you are about to visit" page (ngrok's free plan) would then answer in its
+         place, so the app wouldn't be installable there. -->
+    <link rel="manifest" href="/api/v1/manifest.webmanifest" crossorigin="use-credentials" />
     <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <title>Games</title>

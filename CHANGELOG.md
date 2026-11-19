@@ -5,6 +5,11 @@ the newest is at the top.
 
 ## Unreleased
 
+### Install as an app behind a tunnel
+- The manifest link sends cookies (`crossorigin="use-credentials"`). Browsers fetch the
+  manifest without cookies by default, so behind ngrok's free plan the "You are about to
+  visit" page answered instead and the app couldn't be installed from that address.
+
 ### New game: NeonCoil (neon snake, 30 arena levels, played just for fun)
 - A level is 20 fruit (rising to 25 by level 30), a few minutes of play. The snake
   speeds up every 5 fruit ("SPEED UP", 8% each), and each level starts 2% faster

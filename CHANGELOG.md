@@ -20,6 +20,10 @@ the newest is at the top.
   PRs skip the check, and "CI passed" accepts that skip only then.
 - Releases still build all 100 levels per game from the secret seed. A weekly run on
   main builds all 100 for three seeds, one random, to catch slow or failing seeds early.
+- End-to-end jobs install Chromium in their own step and retry when Ubuntu's package
+  servers drop out (each download up to 5 times, the whole install twice); if they stay
+  down, Chromium is installed alone (the runner already has its libraries; only extra
+  fonts are skipped).
 
 ### Home screen redesign (phone, tablet and desktop)
 - Category chips: All, Puzzles, Action, Brain & Logic, Board, Junior (a game can be in

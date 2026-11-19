@@ -8,8 +8,9 @@ from arc_api.config import Settings
 from arc_api.main import create_app
 
 
-def test_brand_by_host() -> None:
-    s = Settings(host_brands={"other.example.com": "Other Name"})
+def test_brand_by_host(settings: Settings) -> None:
+    # From the test settings: a bare Settings() needs values only a local .env has.
+    s = settings.model_copy(update={"host_brands": {"other.example.com": "Other Name"}})
     assert s.brand_for("other.example.com") == "Other Name"
     assert s.brand_for("OTHER.example.com:443") == "Other Name"
     assert s.brand_for("play.example.com") == "Arc Zero"

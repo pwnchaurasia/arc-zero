@@ -23,12 +23,44 @@ mod water;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 use std::time::Instant;
 
 use arc_engine::hash::Fnv64;
 use serde::Serialize;
 
 pub const LEVELS_FILE_VERSION: u32 = 2;
+
+/// Builds levels `1..=max_level` on every core, the highest (slowest) first, and returns
+/// them in level order.
+///
+/// Late levels take far longer than early ones. Started last (as a plain parallel
+/// iterator over `1..=max_level` tends to), they leave a long tail with most cores idle;
+/// started first, the quick ones fill in around them. Each level depends only on its own
+/// seed, so the order of work never changes the output.
+pub fn heavy_first<T: Send>(max_level: u16, build: impl Fn(u16) -> T + Sync) -> Vec<T> {
+    let order: Vec<u16> = (1..=max_level).rev().collect();
+    let next = AtomicUsize::new(0);
+    let built = Mutex::new(Vec::with_capacity(order.len()));
+    let (order_ref, next_ref, built_ref, build_ref) = (&order, &next, &built, &build);
+    rayon::scope(|s| {
+        for _ in 0..rayon::current_num_threads() {
+            s.spawn(move |_| {
+                while let Some(&level) = order_ref.get(next_ref.fetch_add(1, Ordering::Relaxed)) {
+                    let one = build_ref(level);
+                    built_ref
+                        .lock()
+                        .expect("a panic aborts the process")
+                        .push((level, one));
+                }
+            });
+        }
+    });
+    let mut levels = built.into_inner().expect("a panic aborts the process");
+    levels.sort_by_key(|(level, _)| *level);
+    levels.into_iter().map(|(_, one)| one).collect()
+}
 
 /// Derives an independent per-item seed from the master secret.
 pub fn derive_seed(master: &str, parts: &[&str]) -> u64 {
@@ -142,79 +174,60 @@ fn main() -> ExitCode {
     }
     let started = Instant::now();
     let wants = |game: &str| args.game == "all" || args.game == game;
-    let mut result = Ok(());
-    if wants("water-sort") {
-        let levels = water::generate(&master, args.levels);
-        eprintln!(
-            "water sort: {} levels ({:.1?})",
-            levels.len(),
-            started.elapsed()
-        );
-        result = result.and(write_game(&args.out_dir, "water-sort", &levels));
+    let failures: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    let (master, out, levels) = (&master, &args.out_dir, args.levels);
+    // Every game at once, the slowest first, so the small ones fill the cores that a big
+    // one leaves idle near its end. Each writes its own file.
+    macro_rules! game {
+        ($scope:expr, $id:literal, $label:literal, $generate:expr) => {
+            if wants($id) {
+                let (failures, started) = (&failures, &started);
+                $scope.spawn(move |_| {
+                    let built = $generate;
+                    eprintln!(
+                        "{}: {} levels ({:.1?})",
+                        $label,
+                        built.len(),
+                        started.elapsed()
+                    );
+                    if let Err(e) = write_game(out, $id, &built) {
+                        failures.lock().expect("a panic aborts the process").push(e);
+                    }
+                });
+            }
+        };
     }
-    if wants("brick-blast") {
-        let levels = brick::generate(&master, args.levels);
-        eprintln!(
-            "brick blast: {} levels ({:.1?})",
-            levels.len(),
-            started.elapsed()
+    rayon::scope(|s| {
+        game!(
+            s,
+            "brick-blast",
+            "brick blast",
+            brick::generate(master, levels)
         );
-        result = result.and(write_game(&args.out_dir, "brick-blast", &levels));
-    }
-    if wants("metro-jam") {
-        let levels = metro::generate(&master, args.levels);
-        eprintln!(
-            "metro jam: {} levels ({:.1?})",
-            levels.len(),
-            started.elapsed()
+        game!(s, "traceout", "traceout", trace::generate(master, levels));
+        game!(s, "cipher9", "cipher9", sudoku::generate(master, levels));
+        game!(s, "gridsnap", "gridsnap", grid::generate(master, levels));
+        game!(
+            s,
+            "water-sort",
+            "water sort",
+            water::generate(master, levels)
         );
-        result = result.and(write_game(&args.out_dir, "metro-jam", &levels));
-    }
-    if wants("dead-bridge") {
-        let levels = bridge::generate(&master, args.levels);
-        eprintln!(
-            "dead bridge: {} levels ({:.1?})",
-            levels.len(),
-            started.elapsed()
+        game!(s, "metro-jam", "metro jam", metro::generate(master, levels));
+        game!(
+            s,
+            "dead-bridge",
+            "dead bridge",
+            bridge::generate(master, levels)
         );
-        result = result.and(write_game(&args.out_dir, "dead-bridge", &levels));
-    }
-    if wants("traceout") {
-        let levels = trace::generate(&master, args.levels);
-        eprintln!(
-            "traceout: {} levels ({:.1?})",
-            levels.len(),
-            started.elapsed()
-        );
-        result = result.and(write_game(&args.out_dir, "traceout", &levels));
-    }
-    if wants("gridsnap") {
-        let levels = grid::generate(&master, args.levels);
-        eprintln!(
-            "gridsnap: {} levels ({:.1?})",
-            levels.len(),
-            started.elapsed()
-        );
-        result = result.and(write_game(&args.out_dir, "gridsnap", &levels));
-    }
-    if wants("cipher9") {
-        let levels = sudoku::generate(&master, args.levels);
-        eprintln!(
-            "cipher9: {} levels ({:.1?})",
-            levels.len(),
-            started.elapsed()
-        );
-        result = result.and(write_game(&args.out_dir, "cipher9", &levels));
-    }
-    if wants("logoquest") {
-        let levels = logo::generate(args.levels);
-        eprintln!(
-            "logoquest: {} levels ({:.1?})",
-            levels.len(),
-            started.elapsed()
-        );
-        result = result.and(write_game(&args.out_dir, "logoquest", &levels));
-    }
+        game!(s, "logoquest", "logoquest", logo::generate(levels));
+    });
+    let mut failures = failures.into_inner().expect("a panic aborts the process");
+    failures.sort();
+    let result = match failures.first() {
+        Some(e) => Err(e.clone()),
+        None => Ok(()),
+    };
     if let Err(e) = result {
         eprintln!("{e}");
         return ExitCode::FAILURE;

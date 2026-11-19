@@ -10,7 +10,6 @@ use arc_engine::brick_blast::{
     EMPTY_ROW, MAX_BALLS, MAX_HP, MAX_SCRIPT_ROWS,
 };
 use arc_engine::rng::Rng;
-use rayon::prelude::*;
 use serde::Serialize;
 use std::cmp::Ordering;
 use std::time::Instant;
@@ -529,11 +528,7 @@ fn build_level(master: &str, level: u16) -> BbLevel {
 }
 
 pub fn generate(master: &str, max_level: u16) -> Vec<BbLevel> {
-    let mut levels: Vec<BbLevel> = (1..=max_level)
-        .into_par_iter()
-        .map(|level| build_level(master, level))
-        .collect();
-    levels.sort_by_key(|l| l.level);
+    let levels = crate::heavy_first(max_level, |level| build_level(master, level));
     for l in &levels {
         eprintln!(
             "  bb {:>3}: balls {:>2} rows {:>2} hp {:>5} bot turns {:>2} closest {}",

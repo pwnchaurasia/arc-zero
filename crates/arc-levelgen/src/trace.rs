@@ -17,7 +17,6 @@
 
 use arc_engine::rng::Rng;
 use arc_engine::traceout::{Game, Level, Line};
-use rayon::prelude::*;
 use serde::Serialize;
 
 use crate::derive_seed;
@@ -412,18 +411,16 @@ fn miss(c: &TraceLevel, target: f64) -> f64 {
 }
 
 pub fn generate(master: &str, max_level: u16) -> Vec<TraceLevel> {
-    (1..=max_level)
-        .into_par_iter()
-        .map(|level| {
-            let target = params(level).depth;
-            let best = (0..CANDIDATES)
-                .filter_map(|i| {
-                    let seed = derive_seed(master, &["to", &level.to_string(), &i.to_string()]);
-                    candidate(level, seed)
-                })
-                .min_by(|a, b| miss(a, target).total_cmp(&miss(b, target)))
-                .unwrap_or_else(|| panic!("traceout level {level}: no valid candidate"));
-            eprintln!(
+    crate::heavy_first(max_level, |level| {
+        let target = params(level).depth;
+        let best = (0..CANDIDATES)
+            .filter_map(|i| {
+                let seed = derive_seed(master, &["to", &level.to_string(), &i.to_string()]);
+                candidate(level, seed)
+            })
+            .min_by(|a, b| miss(a, target).total_cmp(&miss(b, target)))
+            .unwrap_or_else(|| panic!("traceout level {level}: no valid candidate"));
+        eprintln!(
                 "  to level {level}: {}x{} {} lines, {:.0}% covered, depth {} (target {target:.1}), {} free at start{}",
                 best.data.width,
                 best.data.height,
@@ -433,9 +430,8 @@ pub fn generate(master: &str, max_level: u16) -> Vec<TraceLevel> {
                 best.free_at_start,
                 best.data.theme.as_deref().map(|t| format!(", {t}")).unwrap_or_default()
             );
-            best
-        })
-        .collect()
+        best
+    })
 }
 
 #[cfg(test)]

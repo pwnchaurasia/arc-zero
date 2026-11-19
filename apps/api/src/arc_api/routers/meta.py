@@ -1,4 +1,4 @@
-"""Health checks and proof-of-work challenges."""
+"""Health checks, the web app manifest and proof-of-work challenges."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import time
 from typing import Literal
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from arc_api.errors import ApiError
@@ -29,6 +30,38 @@ async def ready(state: StateDep, db: DbDep) -> dict[str, str]:
     except Exception as exc:
         raise ApiError(503, "not_ready", "Dependencies unavailable.") from exc
     return {"status": "ready"}
+
+
+@router.get("/manifest.webmanifest")
+async def manifest(request: Request, state: StateDep) -> JSONResponse:
+    """The install manifest, named for the address the app was opened on."""
+    name = state.settings.brand_for(request.headers.get("host"))
+    icons = [
+        {"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+        {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        {
+            "src": "/icons/icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable",
+        },
+    ]
+    body = {
+        "name": name,
+        "short_name": name,
+        "description": "Ad-free games. No ads, no tracking.",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "orientation": "portrait",
+        "background_color": "#0b1020",
+        "theme_color": "#0b1020",
+        "lang": "en",
+        "icons": icons,
+    }
+    return JSONResponse(
+        body, media_type="application/manifest+json", headers={"Cache-Control": "no-cache"}
+    )
 
 
 class ChallengeIn(StrictModel):

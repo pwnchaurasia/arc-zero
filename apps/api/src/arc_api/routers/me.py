@@ -27,6 +27,8 @@ class GameOut(StrictModel):
 
 
 class MeOut(StrictModel):
+    # The arcade's name on the address the app was opened on.
+    brand: str
     signed_in: bool
     name: str | None = None
     # True only in local playtest mode (ARC_DEV_UNLOCK_ALL): every level can be played.
@@ -43,7 +45,7 @@ class MeOut(StrictModel):
 
 
 @router.get("/me")
-async def me(who: PrincipalDep, state: StateDep, db: DbDep) -> MeOut:
+async def me(request: Request, who: PrincipalDep, state: StateDep, db: DbDep) -> MeOut:
     await analytics.record_visit(db, state, who)
     stars: dict[str, dict[int, int]] = {g: {} for g in GAME_IDS}
     if who.player_id is not None:
@@ -73,6 +75,7 @@ async def me(who: PrincipalDep, state: StateDep, db: DbDep) -> MeOut:
     if who.player_id is not None:
         name = await db.scalar(select(Player.display_name).where(Player.id == who.player_id))
     return MeOut(
+        brand=state.settings.brand_for(request.headers.get("host")),
         signed_in=who.player_id is not None,
         name=name,
         all_levels_open=state.settings.dev_unlock_all,

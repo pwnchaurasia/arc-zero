@@ -11,14 +11,17 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="description" content="Ad-free puzzle games. No ads, no tracking." />
+    <meta name="description" content="Ad-free games. No ads, no tracking." />
+    <meta name="robots" content="noindex, nofollow" />
+    <!-- Named by the server for the address the app is opened on (api: /manifest.webmanifest). -->
+    <link rel="manifest" href="/api/v1/manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <title>Arc Zero</title>
+    <title>Games</title>
   </head>
   <body>
     <div id="root"></div>
-    <noscript>Arc Zero needs JavaScript to run the games.</noscript>
+    <noscript>The games need JavaScript.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

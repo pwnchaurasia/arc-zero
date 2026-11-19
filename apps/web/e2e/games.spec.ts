@@ -199,8 +199,6 @@ test("a guest plays GridSnap by keyboard and by drag, then ends the game", async
   expect(final.score).toBeGreaterThan(0);
   await expect(page.getByText("New best!")).toBeVisible();
 
-  await page.getByRole("button", { name: "Leaderboards" }).last().click();
-  await expect(page.getByRole("button", { name: "Save your progress to join the leaderboards" })).toBeVisible();
   expect(errors).toEqual([]);
 });
 

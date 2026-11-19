@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     # Pepper for recovery-key hashes. Changing it invalidates every account key.
     recovery_pepper: SecretStr = SecretStr("")
 
+    # The arcade's name. `host_brands` gives another name to some addresses
+    # ({"host": "Name"}); the page shows whichever matches the address it was opened on.
+    brand: str = "Arc Zero"
+    host_brands: dict[str, str] = Field(default_factory=dict)
+
     allowed_origins: list[str] = ["http://localhost:5174"]
     allowed_hosts: list[str] = ["localhost", "127.0.0.1", "testserver"]
     expose_docs: bool = False
@@ -94,6 +99,11 @@ class Settings(BaseSettings):
         return self.allowed_origins + (
             [f"https://*{d}" for d in TUNNEL_DOMAINS] if self.dev_tunnel else []
         )
+
+    def brand_for(self, host: str | None) -> str:
+        """The arcade's name on `host` (a Host header, port allowed)."""
+        bare = (host or "").split(":")[0].lower()
+        return self.host_brands.get(bare, self.brand)
 
     @property
     def hosts(self) -> list[str]:

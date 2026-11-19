@@ -1,4 +1,4 @@
-"""GridSnap: the server deals and applies every move; scores, coins and leaderboards."""
+"""GridSnap: the server deals and applies every move; scores and coins."""
 
 from __future__ import annotations
 
@@ -209,38 +209,15 @@ async def test_milestones_pay_within_the_daily_cap(app_client: AsyncClient) -> N
     assert third.balance == coins.START_BALANCE + coins.MILESTONE_DAILY_CAP
 
 
-async def test_leaderboards_show_names_and_skip_assisted_runs(app_client: AsyncClient) -> None:
+async def test_there_is_no_leaderboard(app_client: AsyncClient) -> None:
+    """Decision 2026-11-19: players never see each other's names or scores."""
     await _register(app_client, "Asha")
     start = await _start(app_client)
     await _place_first_tray(app_client, start)
-    asha = (await app_client.post(f"{GS}/runs/{start['run_id']}/end")).json()
-    assert asha["ranked"] is True
-
-    # A second run with bought help: a personal best at most, never on the board.
-    start = await _start(app_client)
-    r = await app_client.post(
-        f"{GS}/runs/{start['run_id']}/assist",
-        json={"seq": 0, "kind": "reshuffle", "price": 40},
-    )
-    assert r.status_code == 200
-    await _place_first_tray(app_client, {**start, "seq": 1, "view": r.json()["view"]})
-    assisted = (await app_client.post(f"{GS}/runs/{start['run_id']}/end")).json()
-    assert assisted["ranked"] is False
-
+    assert (await app_client.post(f"{GS}/runs/{start['run_id']}/end")).status_code == 200
     for period in ("week", "month", "all"):
-        board = (await app_client.get(f"{GS}/leaderboard", params={"period": period})).json()
-        assert board["entries"] == [
-            {"rank": 1, "name": "Asha", "score": asha["score"], "you": True}
-        ]
-        assert board["you"]["rank"] == 1
-        text = str(board)
-        assert "player_id" not in text and "recovery" not in text
-
-    # Another player sees Asha but not themselves.
-    app_client.cookies.clear()
-    board = (await app_client.get(f"{GS}/leaderboard")).json()
-    assert board["signed_in"] is False and board["you"] is None
-    assert board["entries"][0]["you"] is False
+        r = await app_client.get(f"{GS}/leaderboard", params={"period": period})
+        assert r.status_code in (404, 405)
 
 
 # ------------------------------------------------------------------------- levels

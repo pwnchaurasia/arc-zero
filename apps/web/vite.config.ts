@@ -40,26 +40,12 @@ export default defineConfig({
       // Registered from our own bundle (no inline script), so the strict CSP holds.
       injectRegister: false,
       includeAssets: ["icons/*.png", "icons/*.svg", "games/*.webp"],
-      manifest: {
-        name: "Arc Zero",
-        short_name: "Arc Zero",
-        description: "Ad-free puzzle games. No ads, no tracking.",
-        start_url: "/",
-        scope: "/",
-        display: "standalone",
-        orientation: "portrait",
-        background_color: "#0b1020",
-        theme_color: "#0b1020",
-        icons: [
-          { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-          { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
-          { src: "/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
-        ],
-      },
+      // The manifest comes from the API, named for the address the app was opened on.
+      manifest: false,
       workbox: {
         // Hashed files only. The page itself is never served from the precache: it
         // always comes from the network first (below), so a deploy shows on the next open.
-        globPatterns: ["**/*.{js,css,wasm,png,svg,webp,webmanifest}"],
+        globPatterns: ["**/*.{js,css,wasm,png,svg,webp}"],
         navigateFallback: null,
         runtimeCaching: [
           {

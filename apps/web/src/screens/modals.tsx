@@ -6,7 +6,7 @@ import { updateSettings, useSettings } from "../state/settings";
 import { useSession } from "../state/session";
 import { CopyIcon } from "../ui/icons";
 import { Button, Modal, Toggle } from "../ui/kit";
-import { keyFileText, keyWords, wordMatches } from "./recoveryKey";
+import { keyFileName, keyFileText, keyWords, wordMatches } from "./recoveryKey";
 
 function message(e: unknown): string {
   return e instanceof ApiError ? e.message : "Something went wrong. Please try again.";
@@ -22,13 +22,14 @@ function KeyReveal({ recoveryKey, onDone }: { recoveryKey: string; onDone: () =>
   const [typed, setTyped] = useState("");
   const [copied, setCopied] = useState(false);
   const confirmed = wordMatches(words, ask, typed);
+  const brand = useSession().me?.brand ?? "Arcade";
 
   const download = () => {
-    const blob = new Blob([keyFileText(recoveryKey, window.location.origin)], { type: "text/plain" });
+    const blob = new Blob([keyFileText(recoveryKey, window.location.origin, brand)], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "arc-zero-recovery-key.txt";
+    a.download = keyFileName(brand);
     a.click();
     URL.revokeObjectURL(url);
   };

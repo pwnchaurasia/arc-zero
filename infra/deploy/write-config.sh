@@ -7,6 +7,7 @@
 # Required env: ARC_DATABASE_URL ARC_SIGNING_KEYS ARC_RECOVERY_PEPPER REDIS_PASSWORD SITE_ADDRESS
 # Optional env: ARC_SIGNING_KID (default k1)
 #               NGROK_DOMAIN + NGROK_AUTHTOKEN: optional ngrok tunnel. Both or neither.
+#               NGROK_BRAND: the arcade's name on the tunnel address (default "Arcade").
 set -euo pipefail
 
 out=${1:?usage: write-config.sh <out-dir>}
@@ -34,14 +35,18 @@ if [ -n "$NGROK_DOMAIN" ] || [ -n "$NGROK_AUTHTOKEN" ]; then
   [ -n "$NGROK_DOMAIN" ] && [ -n "$NGROK_AUTHTOKEN" ] || { echo "::error::Set both NGROK_DOMAIN and NGROK_AUTHTOKEN secrets, or neither"; fail=1; }
   [[ "$NGROK_DOMAIN" =~ ^[a-z0-9-]+\.(ngrok-free\.dev|ngrok-free\.app|ngrok\.app|ngrok\.dev|ngrok\.io)$ ]] || { echo "::error::NGROK_DOMAIN must be a bare ngrok host name, e.g. calm-otter-1234.ngrok-free.dev"; fail=1; }
   [[ "$NGROK_AUTHTOKEN" =~ ^[A-Za-z0-9_]{20,}$ ]] || { echo "::error::NGROK_AUTHTOKEN doesn't look like an ngrok authtoken"; fail=1; }
+  NGROK_BRAND=${NGROK_BRAND:-Arcade}
+  [[ "$NGROK_BRAND" =~ ^[A-Za-z0-9][A-Za-z0-9\ ]{1,23}$ ]] || { echo "::error::NGROK_BRAND must be 2-24 letters, digits or spaces"; fail=1; }
 fi
 [ "$fail" = 0 ] || exit 1
 
 origins="\"https://$SITE_ADDRESS\""
 hosts="\"$SITE_ADDRESS\",\"127.0.0.1\""
+brands="{}"
 if [ -n "$NGROK_DOMAIN" ]; then
   origins="$origins,\"https://$NGROK_DOMAIN\""
   hosts="$hosts,\"$NGROK_DOMAIN\""
+  brands="{\"$NGROK_DOMAIN\":\"$NGROK_BRAND\"}"
 fi
 
 umask 077
@@ -57,6 +62,7 @@ ARC_SIGNING_KID=${ARC_SIGNING_KID:-k1}
 ARC_RECOVERY_PEPPER=$ARC_RECOVERY_PEPPER
 ARC_ALLOWED_ORIGINS='[$origins]'
 ARC_ALLOWED_HOSTS='[$hosts]'
+ARC_HOST_BRANDS='$brands'
 ARC_COOKIE_SECURE=true
 ARC_HSTS=true
 ARC_EXPOSE_DOCS=false

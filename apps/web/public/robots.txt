@@ -1,0 +1,3 @@
+# Not for search engines (decision 2026-11-19).
+User-agent: *
+Disallow: /

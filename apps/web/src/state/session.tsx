@@ -28,6 +28,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
+  // The name depends on the address the app was opened on (the server decides).
+  useEffect(() => {
+    if (me?.brand) document.title = me.brand;
+  }, [me?.brand]);
+
   const value = useMemo(() => ({ me, error, refresh }), [me, error, refresh]);
   return <SessionContext value={value}>{children}</SessionContext>;
 }

@@ -111,6 +111,7 @@ jobs:
           # Optional tunnel (both or neither). Both are secrets so logs never show them.
           NGROK_DOMAIN: ${{ secrets.NGROK_DOMAIN }}
           NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
+          NGROK_BRAND: ${{ secrets.NGROK_BRAND }}
         run: infra/deploy/write-config.sh "$RUNNER_TEMP/secrets"
 
       # Levels are regenerated from the secret seed on every deploy: the same seed (and

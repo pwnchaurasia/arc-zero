@@ -13,6 +13,10 @@ the newest is at the top.
   first, so cores don't sit idle near the end. Output is byte-for-byte the same.
 - The cap is now 15 minutes (job 20) and the deploy job has 45 minutes: still catches a
   generator that loops, with room for slower seeds and runners.
+- The full level-generation check runs only on pull requests that change level code
+  (the generator, the game engine, Cargo files, the Rust toolchain or this pipeline),
+  with two fixed seeds; other PRs skip it (about 20 runner-minutes saved each) and
+  "CI passed" accepts that skip only then. A weekly run on main adds a random seed.
 
 ### Home screen redesign (phone, tablet and desktop)
 - Category chips: All, Puzzles, Action, Brain & Logic, Board, Junior (a game can be in

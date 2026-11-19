@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { LEVEL_COUNT, levelTick, levelWalls, startBody } from "./levels";
+import { fruitGoal, LEVEL_COUNT, levelTick, levelWalls, startBody } from "./levels";
 import { boardFor, type Cell, distance, Snake } from "./snake";
 
 const headOf = (s: Snake) => s.body[0] ?? { x: -1, y: -1 };
@@ -28,6 +28,22 @@ describe("moving and turning", () => {
     expect(s.alive).toBe(true);
   });
 
+  it("takes a turn pressed just after leaving a cell from that cell", () => {
+    const s = new Snake(19, 25);
+    s.step(); // straight up to (9, 18)
+    const ev = s.lateTurn("left");
+    expect(ev).toEqual({});
+    expect(headOf(s)).toEqual({ x: 8, y: 19 });
+    expect(s.moves).toBe(1);
+    expect(s.body).toHaveLength(4);
+    // Not twice, not backwards, not after a queued turn.
+    expect(s.lateTurn("up")).toBeNull();
+    s.step();
+    expect(s.lateTurn("right")).toBeNull();
+    s.turn("up");
+    expect(s.lateTurn("down")).toBeNull();
+  });
+
   it("ends at the edge, at a wall, and on its own body", () => {
     const edge = new Snake(19, 25);
     let event = {};
@@ -46,8 +62,8 @@ describe("moving and turning", () => {
 });
 
 describe("fruit, clearing and stars", () => {
-  it("clears the level after the 5th fruit", () => {
-    const s = new Snake(19, 25);
+  it("clears the level after its last fruit", () => {
+    const s = new Snake(19, 25, [], 5);
     let last = {};
     for (let i = 0; i < 5; i++) {
       s.fruit = { x: headOf(s).x, y: headOf(s).y - 1 };
@@ -69,13 +85,13 @@ describe("fruit, clearing and stars", () => {
   });
 
   it("gives 3 stars for short routes and fewer for wandering", () => {
-    const s = new Snake(19, 25);
-    s.par = 40;
-    s.moves = 50;
+    const s = new Snake(19, 25); // 20 fruit
+    s.par = 200;
+    s.moves = 270;
     expect(s.stars()).toBe(3);
-    s.moves = 85;
+    s.moves = 400;
     expect(s.stars()).toBe(2);
-    s.moves = 200;
+    s.moves = 500;
     expect(s.stars()).toBe(1);
   });
 
@@ -95,17 +111,26 @@ describe("levels", () => {
     [34, 19],
   ];
 
-  it("speed up 8% a level, gently capped", () => {
-    expect(levelTick(1)).toBe(145);
-    expect(levelTick(2)).toBeLessThan(145);
-    expect(levelTick(3)).toBeGreaterThan(115);
-    expect(levelTick(LEVEL_COUNT)).toBe(88);
+  it("last 20-25 fruit and speed up every 5 fruit, gently capped", () => {
+    expect(fruitGoal(1)).toBe(20);
+    expect(fruitGoal(LEVEL_COUNT)).toBe(25);
+    expect(levelTick(1, 0)).toBe(150);
+    expect(levelTick(1, 4)).toBe(150);
+    expect(levelTick(1, 5)).toBeLessThan(150);
+    expect(levelTick(1, 15)).toBeGreaterThan(110);
+    expect(levelTick(2, 0)).toBeLessThan(150);
+    expect(levelTick(LEVEL_COUNT, 24)).toBe(80);
   });
 
-  it("start empty and fill up with walls", () => {
+  it("start open, then every level has its own walls", () => {
     expect(levelWalls(1, 19, 25)).toEqual([]);
-    expect(levelWalls(3, 19, 25)).toEqual([]);
-    expect(levelWalls(4, 19, 25).length).toBeGreaterThan(0);
+    const shapes = new Set<string>();
+    for (let l = 2; l <= LEVEL_COUNT; l++) {
+      const w = levelWalls(l, 19, 25);
+      expect(w.length, `level ${l}`).toBeGreaterThan(0);
+      shapes.add(JSON.stringify(w));
+    }
+    expect(shapes.size).toBe(LEVEL_COUNT - 1);
     expect(levelWalls(30, 19, 25).length).toBeGreaterThan(levelWalls(4, 19, 25).length);
   });
 

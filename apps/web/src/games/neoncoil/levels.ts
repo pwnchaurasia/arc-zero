@@ -1,7 +1,9 @@
 /**
- * NeonCoil arena levels (decision 2026-11-19): eat 5 fruit to clear a level. Each
- * level is a little faster (+8%, capped) and from level 4 the arena gets walls:
- * pillars, bars, rooms, zigzags and mazes. Levels 1-3 are an empty, slow arena.
+ * NeonCoil arena levels (decisions 2026-11-19): a level is 20 fruit (rising to 25 by
+ * level 30), a few minutes of play. Within a level the snake speeds up every 5 fruit;
+ * each level also starts a little faster. Level 1 is an open arena; from level 2
+ * every level has its own walls: pillars, a bar, corners, rooms, zigzags, mazes, and
+ * then pairs of them.
  *
  * Layouts are drawn relative to the board (19 cells on its short side, the long
  * side fits the screen), so they work on phones, tablets and laptops alike. The
@@ -11,14 +13,26 @@
 import type { Cell } from "./snake";
 
 export const LEVEL_COUNT = 30;
-export const FRUIT_PER_LEVEL = 5;
-const START_TICK = 145;
-const MIN_TICK = 88;
-const SPEED_UP = 1.08;
+/** Fruit to eat between speed-ups. */
+export const SPEED_EVERY = 5;
+const START_TICK = 150;
+const MIN_TICK = 80;
+/** Each level starts 2% faster; each speed-up inside a level is 8%. */
+const LEVEL_FACTOR = 1.02;
+const STEP_FACTOR = 1.08;
 
-/** Milliseconds per cell on a level: +8% faster each level, never below 88 ms. */
-export function levelTick(level: number): number {
-  return Math.max(MIN_TICK, Math.round(START_TICK / Math.pow(SPEED_UP, level - 1)));
+/** Fruit to clear a level: 20 on level 1, 25 on level 30. */
+export function fruitGoal(level: number): number {
+  return 20 + Math.round((5 * (Math.min(level, LEVEL_COUNT) - 1)) / (LEVEL_COUNT - 1));
+}
+
+/** Speed step inside a level (1, 2, ...) after `eaten` fruit. */
+export const speedStep = (eaten: number) => Math.floor(eaten / SPEED_EVERY) + 1;
+
+/** Milliseconds per cell on `level` after `eaten` fruit, never below 80 ms. */
+export function levelTick(level: number, eaten = 0): number {
+  const start = START_TICK / Math.pow(LEVEL_FACTOR, level - 1);
+  return Math.max(MIN_TICK, Math.round(start / Math.pow(STEP_FACTOR, speedStep(eaten) - 1)));
 }
 
 /** Where the snake starts: head first, heading up, in the lower middle. */
@@ -124,8 +138,6 @@ const LAYOUTS: Record<string, Layout> = {
 /** Which layouts make up each level (1-based). */
 const PLAN: string[][] = [
   ["empty"],
-  ["empty"],
-  ["empty"],
   ["pillars"],
   ["bar"],
   ["corners"],
@@ -133,16 +145,16 @@ const PLAN: string[][] = [
   ["dots"],
   ["cross"],
   ["frame"],
-  ["pillars", "bar"],
   ["zigzag"],
-  ["corners", "cross"],
   ["rooms"],
   ["diamond"],
   ["comb"],
+  ["pillars", "bar"],
+  ["corners", "cross"],
+  ["maze"],
   ["pillars", "twoBars"],
   ["cross", "frame"],
   ["dots", "zigzag"],
-  ["maze"],
   ["pillars", "rooms"],
   ["dots", "comb"],
   ["corners", "diamond"],
@@ -150,8 +162,10 @@ const PLAN: string[][] = [
   ["pillars", "zigzag"],
   ["frame", "zigzag"],
   ["cross", "rooms"],
-  ["pillars", "maze"],
+  ["corners", "twoBars"],
+  ["comb", "maze"],
   ["frame", "diamond"],
+  ["pillars", "maze"],
   ["dots", "maze"],
 ];
 

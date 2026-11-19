@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { haptic, sfx } from "../feel/audio";
-import { FRUIT_PER_LEVEL, LEVEL_COUNT, layoutNames } from "../games/neoncoil/levels";
+import { fruitGoal, LEVEL_COUNT, layoutNames, SPEED_EVERY } from "../games/neoncoil/levels";
 import { type LevelResult, NeonCoilView } from "../games/neoncoil/NeonCoilView";
 import {
   chooseSkin,
@@ -164,7 +164,7 @@ function LevelMap({
             })}
           </div>
           <p className="mt-4 text-center text-xs text-muted">
-            Eat {FRUIT_PER_LEVEL} fruit to clear a level. Each level is a bit faster. ★★★ for short routes.
+            Eat 20-25 fruit to clear a level. It speeds up every {SPEED_EVERY} fruit. ★★★ for short routes.
           </p>
         </div>
       </div>
@@ -179,7 +179,22 @@ function LevelMap({
 
 // ------------------------------------------------------------------ playing
 
-function PadButton({ dir, onTurn, children }: { dir: Dir; onTurn: (d: Dir) => void; children: string }) {
+function PadButton({
+  dir,
+  onTurn,
+  className,
+  children,
+}: {
+  dir: Dir;
+  onTurn: (d: Dir) => void;
+  className: string;
+  children: string;
+}) {
+  const [lit, setLit] = useState(false);
+  const flash = () => {
+    setLit(true);
+    setTimeout(() => setLit(false), 120);
+  };
   return (
     <button
       type="button"
@@ -188,10 +203,24 @@ function PadButton({ dir, onTurn, children }: { dir: Dir; onTurn: (d: Dir) => vo
         // Act on touch-down, not on release: no waiting for a click.
         e.preventDefault();
         e.stopPropagation();
+        // Let the finger slide onto another arrow (a touch is otherwise held by the
+        // first element it pressed).
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+        flash();
         onTurn(dir);
       }}
+      onPointerEnter={(e) => {
+        // Rolling a held finger (or a pressed mouse) onto this arrow turns too.
+        if (e.buttons === 0 && e.pointerType === "mouse") return;
+        if (e.pointerType !== "mouse" || e.buttons > 0) {
+          flash();
+          onTurn(dir);
+        }
+      }}
       onContextMenu={(e) => e.preventDefault()}
-      className="grid size-16 touch-none place-items-center rounded-2xl border border-line bg-panel-2/90 text-2xl text-white shadow-lg transition-transform active:scale-90 active:bg-line sm:size-14"
+      className={`grid touch-none select-none place-items-center rounded-2xl border text-2xl text-white shadow-lg ${className} ${
+        lit ? "scale-90 border-accent bg-accent/30" : "border-line bg-panel-2/90"
+      } transition-transform duration-75`}
     >
       {children}
     </button>
@@ -216,6 +245,8 @@ function Play({
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<NeonCoilView | null>(null);
   const [eaten, setEaten] = useState(0);
+  const [speed, setSpeed] = useState(1);
+  const goal = fruitGoal(level);
   const [ready, setReady] = useState(true);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [result, setResult] = useState<(LevelResult & { unlockedNow: Skin[] }) | null>(null);
@@ -250,14 +281,16 @@ function Play({
     let made: NeonCoilView | null = null;
     if (!host.current) return;
     void NeonCoilView.create(host.current, skinById(savedRef.current.skin), {
-      onEat: (n) => {
+      onEat: (n, _goal, step) => {
         eatenRef.current = n;
         setEaten(n);
+        setSpeed(step);
       },
       onStep: (e) => {
         if (e.ate) {
           // The bite gets higher with each fruit of the level.
-          sfx.chomp(eatenRef.current + 1);
+          sfx.chomp(((eatenRef.current) % SPEED_EVERY) + 1);
+          if ((eatenRef.current + 1) % SPEED_EVERY === 0) setTimeout(() => sfx.complete(), 90);
           haptic(10);
         }
         if (e.died) {
@@ -287,6 +320,7 @@ function Play({
     setOverlay(null);
     setReady(true);
     setEaten(0);
+    setSpeed(1);
   }, []);
 
   useEffect(() => {
@@ -422,18 +456,24 @@ function Play({
       />
 
       <div className="flex items-center gap-3 px-4 pb-2 sm:px-6">
-        <div className="flex gap-1.5" aria-label={`${eaten} of ${FRUIT_PER_LEVEL} fruit`} data-testid="nc-fruit">
-          {Array.from({ length: FRUIT_PER_LEVEL }, (_, i) => (
-            <span
-              key={i}
-              className={`size-3.5 rounded-full transition-all duration-200 ${i < eaten ? "scale-110 bg-[#ff3d7f] shadow-[0_0_10px_#ff3d7f]" : "bg-white/10"}`}
+        <div className="min-w-0 flex-1" aria-label={`${eaten} of ${goal} fruit`} data-testid="nc-fruit">
+          <div className="mb-1 flex items-baseline gap-2 text-sm">
+            <span className="font-black tabular-nums">
+              🍎 {eaten}/{goal}
+            </span>
+            <span className="truncate text-xs text-muted">{walls}</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#ff3d7f] to-[#facc15] transition-[width] duration-300"
+              style={{ width: `${(eaten / goal) * 100}%` }}
             />
-          ))}
+          </div>
         </div>
-        <span className="text-sm text-muted">{walls}</span>
-        <span className="ml-auto">
-          <Stars count={best} size={16} />
+        <span className="rounded-full bg-white/10 px-2.5 py-1 text-sm font-bold tabular-nums" aria-label={`Speed ${speed}`}>
+          ⚡{speed}
         </span>
+        <Stars count={best} size={14} />
       </div>
 
       <div
@@ -448,7 +488,7 @@ function Play({
         {ready && overlay === null && (
           <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center px-4">
             <p className="pop-in rounded-full bg-black/70 px-4 py-2 text-center text-sm font-semibold backdrop-blur-sm">
-              Eat {FRUIT_PER_LEVEL} 🍎 · {pad ? "tap an arrow" : "swipe"} or press an arrow key to start
+              Eat {goal} 🍎 · {pad ? "tap an arrow" : "swipe"} or press an arrow key to start
             </p>
           </div>
         )}
@@ -489,7 +529,7 @@ function Play({
                 <>
                   <p className="text-sm font-black tracking-[0.3em] text-rose-300">CRASHED</p>
                   <p className="my-2 text-5xl font-black tabular-nums" style={{ textShadow: `0 0 24px ${hex(skin.glow)}` }}>
-                    {eaten}/{FRUIT_PER_LEVEL}
+                    {eaten}/{goal}
                   </p>
                   <p className="text-sm text-muted">fruit eaten · press any arrow to go again</p>
                 </>
@@ -542,17 +582,21 @@ function Play({
       </div>
 
       {pad && (
-        <div className="grid shrink-0 place-items-center pb-2 pt-1" aria-label="Arrows">
-          <div className="grid grid-cols-3 gap-1.5">
-            <span />
-            <PadButton dir="up" onTurn={padTurn}>▲</PadButton>
-            <span />
-            <PadButton dir="left" onTurn={padTurn}>◀</PadButton>
-            <span />
-            <PadButton dir="right" onTurn={padTurn}>▶</PadButton>
-            <span />
-            <PadButton dir="down" onTurn={padTurn}>▼</PadButton>
-            <span />
+        <div className="grid shrink-0 touch-none select-none place-items-center pb-3 pt-2" aria-label="Arrows">
+          {/* Compact: tall left/right at the sides, up and down stacked in the middle. */}
+          <div className="grid grid-cols-[5rem_5.5rem_5rem] grid-rows-[3.5rem_3.5rem] gap-2">
+            <PadButton dir="left" onTurn={padTurn} className="row-span-2">
+              ◀
+            </PadButton>
+            <PadButton dir="up" onTurn={padTurn} className="">
+              ▲
+            </PadButton>
+            <PadButton dir="right" onTurn={padTurn} className="row-span-2">
+              ▶
+            </PadButton>
+            <PadButton dir="down" onTurn={padTurn} className="col-start-2">
+              ▼
+            </PadButton>
           </div>
         </div>
       )}

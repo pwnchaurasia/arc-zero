@@ -1,14 +1,16 @@
 /**
  * NeonCoil rules (decisions 2026-11-18/19): played on the device, just for fun.
- * A level is an arena (see levels.ts); eat 5 fruit to clear it. Walls and the
+ * A level is an arena (see levels.ts); eat its fruit (20-25) to clear it. Walls and the
  * snake's own body end the attempt (try again at once). Stars reward short routes:
  * every fruit adds its shortest distance to a "par", and the moves taken are
  * compared with it.
  *
  * Turns are buffered two ahead, so a quick double swipe makes a U-turn without the
- * second swipe being lost or reversing into the neck.
+ * second swipe being lost or reversing into the neck. A turn pressed just after the
+ * snake left a cell can still take that cell's exit (`lateTurn`), so turning never
+ * feels like it waited for the next cell.
  */
-import { FRUIT_PER_LEVEL, startBody } from "./levels";
+import { fruitGoal, startBody } from "./levels";
 
 /** The default board (phones in portrait use about this). */
 export const COLS = 19;
@@ -86,12 +88,14 @@ export class Snake {
   cleared = false;
   readonly walls: Set<number>;
   private grow = 0;
+  /** The state just before the last plain step (straight on, nothing eaten). */
+  private before: { body: Cell[]; grow: number; moves: number } | null = null;
 
   constructor(
     readonly cols = COLS,
     readonly rows = ROWS,
     walls: Cell[] = [],
-    readonly goal = FRUIT_PER_LEVEL,
+    readonly goal = fruitGoal(1),
     private readonly random: () => number = Math.random,
   ) {
     this.walls = new Set(walls.map((w) => w.y * cols + w.x));
@@ -111,9 +115,27 @@ export class Snake {
     this.queue.push(next);
   }
 
+  /**
+   * A turn that arrives just after a plain step: undo that step and take it again in
+   * the new direction. Returns what the redone step did, or null when it can't apply
+   * (the caller then queues the turn as usual).
+   */
+  lateTurn(next: Dir): StepEvent | null {
+    const b = this.before;
+    if (!b || !this.alive || this.cleared || this.queue.length) return null;
+    if (next === this.dir || opposite(next, this.dir)) return null;
+    this.body = b.body;
+    this.grow = b.grow;
+    this.moves = b.moves;
+    this.before = null;
+    this.queue.push(next);
+    return this.step();
+  }
+
   /** 3 stars for near-shortest routes, 2 for reasonable ones, 1 for clearing. */
   stars(): number {
-    const slack = 2 * this.goal;
+    // A move or so per fruit for getting the body out of the way.
+    const slack = this.goal;
     if (this.moves <= Math.ceil(this.par * 1.3) + slack) return 3;
     if (this.moves <= this.par * 2 + slack) return 2;
     return 1;
@@ -140,6 +162,8 @@ export class Snake {
   step(): StepEvent {
     const event: StepEvent = {};
     if (!this.alive || this.cleared) return event;
+    const straight = this.queue.length === 0;
+    const snapshot = { body: this.body.map((c) => ({ ...c })), grow: this.grow, moves: this.moves };
     this.dir = this.queue.shift() ?? this.dir;
     const head = this.body[0] ?? { x: 0, y: 0 };
     const next = { x: head.x + DIRS[this.dir].x, y: head.y + DIRS[this.dir].y };
@@ -163,6 +187,7 @@ export class Snake {
     if (this.grow > 0) this.grow -= 1;
     else this.body.pop();
 
+    this.before = null;
     if (next.x === this.fruit.x && next.y === this.fruit.y) {
       event.ate = this.fruit;
       this.eaten += 1;
@@ -173,6 +198,8 @@ export class Snake {
       } else {
         this.fruit = this.spawn();
       }
+    } else if (straight) {
+      this.before = snapshot;
     }
     return event;
   }

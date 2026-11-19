@@ -6,18 +6,25 @@ the newest is at the top.
 ## Unreleased
 
 ### New game: NeonCoil (neon snake, 30 arena levels, played just for fun)
-- Eat 5 fruit to clear a level. Each level is 8% faster (145 ms a cell down to a
-  gentle cap of 88 ms). Levels 1-3 are an open, slow arena; from level 4 walls appear:
-  pillars, bars, corners, a cross, rooms, zigzags, combs, a diamond and mazes, mixed
-  more as you go. Walls and your own tail end the attempt; any arrow goes again.
+- A level is 20 fruit (rising to 25 by level 30), a few minutes of play. The snake
+  speeds up every 5 fruit ("SPEED UP", 8% each), and each level starts 2% faster
+  (150 ms a cell down to a cap of 80 ms).
+- Level 1 is an open arena; from level 2 every level has its own walls: pillars, a
+  bar, corners, two bars, dots, a cross, a frame, a zigzag, rooms, a diamond, a comb,
+  a maze, then pairs of them. Tests check each level on 6 board shapes: start lane
+  open, no closed-off cells, no two levels alike.
 - Stars for short routes: each fruit adds its shortest distance to a par, ★★★ for
   near-shortest routes. Level map with stars and locks; the next level glows.
-- Controls: on-screen arrows shown by default (act on touch-down; ✛ hides them),
-  swipe anywhere (keep sliding to turn again), arrow keys or WASD. Two turns are
-  buffered, so quick U-turns never get lost. Space/P/Esc pauses; leaving the tab pauses.
-- Smooth: the body is a tube of GPU sprites laid along the snake's real path through
-  the cell centres, so it glides and bends without wobble; walls and grid are drawn
-  once. 60 fps on phone, tablet and desktop sizes.
+- Controls: a compact arrow pad shown by default (tall ◀ ▶ at the sides, ▲ ▼ in the
+  middle), acting on touch-down; roll a thumb from one arrow onto another without
+  lifting. ✛ hides it. Swipe anywhere (keep sliding to turn again), arrow keys, WASD.
+  A turn pressed just after leaving a cell is taken from that cell, so turns never
+  wait for the next cell. Two turns are buffered for quick U-turns.
+- A crash plays out (flash, shake, the snake comes apart) and a clear is celebrated
+  before the card appears; after a crash any arrow goes again.
+- Smooth: the body is a tube of GPU sprites along the snake's real path through the
+  cell centres; walls and grid are drawn once. 60 fps; touch checked on Android
+  (Chromium) and iPhone (WebKit) emulation.
 - Six skins (Cyber Viper, Cobalt Pulse, Solar Wyrm, Crimson Cobra, Void Phantom,
   Aurora Dragon) unlock at 0/10/25/45/65/85 stars.
 - Played entirely on the device: no coins, nothing sent to the server; progress and

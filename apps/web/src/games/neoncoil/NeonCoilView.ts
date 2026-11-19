@@ -1,7 +1,7 @@
 import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 
 import { createPixi, ease, lerp, prefersReducedMotion } from "../pixi";
-import { FRUIT_PER_LEVEL, levelTick, levelWalls } from "./levels";
+import { fruitGoal, levelTick, levelWalls, speedStep } from "./levels";
 import { mix, type Skin } from "./skins";
 import { boardFor, type Cell, type Dir, Snake, type StepEvent } from "./snake";
 
@@ -13,8 +13,11 @@ const APPLE = 0xff3d7f;
 /** Longest frame the loop will catch up on (a slow phone shouldn't teleport the snake). */
 const MAX_FRAME_MS = 100;
 const HIT_STOP_MS = 140;
-const DISSOLVE_MS = 600;
-const CLEAR_MS = 900;
+/** How long the crash and the clear celebration play before the card shows. */
+const DISSOLVE_MS = 1000;
+const CLEAR_MS = 1900;
+/** A turn pressed within this part of a step still takes the cell just left. */
+const LATE_TURN = 0.45;
 /** Body samples per cell: enough to look like one smooth tube. */
 const SAMPLES_PER_CELL = 6;
 
@@ -29,7 +32,7 @@ export interface LevelResult {
 }
 
 export interface NeonCoilViewOptions {
-  onEat: (eaten: number, goal: number) => void;
+  onEat: (eaten: number, goal: number, speed: number) => void;
   onStep: (event: StepEvent) => void;
   onEnd: (result: LevelResult) => void;
 }
@@ -166,7 +169,7 @@ export class NeonCoilView {
     const { cols, rows } = boardFor(width, height);
     this.level = level;
     this.tick = levelTick(level);
-    this.snake = new Snake(cols, rows, levelWalls(level, cols, rows), FRUIT_PER_LEVEL);
+    this.snake = new Snake(cols, rows, levelWalls(level, cols, rows), fruitGoal(level));
     this.prev = this.snake.body.map((c) => ({ ...c }));
     this.acc = 0;
     this.phase = "ready";
@@ -176,7 +179,7 @@ export class NeonCoilView {
     this.fruitBorn = this.clock;
     for (const p of this.particles) p.s.destroy();
     this.particles = [];
-    this.options.onEat(0, this.snake.goal);
+    this.options.onEat(0, this.snake.goal, 1);
     this.layout();
   }
 
@@ -192,6 +195,14 @@ export class NeonCoilView {
   turn(dir: Dir): void {
     if (this.phase === "ready") this.start();
     if (this.phase !== "running") return;
+    // Just left a cell? Take the turn from that cell instead of waiting for the next.
+    if (this.acc < this.tick * LATE_TURN) {
+      const redo = this.snake.lateTurn(dir);
+      if (redo) {
+        this.handle(redo);
+        return;
+      }
+    }
     this.snake.turn(dir);
   }
 
@@ -317,13 +328,18 @@ export class NeonCoilView {
       this.burst(x, y, [APPLE, this.skin.head, 0xffffff], 14);
       this.popup(x, y, `${this.snake.eaten}/${this.snake.goal}`);
       this.fruitBorn = this.clock;
-      this.options.onEat(this.snake.eaten, this.snake.goal);
+      const faster = levelTick(this.level, this.snake.eaten);
+      if (faster < this.tick && !event.cleared) {
+        this.tick = faster;
+        this.showBanner("SPEED UP");
+      }
+      this.options.onEat(this.snake.eaten, this.snake.goal, speedStep(this.snake.eaten));
     }
     if (event.cleared) {
       this.phase = "ending";
       this.ending = 0;
       this.prev = this.snake.body.map((c) => ({ ...c }));
-      this.showBanner("CLEAR!");
+      this.showBanner("LEVEL CLEAR!");
       const head = this.snake.body[0];
       if (head) this.burst(this.px(head.x), this.py(head.y), [this.skin.head, this.skin.tail, 0xffffff, 0xfacc15], 40);
     }
@@ -602,7 +618,7 @@ export class NeonCoilView {
     }
     if (this.shake > 0 && this.hitStop <= 0) {
       this.shake -= dt;
-      const m = Math.max(0, this.shake / 380) * this.cell * 0.3;
+      const m = Math.max(0, this.shake / 380) * this.cell * 0.22;
       this.board.position.set((Math.random() - 0.5) * m, (Math.random() - 0.5) * m);
     } else if (this.shake <= 0) {
       this.board.position.set(0, 0);

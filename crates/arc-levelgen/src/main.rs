@@ -5,10 +5,14 @@
 //! file is server-only: it must never be committed or served to clients.
 //!
 //! Usage:
-//!   ARC_LEVEL_SEED=<secret> arc-levelgen --out-dir levels [--game all|water-sort|brick-blast|metro-jam|dead-bridge|traceout|gridsnap|cipher9|logoquest] [--levels 100]
+//!   ARC_LEVEL_SEED=<secret> arc-levelgen --out-dir levels [--game all|water-sort|brick-blast|metro-jam|dead-bridge|traceout|gridsnap|cipher9|logoquest] [--levels 100 | --sample]
 //!
 //! Each game gets its own file (`levels/<game>.json`), so regenerating one game never
 //! touches the others.
+//!
+//! `--sample` builds only `SAMPLE_LEVELS` of each game and writes nothing: a quick check
+//! (pull requests) that every difficulty band of every game still generates. Releases
+//! always build all 100.
 
 mod brick;
 mod bridge;
@@ -32,15 +36,22 @@ use serde::Serialize;
 
 pub const LEVELS_FILE_VERSION: u32 = 2;
 
-/// Builds levels `1..=max_level` on every core, the highest (slowest) first, and returns
-/// them in level order.
+/// `--sample`: where the games' rules change. 1-3 intro, 4 the first normal level, 11 new
+/// Brick Blast power-ups, 17 its ball table, 20 and 90 breathers, 21/46/76 Cipher9's tiers,
+/// 61 a margin change, 100 the hardest. Water Sort builds whole tiers at once, and all of
+/// it takes seconds, so it always builds every level.
+pub const SAMPLE_LEVELS: [u16; 12] = [1, 3, 4, 11, 17, 20, 21, 46, 61, 76, 90, 100];
+
+/// Builds `levels` on every core, the highest (slowest) first, and returns them in
+/// level order.
 ///
 /// Late levels take far longer than early ones. Started last (as a plain parallel
 /// iterator over `1..=max_level` tends to), they leave a long tail with most cores idle;
 /// started first, the quick ones fill in around them. Each level depends only on its own
 /// seed, so the order of work never changes the output.
-pub fn heavy_first<T: Send>(max_level: u16, build: impl Fn(u16) -> T + Sync) -> Vec<T> {
-    let order: Vec<u16> = (1..=max_level).rev().collect();
+pub fn heavy_first<T: Send>(levels: &[u16], build: impl Fn(u16) -> T + Sync) -> Vec<T> {
+    let mut order = levels.to_vec();
+    order.sort_unstable_by(|a, b| b.cmp(a));
     let next = AtomicUsize::new(0);
     let built = Mutex::new(Vec::with_capacity(order.len()));
     let (order_ref, next_ref, built_ref, build_ref) = (&order, &next, &built, &build);
@@ -103,12 +114,14 @@ struct Args {
     out_dir: PathBuf,
     game: String,
     levels: u16,
+    sample: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
     let mut out = None;
     let mut game = "all".to_owned();
     let mut levels = 100u16;
+    let mut sample = false;
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         let mut value = || it.next().ok_or(format!("{arg} needs a value"));
@@ -118,10 +131,11 @@ fn parse_args() -> Result<Args, String> {
             "--levels" => {
                 levels = value()?.parse().map_err(|e| format!("--levels: {e}"))?;
             }
+            "--sample" => sample = true,
             "-h" | "--help" => {
                 return Err(
                     "usage: ARC_LEVEL_SEED=<secret> arc-levelgen --out-dir <dir> \
-                            [--game all|water-sort|brick-blast|metro-jam|dead-bridge|traceout|gridsnap|cipher9|logoquest] [--levels 1..=100]"
+                            [--game all|water-sort|brick-blast|metro-jam|dead-bridge|traceout|gridsnap|cipher9|logoquest] [--levels 1..=100 | --sample]"
                         .to_owned(),
                 )
             }
@@ -149,6 +163,7 @@ fn parse_args() -> Result<Args, String> {
         out_dir: out.ok_or("--out-dir is required")?,
         game,
         levels,
+        sample,
     })
 }
 
@@ -175,7 +190,13 @@ fn main() -> ExitCode {
     let started = Instant::now();
     let wants = |game: &str| args.game == "all" || args.game == game;
     let failures: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    let (master, out, levels) = (&master, &args.out_dir, args.levels);
+    let wanted: Vec<u16> = if args.sample {
+        SAMPLE_LEVELS.to_vec()
+    } else {
+        (1..=args.levels).collect()
+    };
+    let (master, out, levels, sample) = (&master, &args.out_dir, &wanted[..], args.sample);
+    let water_levels = if sample { 100 } else { args.levels };
     // Every game at once, the slowest first, so the small ones fill the cores that a big
     // one leaves idle near its end. Each writes its own file.
     macro_rules! game {
@@ -190,6 +211,10 @@ fn main() -> ExitCode {
                         built.len(),
                         started.elapsed()
                     );
+                    // A sample is a check, never a levels file.
+                    if sample {
+                        return;
+                    }
                     if let Err(e) = write_game(out, $id, &built) {
                         failures.lock().expect("a panic aborts the process").push(e);
                     }
@@ -211,7 +236,7 @@ fn main() -> ExitCode {
             s,
             "water-sort",
             "water sort",
-            water::generate(master, levels)
+            water::generate(master, water_levels)
         );
         game!(s, "metro-jam", "metro jam", metro::generate(master, levels));
         game!(

@@ -233,11 +233,11 @@ fn facts(program: &Program) -> Vec<String> {
     out
 }
 
-pub fn generate(max_level: u16) -> Vec<LogoLevel> {
+pub fn generate(levels: &[u16]) -> Vec<LogoLevel> {
     LEVELS
         .iter()
-        .take(usize::from(max_level))
         .enumerate()
+        .filter(|(i, _)| levels.contains(&(*i as u16 + 1)))
         .map(|(i, &(title, tip, learn, test_title, test))| {
             let level = i as u16 + 1;
             let chapter = (i / 20) as u8 + 1;
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn every_drawing_fits_the_board_and_uses_its_chapters_chips() {
-        for l in generate(100) {
+        for l in generate(&(1..=100).collect::<Vec<u16>>()) {
             for s in [&l.learn, &l.test] {
                 let p = logo::parse(&s.program).unwrap();
                 let r = run(&p);
@@ -311,7 +311,7 @@ mod tests {
         let path = std::env::var("LOGO_PREVIEW").expect("LOGO_PREVIEW");
         let cell = 160;
         let cols = 10;
-        let levels = generate(100);
+        let levels = generate(&(1..=100).collect::<Vec<u16>>());
         let rows = (levels.len() * 2).div_ceil(cols);
         let mut svg = format!(
             "<svg xmlns='http://www.w3.org/2000/svg' width='{}' height='{}' style='background:#0b1020'>",

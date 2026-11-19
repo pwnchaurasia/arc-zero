@@ -339,10 +339,10 @@ fn build_level(master: &str, level: u16) -> DbLevel {
     panic!("dead bridge level {level}: even the weakest horde broke through for every seed");
 }
 
-pub fn generate(master: &str, max_level: u16) -> Vec<DbLevel> {
-    let mut levels: Vec<DbLevel> = (1..=max_level)
-        .into_par_iter()
-        .map(|level| build_level(master, level))
+pub fn generate(master: &str, wanted: &[u16]) -> Vec<DbLevel> {
+    let mut levels: Vec<DbLevel> = wanted
+        .par_iter()
+        .map(|&level| build_level(master, level))
         .collect();
     levels.sort_by_key(|l| l.level);
     for l in &levels {

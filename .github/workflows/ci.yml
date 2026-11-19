@@ -31,7 +31,7 @@ jobs:
 
   # Level output depends only on the generator, the engine, the Rust toolchain and
   # dependencies, and this pipeline. Pull requests that touch none of them skip the
-  # full level-generation check (about 20 runner-minutes).
+  # level-generation check.
   changes:
     name: What changed
     runs-on: ubuntu-latest
@@ -125,7 +125,11 @@ jobs:
       - run: cargo test
 
   levels:
-    name: All levels generate quickly (${{ matrix.seed }} seed)
+    # Pull requests: a sample of each game's levels (where its rules change), two fixed
+    # seeds, about a minute. Releases always build all 100 from the secret seed, and stop
+    # safely (the live version keeps running) if that fails. The weekly run (and a manual
+    # one) builds all 100 for three seeds, one random, to catch slow or failing seeds early.
+    name: Levels generate (${{ matrix.seed }} seed, ${{ github.event_name == 'pull_request' && 'sample' || 'all 100' }})
     needs: [changes, levelgen]
     if: needs.changes.outputs.levels == 'true'
     runs-on: ubuntu-latest
@@ -133,25 +137,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Pull requests: two fixed seeds. The weekly run (and a manual one) adds a
-        # random seed, so a seed that makes generation slow still turns up.
         seed: ${{ fromJSON(github.event_name == 'pull_request' && '["ci","second"]' || '["ci","second","random"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { name: levelgen, path: target/release }
       - run: chmod +x target/release/arc-levelgen
-      # Every release regenerates the levels from its secret seed, so generation must be
-      # fast for ANY seed: seeds side by side, each capped at 15 minutes on this 4-core
-      # runner (the deploy job has 45 minutes in total).
-      - name: Generate all 100 levels per game (max 15 min)
+      # Full runs are capped at 15 minutes on this 4-core runner (the deploy job has 45).
+      - name: Generate levels (max 15 min)
+        env:
+          MODE: ${{ github.event_name == 'pull_request' && '--sample' || '' }}
         run: |
           case "${{ matrix.seed }}" in
             ci) seed=$CI_LEVEL_SEED ;;
             second) seed=ci-only-second-seed-not-secret-0123456789ab ;;
             *) seed=$(openssl rand -hex 32) ;;
           esac
-          .github/scripts/ci-levelgen.sh "$seed" /tmp/levels
+          # shellcheck disable=SC2086 # MODE is one flag or nothing
+          .github/scripts/ci-levelgen.sh "$seed" /tmp/levels $MODE
 
   api:
     name: API

@@ -163,10 +163,10 @@ fn build_level(master: &str, level: u16) -> C9Level {
     panic!("cipher9 level {level}: no puzzle fits its tier in {MAX_ATTEMPTS} attempts");
 }
 
-pub fn generate(master: &str, max_level: u16) -> Vec<C9Level> {
-    let mut levels: Vec<C9Level> = (1..=max_level)
-        .into_par_iter()
-        .map(|level| build_level(master, level))
+pub fn generate(master: &str, wanted: &[u16]) -> Vec<C9Level> {
+    let mut levels: Vec<C9Level> = wanted
+        .par_iter()
+        .map(|&level| build_level(master, level))
         .collect();
     levels.sort_by_key(|l| l.level);
     levels

@@ -488,3 +488,34 @@ test("two friends play a TacShift best-of-3 challenge on one phone", async ({ pa
   await expect(page.getByText("Riya (X) to move")).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test.describe("NeonCoil", () => {
+  // A canvas redrawn every frame is slow under software rendering at phone pixel
+  // density, and the game clock only advances with frames: keep it at 1x here.
+  test.use({ deviceScaleFactor: 1 });
+
+  test("NeonCoil: level map, start with an arrow, pause, crash and try again", async ({ page }) => {
+    const errors = watchConsole(page);
+    await page.goto("/");
+    await page.getByRole("heading", { name: "NeonCoil" }).first().click();
+    // A new device: level 1 open, the rest locked; only the first skin.
+    await expect(page.getByRole("button", { name: "Level 2, locked" })).toBeDisabled();
+    await expect(page.getByRole("radio", { name: /Cobalt Pulse: locked/ })).toBeDisabled();
+    await page.getByRole("button", { name: "Play level 1" }).click();
+
+    // The on-screen arrows are there by default; one starts the level.
+    await expect(page.getByText(/to start/)).toBeVisible();
+    await page.getByRole("button", { name: "Turn up" }).dispatchEvent("pointerdown");
+    await expect(page.getByText(/to start/)).toBeHidden();
+    await page.keyboard.press("Space");
+    await expect(page.getByRole("heading", { name: "PAUSED" })).toBeVisible();
+    await page.getByRole("button", { name: "Resume" }).click();
+
+    // Heading straight up, the snake reaches the top wall within a few seconds.
+    const crashed = page.getByRole("dialog", { name: "Crashed" });
+    await expect(crashed).toBeVisible({ timeout: 40_000 });
+    await crashed.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByText(/to start/)).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+});

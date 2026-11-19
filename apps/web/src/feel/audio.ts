@@ -88,6 +88,15 @@ export const sfx = {
   vanish(): void {
     tone(330, 0.16, "sine", 0.25, 180);
   },
+  /** NeonCoil: a bite, a little higher for each fruit of the level. */
+  chomp(fruit: number): void {
+    const up = Math.pow(1.12, Math.min(fruit, 5) - 1);
+    tone(500 * up, 0.07, "square", 0.22, 820 * up);
+  },
+  crash(): void {
+    tone(220, 0.35, "sawtooth", 0.3, 55);
+    tone(90, 0.3, "square", 0.2, 40);
+  },
   win(): void {
     [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.18, "triangle", 0.4), i * 90));
   },

@@ -176,3 +176,13 @@ export const ClearWrongIcon = (p: IconProps) => (
     <path d="M9 9l6 6M15 9l-6 6" />
   </Icon>
 );
+export const PauseIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 5v14M15 5v14" />
+  </Icon>
+);
+export const PlayIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" />
+  </Icon>
+);

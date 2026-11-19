@@ -161,6 +161,16 @@ body {
   animation: ts-radar 500ms ease-in-out infinite;
 }
 
+/* NeonCoil: the next level to play glows on the level map. */
+@keyframes nc-current {
+  50% {
+    box-shadow: 0 0 18px #38bdf8;
+  }
+}
+.nc-current {
+  animation: nc-current 1.4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pop-in,
   .drop-lost,
@@ -168,7 +178,8 @@ body {
   .c9-flash-b,
   .c9-wave,
   .ts-win,
-  .ts-radar {
+  .ts-radar,
+  .nc-current {
     animation: none;
   }
 }

@@ -189,10 +189,10 @@ fn candidate(level: u16, seed: u64) -> Option<(GsLevel, u32)> {
     ))
 }
 
-pub fn generate(master: &str, max_level: u16) -> Vec<GsLevel> {
-    (1..=max_level)
-        .into_par_iter()
-        .map(|level| {
+pub fn generate(master: &str, levels: &[u16]) -> Vec<GsLevel> {
+    levels
+        .par_iter()
+        .map(|&level| {
             let target = params(level).par;
             let found: Vec<(GsLevel, u32)> = (0..CANDIDATES)
                 .filter_map(|i| {

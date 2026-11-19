@@ -24,10 +24,17 @@ the newest is at the top.
   first, so cores don't sit idle near the end. Output is byte-for-byte the same.
 - The cap is now 15 minutes (job 20) and the deploy job has 45 minutes: still catches a
   generator that loops, with room for slower seeds and runners.
-- The full level-generation check runs only on pull requests that change level code
-  (the generator, the game engine, Cargo files, the Rust toolchain or this pipeline),
-  with two fixed seeds; other PRs skip it (about 20 runner-minutes saved each) and
-  "CI passed" accepts that skip only then. A weekly run on main adds a random seed.
+- Pull requests that change level code (the generator, the game engine, Cargo files,
+  the Rust toolchain or this pipeline) check a sample of every game's levels: 1, 3, 4,
+  11, 17, 20, 21, 46, 61, 76, 90 and 100, where the games' rules change, for two fixed
+  seeds. About a minute instead of ten; `arc-levelgen --sample` writes no files. Other
+  PRs skip the check, and "CI passed" accepts that skip only then.
+- Releases still build all 100 levels per game from the secret seed. A weekly run on
+  main builds all 100 for three seeds, one random, to catch slow or failing seeds early.
+- End-to-end jobs install Chromium in their own step and retry when Ubuntu's package
+  servers drop out (each download up to 5 times, the whole install twice); if they stay
+  down, Chromium is installed alone (the runner already has its libraries; only extra
+  fonts are skipped).
 
 ### Home screen redesign (phone, tablet and desktop)
 - Category chips: All, Puzzles, Action, Brain & Logic, Board, Junior (a game can be in
